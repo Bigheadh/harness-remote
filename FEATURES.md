@@ -88,7 +88,7 @@
 - [x] Integration test: end-to-end flow
 
 ## Phase 14: Polish & Deploy
-- [ ] Deploy script / systemd service
+- [x] Deploy script / systemd service
 - [ ] README update with working quick start
 - [ ] Error logging with redaction
 - [ ] Data directory auto-creation
