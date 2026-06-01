@@ -2,91 +2,293 @@
 
 中文 | [English](#english)
 
-[![Status](https://img.shields.io/badge/status-design%20phase-blue)](#功能规划)
+[![Status](https://img.shields.io/badge/status-MVP%20complete-green)](#功能概览)
 [![Runtime](https://img.shields.io/badge/runtime-Node.js%2020%2B-43853d)](#适用前提)
 [![MCP](https://img.shields.io/badge/MCP-local%20stdio-purple)](#架构)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey)](#许可证)
 
-> 通过飞书收集远程任务，让公司电脑上的 Codex CLI 通过本地 MCP 主动拉取并回传结果。  
+> 通过飞书收集远程任务，让公司电脑上的 Codex CLI 通过本地 MCP 主动拉取并回传结果。
 > Feishu task inbox for local Codex CLI, powered by MCP, without a background remote-control agent.
 
-[项目定位](#项目定位) · [功能规划](#功能规划) · [架构](#架构) · [快速开始](#快速开始规划) · [开发文档](docs/DEVELOPMENT.md) · [FAQ](#常见问题)
+[功能概览](#功能概览) · [架构](#架构) · [快速开始](#快速开始) · [开发文档](docs/DEVELOPMENT.md) · [API 参考](#api-参考) · [MCP 工具](#mcp-工具) · [部署](#部署) · [测试](#测试) · [FAQ](#常见问题)
 
 > [!IMPORTANT]
-> 本项目的边界是“远程任务协作”，不是“远程控制公司电脑”。公司电脑不运行后台 agent，不暴露端口，也不会被当前服务器主动唤醒或控制。
+> 本项目的边界是"远程任务协作"，不是"远程控制公司电脑"。公司电脑不运行后台 agent，不暴露端口，也不会被当前服务器主动唤醒或控制。
 
-> [!NOTE]
-> 当前仓库处于设计和文档阶段，尚未实现服务端、MCP server 或飞书集成代码。
-
-## 项目定位
-
-`harness-remote` 面向这样的个人工作流：
-
-```text
-你在飞书发送任务
-  -> 当前服务器保存任务
-  -> 公司电脑本地 Codex CLI 通过 MCP 主动读取任务
-  -> 你在本地确认、执行、处理
-  -> Codex CLI 通过 MCP 上报结果
-  -> 当前服务器回复飞书
-```
-
-它解决的是“我不在公司电脑前，也能把工作意图排队到本地 Codex 工作流里”的问题，而不是让飞书直接执行公司电脑命令。
-
-## 功能规划
+## 功能概览
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 飞书消息入口 | Planned | 接收机器人消息事件并创建任务 |
-| 任务 API | Planned | 提供任务查询、状态更新和结果上报 |
-| 本地 MCP Server | Planned | 由 Codex CLI 启动，通过 HTTPS 访问服务器 |
-| 飞书结果回复 | Planned | 将本地处理结果回复到原飞书会话 |
-| 后台远控 agent | Not planned | 不在公司电脑上运行常驻远控进程 |
-| 自动执行命令 | Not planned | 飞书消息不会直接执行本地命令 |
-
-- [ ] 飞书机器人消息事件接入
-- [ ] 飞书用户 ID 白名单
-- [ ] 任务创建、查询、状态更新和结果保存
-- [ ] SQLite 持久化任务与事件去重记录
-- [ ] Codex CLI 本地 MCP server
-- [ ] MCP 工具：`list_tasks`、`get_task`、`mark_task_running`
-- [ ] MCP 工具：`report_task_result`、`reply_feishu`
-- [ ] 飞书结果回复
-- [ ] HTTPS 反向代理部署说明
-- [ ] 单元测试与集成测试
+| 飞书消息入口 | ✅ 已实现 | 接收机器人消息事件并创建任务 |
+| 用户白名单 | ✅ 已实现 | 只允许指定飞书用户创建任务 |
+| 事件去重 | ✅ 已实现 | SQLite 记录已处理事件，防止重复创建 |
+| 任务 API | ✅ 已实现 | 查询任务、更新状态、上报结果 |
+| SQLite 持久化 | ✅ 已实现 | 任务与事件去重记录持久存储 |
+| 本地 MCP Server | ✅ 已实现 | 由 Codex CLI 启动，通过 HTTPS 访问服务器 |
+| MCP 工具 | ✅ 已实现 | list_tasks / get_task / mark_task_running / report_task_result / reply_feishu |
+| 飞书结果回复 | ✅ 已实现 | 将本地处理结果回复到原飞书会话 |
+| 单元与集成测试 | ✅ 已实现 | 5 个测试套件，覆盖全链路 |
+| 部署脚本 | ✅ 已实现 | 一键构建 + systemd 服务安装 |
+| 后台远控 agent | ❌ 不做 | 不在公司电脑上运行常驻远控进程 |
+| 自动执行命令 | ❌ 不做 | 飞书消息不会直接执行本地命令 |
 
 ## 架构
 
 ```mermaid
 flowchart TD
     U[你 / 飞书客户端] --> F[飞书机器人]
-    F -->|HTTPS 事件回调| S[当前服务器]
-    S --> T[任务存储]
+    F -->|HTTPS POST /feishu/events| S[当前服务器]
 
-    C[公司电脑 Codex CLI] -->|stdio MCP| M[本地 MCP Server]
-    M -->|HTTPS API| S
-    C -->|本地确认与执行| L[本地 CLI / 项目]
-    M -->|上报结果| S
-    S -->|飞书回复 API| F
-    F --> U
+    subgraph Server[当前服务器]
+        S --> Auth[事件校验 & 白名单 & 去重]
+        Auth --> Store[(SQLite)]
+        API[Task API] --> Store
+        Reply[飞书回复客户端] --> F
+    end
+
+    subgraph CompanyPC[公司电脑]
+        C[Codex CLI] -->|stdio MCP| M[本地 MCP Server]
+        C -->|本地确认与执行| L[本地 CLI / 项目]
+    end
+
+    M -->|HTTPS GET /api/tasks| API
+    M -->|HTTPS POST result| API
+    API --> Reply
 ```
 
 核心约束：
-
 - 飞书只负责消息入口和结果展示。
 - 当前服务器只保存任务、鉴权、调用飞书 API。
 - 公司电脑只在你主动打开 Codex CLI 后，通过 MCP 主动访问当前服务器。
 - MCP 只用于本地 Codex CLI 工具扩展，不承担公网穿透或远程唤醒。
 
-## 通信边界
+## 快速开始
 
-| 方向 | 协议 | 发起方 | 是否常驻 | 说明 |
-| --- | --- | --- | --- | --- |
-| 飞书 -> 当前服务器 | HTTPS | 飞书开放平台 | 否 | 事件回调，要求公网 HTTPS |
-| 本地 MCP -> 当前服务器 | HTTPS | 公司电脑本地 MCP server | 否 | Codex CLI 会话内主动请求 |
-| 当前服务器 -> 飞书 | HTTPS | 当前服务器 | 否 | 调用飞书 API 回复消息 |
-| 当前服务器 -> 公司电脑 | 无 | 无 | 否 | 不存在该通道 |
-| 公司电脑后台 agent -> 当前服务器 | 无 | 无 | 否 | 不设计常驻 agent |
+### 1. 服务器部署
+
+```bash
+git clone https://github.com/Bigheadh/harness-remote.git
+cd harness-remote
+npm install
+npm run build
+```
+
+创建配置文件：
+
+```bash
+cp config/server.example.json config/server.json
+```
+
+编辑 `config/server.json`：
+
+```json
+{
+  "port": 3000,
+  "publicBaseUrl": "https://your-server-domain.com",
+  "personalToken": "生成一个随机字符串作为 API 认证 token",
+  "storagePath": "./data/tasks.sqlite",
+  "feishu": {
+    "appId": "cli_xxx",
+    "appSecret": "你的飞书应用 Secret",
+    "verificationToken": "你的飞书事件验证 Token",
+    "encryptKey": "你的飞书事件加密 Key（可选，留空则不解密）",
+    "allowedUserIds": ["ou_xxx"]
+  }
+}
+```
+
+启动服务：
+
+```bash
+npm run server
+# 或使用部署脚本安装 systemd 服务：
+# bash scripts/deploy.sh --install-service --service-user root
+```
+
+服务器需要通过 HTTPS 反向代理暴露：
+
+```text
+https://your-server-domain.com/feishu/events
+```
+
+### 2. 飞书配置
+
+1. 在 [飞书开放平台](https://open.feishu.cn/) 创建企业自建应用。
+2. 启用「机器人」能力。
+3. 在「事件订阅」中添加：`im.message.receive_v1`。
+4. 设置请求地址为 `https://your-server-domain.com/feishu/events`。
+5. 将机器人的 App ID、App Secret、Verification Token 和 Encrypt Key 填入 `config/server.json`。
+6. 在 `allowedUserIds` 中添加你的飞书用户 ID（格式 `ou_xxx`，可在飞书开放平台「权限管理」中查看）。
+
+### 3. 公司电脑配置
+
+```bash
+git clone https://github.com/Bigheadh/harness-remote.git
+cd harness-remote
+npm install
+npm run build
+```
+
+创建配置文件：
+
+```bash
+cp config/mcp.example.json config/mcp.json
+```
+
+编辑 `config/mcp.json`：
+
+```json
+{
+  "serverBaseUrl": "https://your-server-domain.com",
+  "personalToken": "与 config/server.json 中相同的 personalToken",
+  "defaultUser": "me"
+}
+```
+
+在 Codex CLI 的 MCP 配置中添加：
+
+```toml
+[mcp_servers.harness_remote]
+command = "node"
+args = ["/path/to/harness-remote/dist/mcp-server/index.js", "--config", "/path/to/harness-remote/config/mcp.json"]
+```
+
+### 4. 使用流程
+
+1. 在飞书中给机器人发消息（任务描述）。
+2. 服务器接收并存储为 `pending` 任务。
+3. 在公司电脑上打开 Codex CLI。
+4. Codex CLI 调用 MCP 工具 `list_tasks` 获取待处理任务。
+5. 查看任务详情（`get_task`），标记为 running（`mark_task_running`）。
+6. 本地处理完成后，调用 `report_task_result` 上报结果。
+7. 服务器自动将结果回复到原飞书会话。
+
+## API 参考
+
+所有 API 请求需要在 Header 中携带 Bearer token：
+
+```bash
+Authorization: Bearer <personalToken>
+```
+
+### 健康检查
+
+```bash
+GET /health
+```
+
+响应：`{ "ok": true }`
+
+### 列出任务
+
+```bash
+GET /api/tasks?status=pending&limit=10
+```
+
+参数：
+- `status` — 按状态过滤（`pending` / `picked` / `running` / `done` / `failed`）
+- `limit` — 返回数量上限（默认 50）
+
+### 获取任务详情
+
+```bash
+GET /api/tasks/:id
+```
+
+### 更新任务状态
+
+```bash
+POST /api/tasks/:id/status
+Content-Type: application/json
+
+{ "status": "running" }
+```
+
+状态流转规则：`pending → picked → running → done/failed`。
+
+### 上报任务结果
+
+```bash
+POST /api/tasks/:id/result
+Content-Type: application/json
+
+{
+  "status": "done",
+  "resultSummary": "已完成代码审查",
+  "resultDetails": "发现 3 个潜在问题..."
+}
+```
+
+上报成功后，服务器会自动调用飞书 API 将结果回复到原会话。
+
+## MCP 工具
+
+本地 MCP Server 提供以下 5 个工具，供 Codex CLI 在会话中调用：
+
+| 工具 | 说明 |
+| --- | --- |
+| `list_tasks` | 列出待处理任务（支持按 status 过滤） |
+| `get_task` | 获取单个任务详情 |
+| `mark_task_running` | 将任务标记为 running |
+| `report_task_result` | 上报处理结果并自动回复飞书 |
+| `reply_feishu` | 直接回复飞书消息（不需要先有任务） |
+
+## 部署
+
+### 手动部署
+
+```bash
+cd harness-remote
+npm install --omit=dev
+npm run build
+npm run server
+```
+
+### systemd 服务（推荐）
+
+```bash
+bash scripts/deploy.sh --install-service --service-user root
+```
+
+这会：
+1. 安装生产依赖
+2. 构建 TypeScript
+3. 创建数据目录
+4. 安装 systemd 服务文件到 `/etc/systemd/system/harness-remote.service`
+5. 启动服务
+
+### HTTPS 反向代理
+
+服务器必须通过 HTTPS 暴露。推荐使用 nginx 反向代理：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-server-domain.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## 测试
+
+```bash
+npm run test
+```
+
+测试套件：
+- `test/shared/http.test.ts` — Bearer token 验证
+- `test/server/tasks.store.test.ts` — SQLite CRUD、状态机流转
+- `test/server/feishu.events.test.ts` — 事件解析、白名单、去重、群聊 mention
+- `test/mcp-server/tools.test.ts` — MCP 工具契约
+- `test/server/integration.test.ts` — 端到端集成测试
 
 ## 适用前提
 
@@ -96,65 +298,52 @@ flowchart TD
 - 公司电脑允许 Codex CLI 启动本地 MCP server。
 - 公司电脑不允许或不适合安装后台远控 agent。
 
-## 快速开始规划
+## 通信边界
 
-> [!WARNING]
-> 以下命令是计划中的使用方式，代码实现完成后才可执行。
+| 方向 | 协议 | 发起方 | 常驻 | 说明 |
+| --- | --- | --- | --- | --- |
+| 飞书 -> 当前服务器 | HTTPS | 飞书开放平台 | 否 | 事件回调，需公网 HTTPS |
+| 本地 MCP -> 当前服务器 | HTTPS | 公司电脑本地 MCP | 否 | Codex CLI 会话内主动请求 |
+| 当前服务器 -> 飞书 | HTTPS | 当前服务器 | 否 | 调用飞书 API 回复 |
+| 当前服务器 -> 公司电脑 | 无 | — | — | 不存在该通道 |
 
-### 服务器
-
-```bash
-git clone https://github.com/Bigheadh/harness-remote.git
-cd harness-remote
-npm install
-npm run build
-cp config/server.example.json config/server.json
-npm run server
-```
-
-服务器需要通过 HTTPS 暴露：
-
-```text
-https://<your-domain>/feishu/events
-```
-
-### 公司电脑
-
-```bash
-git clone https://github.com/Bigheadh/harness-remote.git
-cd harness-remote
-npm install
-npm run build
-cp config/mcp.example.json config/mcp.json
-```
-
-Codex CLI MCP 配置示例：
-
-```toml
-[mcp_servers.harness_remote]
-command = "node"
-args = ["/path/to/harness-remote/dist/mcp-server/index.js", "--config", "/path/to/harness-remote/config/mcp.json"]
-```
-
-## 计划目录
+## 项目结构
 
 ```text
 harness-remote/
   config/
-    server.example.json
-    mcp.example.json
+    server.example.json    # 服务器配置模板
+    mcp.example.json       # MCP 配置模板
   docs/
-    DEVELOPMENT.md
+    DEVELOPMENT.md         # 完整开发文档
+  scripts/
+    deploy.sh              # 部署脚本 + systemd 安装
   src/
     server/
+      config.ts            # 服务器配置加载与校验
+      index.ts             # Fastify 服务器启动
       feishu/
+        client.ts          # 飞书 API 客户端（token 获取、消息回复）
+        events.ts          # 飞书事件处理（签名验证、解密、去重、任务创建）
       tasks/
+        store.ts           # SQLite 任务存储
+        routes.ts          # Task API 路由（health、tasks CRUD）
     mcp-server/
+      config.ts            # MCP 配置加载
+      index.ts             # MCP Server 启动（stdio transport）
+      client.ts            # HTTP 客户端（调用服务器 API）
+      tools.ts             # MCP 工具定义（5 个工具）
     shared/
+      errors.ts            # AppError 错误类
+      http.ts              # Bearer token 验证辅助
+      types.ts             # 共享类型定义
   test/
-    server/
-    mcp-server/
-    shared/
+    shared/http.test.ts
+    server/tasks.store.test.ts
+    server/feishu.events.test.ts
+    server/integration.test.ts
+    mcp-server/tools.test.ts
+  FEATURES.md              # 功能追踪
   README.md
 ```
 
@@ -165,21 +354,6 @@ harness-remote/
 - 不是公司电脑后台 agent。
 - 不是绕过公司安全策略的远控工具。
 - 不是让飞书消息直接执行公司电脑命令的自动化系统。
-
-## MVP 验收目标
-
-- 飞书白名单用户发送消息后，服务器生成一条 `pending` 任务。
-- 公司电脑本地 Codex CLI 可以通过 MCP 读取该任务。
-- 用户本地处理后，可以通过 MCP 上报结果。
-- 服务器把结果回复到原飞书会话。
-- 公司电脑没有后台常驻远控进程。
-
-## 路线图
-
-- **文档阶段**：明确边界、架构、API、MCP 工具和部署方式。
-- **MVP 阶段**：实现飞书消息入库、本地 MCP 拉取任务、结果回传飞书。
-- **稳定阶段**：补充 SQLite 存储、事件去重、测试、部署脚本和错误处理。
-- **增强阶段**：增加任务历史、搜索、审计日志和更细的权限控制。
 
 ## 常见问题
 
@@ -207,15 +381,6 @@ harness-remote/
 
 - [完整开发文档](docs/DEVELOPMENT.md)
 
-## 贡献
-
-当前项目优先服务个人工作流，暂不追求通用平台化。欢迎围绕这些方向改进：
-
-- 更清晰的飞书接入文档。
-- 更稳妥的本地 MCP 使用体验。
-- 更完整的测试用例。
-- 更明确的合规边界说明。
-
 ## 许可证
 
 许可证暂未确定。正式发布前会补充 `LICENSE` 文件。
@@ -226,132 +391,145 @@ harness-remote/
 
 [中文](#harness-remote) | English
 
-[![Status](https://img.shields.io/badge/status-design%20phase-blue)](#planned-features)
+[![Status](https://img.shields.io/badge/status-MVP%20complete-green)](#overview)
 [![Runtime](https://img.shields.io/badge/runtime-Node.js%2020%2B-43853d)](#preconditions)
 [![MCP](https://img.shields.io/badge/MCP-local%20stdio-purple)](#architecture)
 [![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
 
 > A Feishu task inbox for local Codex CLI. Tasks are pulled through a local MCP server only when you explicitly start Codex CLI on the company computer.
 
-[Purpose](#purpose) · [Planned Features](#planned-features) · [Architecture](#architecture) · [Quick Start](#planned-quick-start) · [Development Guide](docs/DEVELOPMENT.md) · [FAQ](#faq)
+[Overview](#overview) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Development Guide](docs/DEVELOPMENT.md) · [API Reference](#api-reference) · [MCP Tools](#mcp-tools) · [Deployment](#deployment) · [Tests](#tests) · [FAQ](#faq)
 
 > [!IMPORTANT]
 > This project is about remote task collaboration, not remote control. The company computer runs no background agent, exposes no ports, and cannot be woken up or controlled by the server.
 
-> [!NOTE]
-> This repository is currently in the design and documentation phase. The server, MCP server, and Feishu integration code have not been implemented yet.
-
-## Purpose
-
-`harness-remote` is designed for this personal workflow:
-
-```text
-You send a task in Feishu
-  -> the server stores it
-  -> local Codex CLI pulls it through MCP
-  -> you review and handle it locally
-  -> Codex CLI reports the result through MCP
-  -> the server replies in Feishu
-```
-
-It helps queue remote work intent into a local Codex workflow. It does not directly execute commands on the company computer from Feishu.
-
-## Planned Features
+## Overview
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Feishu message entrypoint | Planned | Receive bot message events and create tasks |
-| Task API | Planned | Query tasks, update status, and report results |
-| Local MCP Server | Planned | Started by Codex CLI, calls the server over HTTPS |
-| Feishu result replies | Planned | Reply local handling results to the original chat |
-| Background remote-control agent | Not planned | No persistent agent on the company computer |
-| Automatic command execution | Not planned | Feishu messages do not directly execute local commands |
-
-- [ ] Feishu bot message event integration
-- [ ] Feishu user ID allowlist
-- [ ] Task creation, retrieval, status updates, and result storage
-- [ ] SQLite persistence for tasks and event deduplication
-- [ ] Local MCP server for Codex CLI
-- [ ] MCP tools: `list_tasks`, `get_task`, `mark_task_running`
-- [ ] MCP tools: `report_task_result`, `reply_feishu`
-- [ ] Feishu result replies
-- [ ] HTTPS reverse proxy deployment guide
-- [ ] Unit and integration tests
+| Feishu message entrypoint | ✅ Implemented | Receive bot message events and create tasks |
+| User allowlist | ✅ Implemented | Only specified Feishu users can create tasks |
+| Event deduplication | ✅ Implemented | SQLite tracks processed events to prevent duplicates |
+| Task API | ✅ Implemented | Query tasks, update status, and report results |
+| SQLite persistence | ✅ Implemented | Tasks and dedup records persist to disk |
+| Local MCP Server | ✅ Implemented | Started by Codex CLI, calls the server over HTTPS |
+| MCP tools | ✅ Implemented | list_tasks / get_task / mark_task_running / report_task_result / reply_feishu |
+| Feishu result replies | ✅ Implemented | Reply local handling results to the original chat |
+| Unit & integration tests | ✅ Implemented | 5 test suites covering the full lifecycle |
+| Deploy script | ✅ Implemented | One-click build + systemd service installation |
+| Background remote-control agent | ❌ Not planned | No persistent agent on the company computer |
+| Automatic command execution | ❌ Not planned | Feishu messages do not directly execute local commands |
 
 ## Architecture
 
 ```mermaid
 flowchart TD
     U[You / Feishu Client] --> F[Feishu Bot]
-    F -->|HTTPS event callback| S[Server]
-    S --> T[Task Storage]
+    F -->|HTTPS POST /feishu/events| S[Server]
 
-    C[Codex CLI on Company Computer] -->|stdio MCP| M[Local MCP Server]
-    M -->|HTTPS API| S
-    C -->|Local review and execution| L[Local CLI / Project]
-    M -->|Report result| S
-    S -->|Feishu reply API| F
-    F --> U
+    subgraph Server[Server]
+        S --> Auth[Event validation & allowlist & dedup]
+        Auth --> Store[(SQLite)]
+        API[Task API] --> Store
+        Reply[Feishu Reply Client] --> F
+    end
+
+    subgraph CompanyPC[Company Computer]
+        C[Codex CLI] -->|stdio MCP| M[Local MCP Server]
+        C -->|Local review & execution| L[Local CLI / Project]
+    end
+
+    M -->|HTTPS GET /api/tasks| API
+    M -->|HTTPS POST result| API
+    API --> Reply
 ```
 
 Core boundaries:
-
 - Feishu is only the message entrypoint and result display surface.
 - The server stores tasks, checks authorization, and calls Feishu APIs.
 - The company computer only calls the server after you explicitly start Codex CLI locally.
 - MCP is only a local Codex CLI tool extension, not a tunneling or remote wake-up mechanism.
 
-## Communication Boundaries
+## Quick Start
 
-| Direction | Protocol | Initiator | Persistent | Notes |
-| --- | --- | --- | --- | --- |
-| Feishu -> server | HTTPS | Feishu Open Platform | No | Event callback, requires public HTTPS |
-| Local MCP -> server | HTTPS | Local MCP server on company computer | No | Active requests inside a Codex CLI session |
-| Server -> Feishu | HTTPS | Server | No | Calls Feishu APIs to reply |
-| Server -> company computer | None | None | No | This channel does not exist |
-| Background agent -> server | None | None | No | Persistent agent is intentionally excluded |
-
-## Preconditions
-
-- You can manage a server and expose it through public HTTPS.
-- You can create or configure a custom Feishu bot.
-- The company computer is allowed to install and use Codex CLI.
-- The company computer is allowed to let Codex CLI launch a local MCP server.
-- The company computer does not allow, or is not suitable for, a background remote-control agent.
-
-## Planned Quick Start
-
-> [!WARNING]
-> The following commands describe the intended workflow. They will work after the implementation is complete.
-
-### Server
+### 1. Server Setup
 
 ```bash
 git clone https://github.com/Bigheadh/harness-remote.git
 cd harness-remote
 npm install
 npm run build
+```
+
+Create the config:
+
+```bash
 cp config/server.example.json config/server.json
+```
+
+Edit `config/server.json`:
+
+```json
+{
+  "port": 3000,
+  "publicBaseUrl": "https://your-server-domain.com",
+  "personalToken": "a-random-string-for-api-auth",
+  "storagePath": "./data/tasks.sqlite",
+  "feishu": {
+    "appId": "cli_xxx",
+    "appSecret": "your-feishu-app-secret",
+    "verificationToken": "your-feishu-event-verification-token",
+    "encryptKey": "your-feishu-event-encrypt-key",
+    "allowedUserIds": ["ou_xxx"]
+  }
+}
+```
+
+Start the server:
+
+```bash
 npm run server
+# Or install as systemd service:
+# bash scripts/deploy.sh --install-service --service-user root
 ```
 
-The server must expose this HTTPS callback:
+Expose via HTTPS reverse proxy (nginx recommended).
 
-```text
-https://<your-domain>/feishu/events
-```
+### 2. Feishu Setup
 
-### Company Computer
+1. Create a custom app on the [Feishu Open Platform](https://open.feishu.cn/).
+2. Enable the Bot capability.
+3. Subscribe to event: `im.message.receive_v1`.
+4. Set the callback URL to `https://your-server-domain.com/feishu/events`.
+5. Add App ID, App Secret, Verification Token, and Encrypt Key to `config/server.json`.
+6. Add your Feishu user ID to `allowedUserIds`.
+
+### 3. Company Computer Setup
 
 ```bash
 git clone https://github.com/Bigheadh/harness-remote.git
 cd harness-remote
 npm install
 npm run build
+```
+
+Create the config:
+
+```bash
 cp config/mcp.example.json config/mcp.json
 ```
 
-Codex CLI MCP configuration example:
+Edit `config/mcp.json`:
+
+```json
+{
+  "serverBaseUrl": "https://your-server-domain.com",
+  "personalToken": "same-token-as-server-config",
+  "defaultUser": "me"
+}
+```
+
+Add to Codex CLI MCP configuration:
 
 ```toml
 [mcp_servers.harness_remote]
@@ -359,80 +537,165 @@ command = "node"
 args = ["/path/to/harness-remote/dist/mcp-server/index.js", "--config", "/path/to/harness-remote/config/mcp.json"]
 ```
 
-## Planned Layout
+### 4. Usage Flow
+
+1. Send a message to the Feishu bot (task description).
+2. Server receives and stores it as a `pending` task.
+3. Open Codex CLI on the company computer.
+4. Codex CLI calls MCP tool `list_tasks` to get pending tasks.
+5. View task details (`get_task`), mark as running (`mark_task_running`).
+6. After handling, call `report_task_result` to submit the result.
+7. Server automatically replies to the original Feishu conversation.
+
+## API Reference
+
+All API requests require a Bearer token in the header:
+
+```bash
+Authorization: Bearer <personalToken>
+```
+
+### Health Check
+
+```bash
+GET /health
+```
+
+Response: `{ "ok": true }`
+
+### List Tasks
+
+```bash
+GET /api/tasks?status=pending&limit=10
+```
+
+### Get Task
+
+```bash
+GET /api/tasks/:id
+```
+
+### Update Status
+
+```bash
+POST /api/tasks/:id/status
+Content-Type: application/json
+
+{ "status": "running" }
+```
+
+### Report Result
+
+```bash
+POST /api/tasks/:id/result
+Content-Type: application/json
+
+{
+  "status": "done",
+  "resultSummary": "Code review completed",
+  "resultDetails": "Found 3 potential issues..."
+}
+```
+
+## MCP Tools
+
+| Tool | Description |
+| --- | --- |
+| `list_tasks` | List pending tasks (filter by status) |
+| `get_task` | Get task details |
+| `mark_task_running` | Mark task as running |
+| `report_task_result` | Report result and auto-reply to Feishu |
+| `reply_feishu` | Reply directly to Feishu (no task required) |
+
+## Deployment
+
+### Quick Deploy
+
+```bash
+bash scripts/deploy.sh --install-service --service-user root
+```
+
+### Manual
+
+```bash
+npm install --omit=dev
+npm run build
+npm run server
+```
+
+### HTTPS
+
+Must expose via HTTPS. Example nginx config:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+## Tests
+
+```bash
+npm run test
+```
+
+5 test suites: shared/http, server/tasks.store, server/feishu.events, server/integration, mcp-server/tools.
+
+## Preconditions
+
+- You can manage a server and expose it through public HTTPS.
+- You can create or configure a custom Feishu bot.
+- The company computer is allowed to use Codex CLI with a local MCP server.
+- The company computer does not allow, or is not suitable for, a background remote-control agent.
+
+## Communication Boundaries
+
+| Direction | Protocol | Initiator | Persistent | Notes |
+| --- | --- | --- | --- | --- |
+| Feishu -> server | HTTPS | Feishu Open Platform | No | Event callback, requires public HTTPS |
+| Local MCP -> server | HTTPS | Company computer MCP | No | Active requests inside a Codex CLI session |
+| Server -> Feishu | HTTPS | Server | No | Calls Feishu APIs to reply |
+| Server -> company computer | None | — | — | This channel does not exist |
+
+## Project Layout
 
 ```text
 harness-remote/
-  config/
-    server.example.json
-    mcp.example.json
-  docs/
-    DEVELOPMENT.md
+  config/           # Config templates
+  docs/             # Development docs
+  scripts/          # Deploy scripts
   src/
-    server/
-    mcp-server/
-    shared/
-  test/
+    server/         # Fastify server, Feishu events, Task API, SQLite store
+    mcp-server/     # MCP server with 5 tools
+    shared/         # Types, errors, auth helpers
+  test/             # 5 test suites
+  FEATURES.md       # Feature tracker
   README.md
 ```
-
-## What This Is Not
-
-- Not a remote desktop tool.
-- Not a remote shell.
-- Not a background agent on the company computer.
-- Not a tool for bypassing company security policies.
-- Not an automation system that directly executes local commands from Feishu messages.
-
-## MVP Acceptance Goals
-
-- A Feishu message from an allowlisted user creates a `pending` task on the server.
-- Local Codex CLI on the company computer can read the task through MCP.
-- The user can report the result through MCP after handling it locally.
-- The server replies to the original Feishu conversation.
-- The company computer runs no persistent background remote-control process.
-
-## Roadmap
-
-- **Documentation**: define boundaries, architecture, APIs, MCP tools, and deployment.
-- **MVP**: receive Feishu messages, fetch tasks through local MCP, and reply results to Feishu.
-- **Stabilization**: add SQLite storage, event deduplication, tests, deployment scripts, and error handling.
-- **Enhancement**: add task history, search, audit logs, and finer permission controls.
 
 ## FAQ
 
 ### Can this work with only MCP on the company computer and no agent?
-
-Yes. The design uses a local MCP server launched by Codex CLI. It does not install a background remote-agent.
+Yes. The design uses a local MCP server launched by Codex CLI. No background remote-agent.
 
 ### Will Feishu messages automatically execute commands on the company computer?
-
-No. Feishu messages only create tasks on the server. Local handling starts only after you open Codex CLI on the company computer and use the MCP tools.
+No. Feishu messages only create tasks on the server. Local handling starts only after you open Codex CLI and use MCP tools.
 
 ### Can the server actively control the company computer?
-
 No. The company computer exposes no ports, and the server has no connection channel into it.
 
 ### What happens if Codex CLI is not open?
-
 Tasks stay on the server as `pending` until you open Codex CLI locally and fetch them through MCP.
 
 ### Why not use a WebSocket agent?
-
-Because the constraint is to avoid a background remote-control process on the company computer. The MCP pull model gives up automation in exchange for a clearer local confirmation boundary.
-
-## Documentation
-
-- [Full Development Guide](docs/DEVELOPMENT.md)
-
-## Contributing
-
-This project is first optimized for a personal workflow, not a general team platform. Useful improvements include:
-
-- Clearer Feishu setup documentation.
-- Smoother local MCP usage.
-- More complete tests.
-- Clearer compliance boundary explanations.
+Because the constraint is to avoid a background remote-control process on the company computer. The MCP pull model trades automation for a clearer local confirmation boundary.
 
 ## License
 

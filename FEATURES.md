@@ -89,7 +89,7 @@
 
 ## Phase 14: Polish & Deploy
 - [x] Deploy script / systemd service
-- [ ] README update with working quick start
+- [x] README update with working quick start
 - [ ] Error logging with redaction
 - [ ] Data directory auto-creation
 - [ ] Git initial commit + push to GitHub
