@@ -81,7 +81,7 @@
 - [x] reply_feishu tool
 
 ## Phase 13: Tests
-- [ ] shared/http.test.ts - Bearer token validation
+- [x] shared/http.test.ts - Bearer token validation
 - [ ] server/tasks.store.test.ts - SQLite CRUD
 - [ ] server/feishu.events.test.ts - Event parsing, dedup
 - [ ] mcp-server/tools.test.ts - Tool contracts
