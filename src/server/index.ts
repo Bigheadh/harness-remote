@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import Fastify from "fastify";
 import { loadServerConfig } from "./config.js";
 import { createTaskStore } from "./tasks/store.js";
@@ -14,6 +16,9 @@ export async function startServer(): Promise<void> {
   const log = createLogger({ level: "info" });
 
   log.info({ port: config.port }, "Starting harness-remote server");
+
+  // Ensure data directory exists
+  mkdirSync(dirname(config.storagePath), { recursive: true });
 
   const store = createTaskStore(config.storagePath);
 

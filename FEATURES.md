@@ -91,5 +91,5 @@
 - [x] Deploy script / systemd service
 - [x] README update with working quick start
 - [x] Error logging with redaction
-- [ ] Data directory auto-creation
+- [x] Data directory auto-creation
 - [ ] Git initial commit + push to GitHub
