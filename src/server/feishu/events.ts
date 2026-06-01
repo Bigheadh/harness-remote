@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { Task } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
+import { createLogger } from "../../shared/logger.js";
+
+const log = createLogger({ level: "info" });
 
 export interface FeishuEventContext {
   eventId: string;
@@ -142,6 +145,7 @@ export function registerFeishuRoutes(
     if (body && typeof body === "object" && "challenge" in body) {
       const challenge = body["challenge"];
       if (typeof challenge === "string") {
+        log.info({}, "URL verification challenge received");
         return reply.send({ challenge });
       }
       return reply.code(400).send({ error: "Invalid challenge" });
@@ -150,6 +154,7 @@ export function registerFeishuRoutes(
     // Parse event
     const eventContext = parseFeishuEvent(body);
     if (!eventContext) {
+      log.debug({}, "Non-message event ignored");
       return reply.send({ ok: true });
     }
 
@@ -157,22 +162,26 @@ export function registerFeishuRoutes(
     const header = body?.["header"] as Record<string, unknown> | undefined;
     if (header?.["token"] && feishuConfig.verificationToken) {
       if (header["token"] !== feishuConfig.verificationToken) {
+        log.warn({ eventId: eventContext.eventId }, "Invalid verification token");
         return reply.code(401).send({ error: "Invalid verification token" });
       }
     }
 
     // Check event deduplication
     if (await store.isEventProcessed(eventContext.eventId)) {
+      log.debug({ eventId: eventContext.eventId }, "Duplicate event ignored");
       return reply.send({ ok: true });
     }
 
     // Check allowlist
     if (!feishuConfig.allowedUserIds.includes(eventContext.userId)) {
+      log.info({ userId: eventContext.userId }, "Non-allowed user ignored");
       return reply.send({ ok: true });
     }
 
     // Group chat: only create if bot mentioned
     if (eventContext.chatType === "group" && !eventContext.mentionedBot) {
+      log.debug({ chatId: eventContext.chatId }, "Group message without bot mention ignored");
       return reply.send({ ok: true });
     }
 
@@ -182,6 +191,15 @@ export function registerFeishuRoutes(
 
     // Mark event as processed
     await store.markEventProcessed(eventContext.eventId);
+
+    log.info(
+      {
+        taskId: task.id,
+        userId: eventContext.userId,
+        chatType: eventContext.chatType,
+      },
+      "Task created from Feishu event",
+    );
 
     return reply.code(201).send({ ok: true, taskId: task.id });
   });
