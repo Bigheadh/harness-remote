@@ -84,7 +84,7 @@
 - [x] shared/http.test.ts - Bearer token validation
 - [x] server/tasks.store.test.ts - SQLite CRUD
 - [x] server/feishu.events.test.ts - Event parsing, dedup
-- [ ] mcp-server/tools.test.ts - Tool contracts
+- [x] mcp-server/tools.test.ts - Tool contracts
 - [ ] Integration test: end-to-end flow
 
 ## Phase 14: Polish & Deploy
