@@ -1,0 +1,5 @@
+{
+  "serverBaseUrl": "https://example.com",
+  "personalToken": "replace-with-random-token",
+  "defaultUser": "me"
+}

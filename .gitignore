@@ -1,0 +1,8 @@
+node_modules/
+dist/
+coverage/
+data/
+config/server.json
+config/mcp.json
+*.log
+.DS_Store

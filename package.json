@@ -1,0 +1,25 @@
+{
+  "name": "harness-remote",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Feishu task inbox for local Codex CLI, powered by MCP.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "server": "node dist/server/index.js",
+    "mcp": "node dist/mcp-server/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^25.9.1",
+    "fastify": "^5.8.5",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8",
+    "zod": "^4.4.3"
+  }
+}
