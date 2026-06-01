@@ -92,4 +92,4 @@
 - [x] README update with working quick start
 - [x] Error logging with redaction
 - [x] Data directory auto-creation
-- [ ] Git initial commit + push to GitHub
+- [x] Git initial commit + push to GitHub
