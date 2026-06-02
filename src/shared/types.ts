@@ -12,6 +12,15 @@ export interface Attachment {
   feishuFileType: FeishuFileType;
 }
 
+export interface Device {
+  id: string;
+  name: string;
+  token: string;
+  capabilities?: string;
+  lastSeen?: string;
+  createdAt: string;
+}
+
 export interface Task {
   id: string;
   source: "feishu";
@@ -22,6 +31,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   attachments?: Attachment[];
+  assignedDeviceId?: string;
   createdAt: string;
   updatedAt: string;
   resultSummary?: string;

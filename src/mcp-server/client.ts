@@ -1,13 +1,14 @@
 import type { Task, TaskStatus } from "../shared/types.js";
 
 export interface TaskApiClient {
-  listTasks(status?: TaskStatus, limit?: number): Promise<Task[]>;
+  listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
   searchTasks(options: {
     q?: string;
     status?: TaskStatus;
     from?: string;
     to?: string;
     limit?: number;
+    deviceId?: string;
   }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
@@ -18,11 +19,13 @@ export interface TaskApiClient {
     details?: string,
   ): Promise<Task>;
   replyFeishu(taskId: string, message: string): Promise<void>;
+  registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }>;
 }
 
 export function createTaskApiClient(
   serverBaseUrl: string,
   personalToken: string,
+  deviceId?: string,
 ): TaskApiClient {
   const headers = {
     "Content-Type": "application/json",
@@ -30,10 +33,13 @@ export function createTaskApiClient(
   };
 
   return {
-    async listTasks(status?: TaskStatus, limit?: number): Promise<Task[]> {
+    async listTasks(status?: TaskStatus, limit?: number, filterDeviceId?: string): Promise<Task[]> {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       if (limit) params.set("limit", String(limit));
+      // Use the explicitly passed deviceId, or fall back to the configured one
+      const effectiveDeviceId = filterDeviceId ?? deviceId;
+      if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
 
       const url = `${serverBaseUrl}/api/tasks${params.toString() ? `?${params.toString()}` : ""}`;
       const response = await fetch(url, { headers });
@@ -55,6 +61,7 @@ export function createTaskApiClient(
       from?: string;
       to?: string;
       limit?: number;
+      deviceId?: string;
     }): Promise<Task[]> {
       const params = new URLSearchParams();
       if (options.q) params.set("q", options.q);
@@ -62,6 +69,8 @@ export function createTaskApiClient(
       if (options.from) params.set("from", options.from);
       if (options.to) params.set("to", options.to);
       if (options.limit) params.set("limit", String(options.limit));
+      const effectiveDeviceId = options.deviceId ?? deviceId;
+      if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
 
       const qs = params.toString();
       const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
@@ -158,6 +167,27 @@ export function createTaskApiClient(
           `Failed to reply to Feishu: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
+    },
+
+    async registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/devices`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ name, capabilities }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to register device: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { device: { id: string; token: string } };
+      return { id: data.device.id, token: data.device.token };
     },
   };
 }

@@ -121,6 +121,6 @@
 - [x] Task history search MCP tool (search_tasks)
 - [x] Task attachment support (file metadata on tasks)
 - [x] Web management dashboard (read-only task viewer)
-- [ ] Multi-device task assignment (device registry and routing)
+- [x] Multi-device task assignment (device registry and routing)
 - [ ] Audit logging (who did what when)
 - [ ] Finer permission control (per-user token and RBAC)

@@ -43,22 +43,24 @@ export function registerTaskRoutes(
 
   // GET /api/tasks - list tasks
   server.get("/api/tasks", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { status, limit } = req.query as {
+    const { status, limit, deviceId } = req.query as {
       status?: TaskStatus;
       limit?: number;
+      deviceId?: string;
     };
-    const tasks = await store.listTasks(status, limit);
+    const tasks = await store.listTasks(status, limit, deviceId);
     return reply.send({ tasks });
   });
 
   // GET /api/tasks/search - search task history
   server.get("/api/tasks/search", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { q, status, from, to, limit } = req.query as {
+    const { q, status, from, to, limit, deviceId } = req.query as {
       q?: string;
       status?: TaskStatus;
       from?: string;
       to?: string;
       limit?: number;
+      deviceId?: string;
     };
 
     if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
@@ -79,7 +81,7 @@ export function registerTaskRoutes(
       });
     }
 
-    const tasks = await store.searchTasks({ q, status, from, to, limit });
+    const tasks = await store.searchTasks({ q, status, from, to, limit, deviceId });
     return reply.send({ tasks });
   });
 
@@ -164,6 +166,57 @@ export function registerTaskRoutes(
         body.summary,
         body.details,
       );
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/assign - assign task to device
+  server.post<{
+    Params: { id: string };
+    Body: { deviceId: string };
+  }>("/api/tasks/:id/assign", async (req, reply) => {
+    const { id } = req.params;
+    const body = req.body as { deviceId?: string };
+
+    if (typeof body?.deviceId !== "string" || body.deviceId.trim() === "") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request body must include 'deviceId' (non-empty string)",
+        },
+      });
+    }
+
+    try {
+      const task = await store.assignTask(id, body.deviceId.trim());
+      log.info({ taskId: id, deviceId: body.deviceId }, "Task assigned to device");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/unassign - unassign task from device
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/unassign", async (req, reply) => {
+    const { id } = req.params;
+
+    try {
+      const task = await store.unassignTask(id);
+      log.info({ taskId: id }, "Task unassigned from device");
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {

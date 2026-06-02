@@ -10,7 +10,7 @@ export function registerMcpTools(
   server.registerTool(
     "list_tasks",
     {
-      description: "List tasks from the server. Returns pending tasks by default, sorted by priority (urgent first).",
+      description: "List tasks from the server. Returns pending tasks by default, sorted by priority (urgent first). If deviceId is configured, only returns tasks assigned to this device or unassigned tasks.",
       inputSchema: {
         status: z
           .enum(["pending", "picked", "running", "done", "failed"])
@@ -23,13 +23,17 @@ export function registerMcpTools(
           .max(100)
           .optional()
           .describe("Maximum number of tasks to return. Default: 20, max: 100"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Filter by assigned device ID. If not provided, uses the configured deviceId."),
       },
     },
     async (args) => {
-      const { status, limit } = args;
+      const { status, limit, deviceId } = args;
 
       try {
-        const tasks = await client.listTasks(status, limit);
+        const tasks = await client.listTasks(status, limit, deviceId);
         return {
           content: [
             {
@@ -83,13 +87,17 @@ export function registerMcpTools(
           .max(100)
           .optional()
           .describe("Maximum number of results. Default: 20, max: 100"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Filter by assigned device ID"),
       },
     },
     async (args) => {
-      const { q, status, from, to, limit } = args;
+      const { q, status, from, to, limit, deviceId } = args;
 
       try {
-        const tasks = await client.searchTasks({ q, status, from, to, limit });
+        const tasks = await client.searchTasks({ q, status, from, to, limit, deviceId });
         return {
           content: [
             {
@@ -260,6 +268,53 @@ export function registerMcpTools(
             {
               type: "text" as const,
               text: JSON.stringify({ ok: true }),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // register_device tool
+  server.registerTool(
+    "register_device",
+    {
+      description:
+        "Register this MCP server instance as a device. Returns a device ID and token. Use this to set up multi-device task routing.",
+      inputSchema: {
+        name: z
+          .string()
+          .describe("A human-readable name for this device (e.g., 'office-desktop', 'laptop-dev')"),
+        capabilities: z
+          .string()
+          .optional()
+          .describe("Optional comma-separated capabilities (e.g., 'frontend,react,node')"),
+      },
+    },
+    async (args) => {
+      const { name, capabilities } = args;
+
+      try {
+        const device = await client.registerDevice(name, capabilities);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                device,
+                message: `Device registered successfully. Save the token securely — it's needed for MCP config.`,
+              }, null, 2),
             },
           ],
         };

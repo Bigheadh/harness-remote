@@ -9,6 +9,7 @@ export interface SearchOptions {
   from?: string;
   to?: string;
   limit?: number;
+  deviceId?: string;
 }
 
 export interface TaskCounts {
@@ -22,7 +23,7 @@ export interface TaskCounts {
 
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
-  listTasks(status?: TaskStatus, limit?: number): Promise<Task[]>;
+  listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
   searchTasks(options: SearchOptions): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   updateTaskStatus(id: string, status: TaskStatus): Promise<Task>;
@@ -33,6 +34,8 @@ export interface TaskStore {
     details?: string,
   ): Promise<Task>;
   getTaskMessageId(id: string): Promise<string | undefined>;
+  assignTask(taskId: string, deviceId: string): Promise<Task>;
+  unassignTask(taskId: string): Promise<Task>;
   resetStaleTasks(timeoutMs?: number): Promise<number>;
   cleanupProcessedEvents(retentionDays?: number): Promise<number>;
   isEventProcessed(eventId: string): Promise<boolean>;
@@ -75,6 +78,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     status: row["status"] as TaskStatus,
     priority: (row["priority"] as TaskPriority) ?? "normal",
     attachments: parseAttachments(row["attachments"]),
+    assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
     resultSummary: (row["result_summary"] as string) ?? undefined,
@@ -123,6 +127,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add assigned_device_id column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN assigned_device_id TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -137,8 +148,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, attachments, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, attachments, assigned_device_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -150,6 +161,7 @@ export function createTaskStore(storagePath: string): TaskStore {
   const selectTasks = db.prepare(`
     SELECT * FROM tasks
     WHERE status = COALESCE(?, status)
+    AND (assigned_device_id IS NULL OR assigned_device_id = COALESCE(?, assigned_device_id))
     ORDER BY
       CASE priority
         WHEN 'urgent' THEN 0
@@ -167,6 +179,14 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   const updateTaskResult = db.prepare(`
     UPDATE tasks SET status = ?, result_summary = ?, result_details = ?, updated_at = ? WHERE id = ?
+  `);
+
+  const assignTaskStmt = db.prepare(`
+    UPDATE tasks SET assigned_device_id = ?, updated_at = ? WHERE id = ?
+  `);
+
+  const unassignTaskStmt = db.prepare(`
+    UPDATE tasks SET assigned_device_id = NULL, updated_at = ? WHERE id = ?
   `);
 
   const insertEvent = db.prepare(`
@@ -206,6 +226,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         status,
         priority,
         attachmentsJson,
+        task.assignedDeviceId ?? null,
         task.createdAt ?? now,
         task.updatedAt ?? now,
       );
@@ -214,9 +235,9 @@ export function createTaskStore(storagePath: string): TaskStore {
       return rowToTask(row);
     },
 
-    async listTasks(status?: TaskStatus, limit?: number): Promise<Task[]> {
+    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]> {
       const effectiveLimit = limit ?? 20;
-      const rows = selectTasks.all(status ?? null, effectiveLimit) as Array<
+      const rows = selectTasks.all(status ?? null, deviceId ?? null, effectiveLimit) as Array<
         Record<string, unknown>
       >;
       return rows.map(rowToTask);
@@ -245,6 +266,11 @@ export function createTaskStore(storagePath: string): TaskStore {
         conditions.push("(command_text LIKE ? OR result_summary LIKE ?)");
         const pattern = `%${options.q}%`;
         params.push(pattern, pattern);
+      }
+
+      if (options.deviceId) {
+        conditions.push("assigned_device_id = ?");
+        params.push(options.deviceId);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -320,6 +346,36 @@ export function createTaskStore(storagePath: string): TaskStore {
         | Record<string, unknown>
         | undefined;
       return row ? (row["feishu_message_id"] as string) : undefined;
+    },
+
+    async assignTask(taskId: string, deviceId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      Number(assignTaskStmt.run(deviceId, now, taskId));
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async unassignTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      Number(unassignTaskStmt.run(now, taskId));
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
     },
 
     async resetStaleTasks(timeoutMs: number = 30 * 60 * 1000): Promise<number> {

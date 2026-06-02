@@ -11,7 +11,7 @@ const configPath = process.argv.includes("--config")
 export async function startMcpServer(): Promise<void> {
   const config = loadMcpConfig(configPath);
 
-  const client = createTaskApiClient(config.serverBaseUrl, config.personalToken);
+  const client = createTaskApiClient(config.serverBaseUrl, config.personalToken, config.deviceId);
 
   const server = new McpServer({
     name: "harness-remote",

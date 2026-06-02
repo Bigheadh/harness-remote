@@ -8,6 +8,7 @@ export interface McpConfig {
   serverBaseUrl: string;
   personalToken: string;
   defaultUser: string;
+  deviceId?: string;
 }
 
 export function loadMcpConfig(configPath?: string): McpConfig {
@@ -24,9 +25,15 @@ export function loadMcpConfig(configPath?: string): McpConfig {
   const defaultUser =
     typeof obj["defaultUser"] === "string" ? obj["defaultUser"] : "me";
 
+  const deviceId =
+    typeof obj["deviceId"] === "string" && obj["deviceId"].trim() !== ""
+      ? (obj["deviceId"] as string).trim()
+      : undefined;
+
   return {
     serverBaseUrl,
     personalToken,
     defaultUser,
+    deviceId,
   };
 }
