@@ -287,11 +287,11 @@ export function registerMcpTools(
   );
 
   // register_device tool
+  // register_device tool
   server.registerTool(
     "register_device",
     {
-      description:
-        "Register this MCP server instance as a device. Returns a device ID and token. Use this to set up multi-device task routing.",
+      description: "Register this MCP server instance as a device. Returns a device ID and token. Use this to set up multi-device task routing.",
       inputSchema: {
         name: z
           .string()
@@ -315,6 +315,74 @@ export function registerMcpTools(
                 device,
                 message: `Device registered successfully. Save the token securely — it's needed for MCP config.`,
               }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // query_audit_log tool
+  server.registerTool(
+    "query_audit_log",
+    {
+      description:
+        "Query the audit log to see who did what and when. Returns audit entries sorted by time (newest first). Useful for tracking task lifecycle, user actions, and system events.",
+      inputSchema: {
+        action: z
+          .string()
+          .optional()
+          .describe("Filter by action type (e.g., 'task.created', 'task.status_changed', 'task.result_reported')"),
+        taskId: z
+          .string()
+          .optional()
+          .describe("Filter by task ID to see all audit entries for a specific task"),
+        actor: z
+          .string()
+          .optional()
+          .describe("Filter by actor (user ID, device ID, or 'system')"),
+        actorType: z
+          .enum(["feishu", "device", "api", "system"])
+          .optional()
+          .describe("Filter by actor type"),
+        from: z
+          .string()
+          .optional()
+          .describe("ISO 8601 date string — only return entries on or after this date"),
+        to: z
+          .string()
+          .optional()
+          .describe("ISO 8601 date string — only return entries on or before this date"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("Maximum number of results. Default: 50, max: 200"),
+      },
+    },
+    async (args) => {
+      const { action, taskId, actor, actorType, from, to, limit } = args;
+
+      try {
+        const entries = await client.queryAuditLog({ action, taskId, actor, actorType, from, to, limit });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ entries, count: entries.length }, null, 2),
             },
           ],
         };

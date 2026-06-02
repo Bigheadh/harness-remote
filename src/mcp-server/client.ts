@@ -1,4 +1,4 @@
-import type { Task, TaskStatus } from "../shared/types.js";
+import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
@@ -20,6 +20,7 @@ export interface TaskApiClient {
   ): Promise<Task>;
   replyFeishu(taskId: string, message: string): Promise<void>;
   registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }>;
+  queryAuditLog(options: AuditLogSearchOptions): Promise<AuditLogEntry[]>;
 }
 
 export function createTaskApiClient(
@@ -188,6 +189,31 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { device: { id: string; token: string } };
       return { id: data.device.id, token: data.device.token };
+    },
+
+    async queryAuditLog(options: AuditLogSearchOptions): Promise<AuditLogEntry[]> {
+      const params = new URLSearchParams();
+      if (options.action) params.set("action", options.action);
+      if (options.taskId) params.set("taskId", options.taskId);
+      if (options.actor) params.set("actor", options.actor);
+      if (options.actorType) params.set("actorType", options.actorType);
+      if (options.from) params.set("from", options.from);
+      if (options.to) params.set("to", options.to);
+      if (options.limit) params.set("limit", String(options.limit));
+
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/audit${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to query audit log: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { entries: AuditLogEntry[] };
+      return data.entries;
     },
   };
 }

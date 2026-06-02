@@ -38,6 +38,40 @@ export interface Task {
   resultDetails?: string;
 }
 
+export interface AuditLogEntry {
+  id: number;
+  action: string;
+  taskId?: string;
+  actor: string;
+  actorType: "feishu" | "device" | "api" | "system";
+  details?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export type AuditAction =
+  | "task.created"
+  | "task.status_changed"
+  | "task.result_reported"
+  | "task.assigned"
+  | "task.unassigned"
+  | "task.reset_stale"
+  | "event.received"
+  | "event.duplicate"
+  | "event.non_allowed_user"
+  | "feishu.reply_sent"
+  | "feishu.reply_failed"
+  | "cleanup.processed_events";
+
+export interface AuditLogSearchOptions {
+  action?: string;
+  taskId?: string;
+  actor?: string;
+  actorType?: AuditLogEntry["actorType"];
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 export interface ApiErrorBody {
   error: {
     code: string;

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { Task, TaskPriority, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
+import type { AuditLogStore } from "../audit/store.js";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger({ level: "info" });
@@ -226,6 +227,7 @@ export function registerFeishuRoutes(
   server: FastifyInstance,
   store: TaskStore,
   feishuConfig: FeishuConfig,
+  auditStore?: AuditLogStore,
 ): void {
   server.post("/feishu/events", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as Record<string, unknown>;
@@ -259,12 +261,28 @@ export function registerFeishuRoutes(
     // Check event deduplication
     if (await store.isEventProcessed(eventContext.eventId)) {
       log.debug({ eventId: eventContext.eventId }, "Duplicate event ignored");
+      if (auditStore) {
+        await auditStore.log({
+          action: "event.duplicate",
+          actor: eventContext.userId,
+          actorType: "feishu",
+          details: { eventId: eventContext.eventId },
+        });
+      }
       return reply.send({ ok: true });
     }
 
     // Check allowlist
     if (!feishuConfig.allowedUserIds.includes(eventContext.userId)) {
       log.info({ userId: eventContext.userId }, "Non-allowed user ignored");
+      if (auditStore) {
+        await auditStore.log({
+          action: "event.non_allowed_user",
+          actor: eventContext.userId,
+          actorType: "feishu",
+          details: { chatId: eventContext.chatId },
+        });
+      }
       return reply.send({ ok: true });
     }
 
@@ -290,6 +308,16 @@ export function registerFeishuRoutes(
       },
       "Task created from Feishu event",
     );
+
+    if (auditStore) {
+      await auditStore.log({
+        action: "task.created",
+        taskId: task.id,
+        actor: eventContext.userId,
+        actorType: "feishu",
+        details: { chatType: eventContext.chatType, priority: task.priority },
+      });
+    }
 
     return reply.code(201).send({ ok: true, taskId: task.id });
   });

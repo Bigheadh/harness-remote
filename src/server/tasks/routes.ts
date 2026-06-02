@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { TaskStore } from "./store.js";
 import type { TaskStatus } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
+import type { AuditLogStore } from "../audit/store.js";
 import { requireBearerToken } from "../../shared/http.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
@@ -13,6 +14,7 @@ export function registerTaskRoutes(
   store: TaskStore,
   personalToken: string,
   feishuClient?: FeishuReplyClient,
+  auditStore?: AuditLogStore,
 ): void {
   // Health endpoint with DB connectivity check
   server.get("/health", async (_req, reply) => {
@@ -122,6 +124,15 @@ export function registerTaskRoutes(
 
     try {
       const task = await store.updateTaskStatus(id, status);
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.status_changed",
+          taskId: id,
+          actor: "api",
+          actorType: "api",
+          details: { from: task.status, to: status },
+        });
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -166,6 +177,15 @@ export function registerTaskRoutes(
         body.summary,
         body.details,
       );
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.result_reported",
+          taskId: id,
+          actor: "api",
+          actorType: "api",
+          details: { success: body.success, summary: body.summary },
+        });
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -197,6 +217,15 @@ export function registerTaskRoutes(
     try {
       const task = await store.assignTask(id, body.deviceId.trim());
       log.info({ taskId: id, deviceId: body.deviceId }, "Task assigned to device");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.assigned",
+          taskId: id,
+          actor: body.deviceId.trim(),
+          actorType: "device",
+          details: { deviceId: body.deviceId.trim() },
+        });
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -217,6 +246,14 @@ export function registerTaskRoutes(
     try {
       const task = await store.unassignTask(id);
       log.info({ taskId: id }, "Task unassigned from device");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.unassigned",
+          taskId: id,
+          actor: "api",
+          actorType: "api",
+        });
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -235,6 +272,14 @@ export function registerTaskRoutes(
 
     const resetCount = await store.resetStaleTasks(timeoutMs);
     log.info({ resetCount, timeoutMs }, "Stale tasks reset");
+    if (auditStore && resetCount > 0) {
+      await auditStore.log({
+        action: "task.reset_stale",
+        actor: "system",
+        actorType: "system",
+        details: { resetCount, timeoutMs },
+      });
+    }
     return reply.send({ ok: true, resetCount });
   });
 
@@ -245,6 +290,14 @@ export function registerTaskRoutes(
 
     const deletedCount = await store.cleanupProcessedEvents(retentionDays);
     log.info({ deletedCount, retentionDays }, "Processed events cleaned up");
+    if (auditStore && deletedCount > 0) {
+      await auditStore.log({
+        action: "cleanup.processed_events",
+        actor: "system",
+        actorType: "system",
+        details: { deletedCount, retentionDays },
+      });
+    }
     return reply.send({ ok: true, deletedCount });
   });
 
@@ -284,10 +337,27 @@ export function registerTaskRoutes(
 
       await feishuClient.replyToMessage({ messageId, text: body.message });
       log.info({ taskId: id }, "Reply sent to Feishu");
+      if (auditStore) {
+        await auditStore.log({
+          action: "feishu.reply_sent",
+          taskId: id,
+          actor: "api",
+          actorType: "api",
+        });
+      }
       return reply.send({ ok: true });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       log.error({ taskId: id, err: message }, "Failed to reply to Feishu");
+      if (auditStore) {
+        await auditStore.log({
+          action: "feishu.reply_failed",
+          taskId: id,
+          actor: "api",
+          actorType: "api",
+          details: { error: message },
+        });
+      }
       return reply.code(502).send({
         error: { code: "feishu_reply_failed", message },
       });

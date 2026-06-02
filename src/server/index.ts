@@ -9,6 +9,8 @@ import { createFeishuReplyClient } from "./feishu/client.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { createDeviceStore } from "./devices/store.js";
 import { registerDeviceRoutes } from "./devices/routes.js";
+import { createAuditLogStore } from "./audit/store.js";
+import { registerAuditRoutes } from "./audit/routes.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -29,6 +31,10 @@ export async function startServer(): Promise<void> {
   // Device registry store (uses separate SQLite file in same directory)
   const deviceStoragePath = config.storagePath.replace(/\.sqlite$/, ".devices.sqlite");
   const deviceStore = createDeviceStore(deviceStoragePath);
+
+  // Audit log store (uses separate SQLite file in same directory)
+  const auditStoragePath = config.storagePath.replace(/\.sqlite$/, ".audit.sqlite");
+  const auditStore = createAuditLogStore(auditStoragePath);
 
   const server = Fastify({
     logger: false, // We use our own redacting logger
@@ -55,10 +61,11 @@ export async function startServer(): Promise<void> {
 
   // Register routes
   const feishuClient = createFeishuReplyClient(config.feishu);
-  registerTaskRoutes(server, store, config.personalToken, feishuClient);
-  registerFeishuRoutes(server, store, config.feishu);
+  registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore);
+  registerFeishuRoutes(server, store, config.feishu, auditStore);
   registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl);
   registerDeviceRoutes(server, deviceStore, config.personalToken);
+  registerAuditRoutes(server, auditStore, config.personalToken);
 
   // Start listening
   try {
