@@ -10,7 +10,7 @@ export function registerMcpTools(
   server.registerTool(
     "list_tasks",
     {
-      description: "List tasks from the server. Returns pending tasks by default.",
+      description: "List tasks from the server. Returns pending tasks by default, sorted by priority (urgent first).",
       inputSchema: {
         status: z
           .enum(["pending", "picked", "running", "done", "failed"])

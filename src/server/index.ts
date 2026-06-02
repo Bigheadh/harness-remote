@@ -27,6 +27,25 @@ export async function startServer(): Promise<void> {
     logger: false, // We use our own redacting logger
   });
 
+  // Request logging middleware
+  server.addHook("onRequest", async (req) => {
+    (req as FastifyRequest & { startTime: number }).startTime = Date.now();
+  });
+
+  server.addHook("onResponse", async (req, reply) => {
+    const startTime = (req as FastifyRequest & { startTime: number }).startTime;
+    const duration = startTime ? Date.now() - startTime : 0;
+    log.info(
+      {
+        method: req.method,
+        url: req.url,
+        statusCode: reply.statusCode,
+        duration,
+      },
+      "Request completed",
+    );
+  });
+
   // Register routes
   const feishuClient = createFeishuReplyClient(config.feishu);
   registerTaskRoutes(server, store, config.personalToken, feishuClient);
