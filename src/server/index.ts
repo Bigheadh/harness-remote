@@ -26,6 +26,7 @@ import { registerStatsRoutes } from "./stats/routes.js";
 import { registerSseRoutes } from "./sse/routes.js";
 import { registerMetricsRoutes } from "./metrics/routes.js";
 import { recordHttpRequest } from "./metrics/collector.js";
+import compress from "@fastify/compress";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -65,6 +66,12 @@ export async function startServer(): Promise<void> {
 
   const server = Fastify({
     logger: false, // We use our own redacting logger
+  });
+
+  // Enable response compression (gzip/deflate) for all routes
+  await server.register(compress, {
+    threshold: 1024, // Only compress responses larger than 1KB
+    encodings: ["gzip", "deflate"],
   });
 
   // Request logging middleware

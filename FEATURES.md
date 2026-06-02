@@ -157,5 +157,5 @@
 - [x] Task notes — internal annotations not shared to requester (GET/POST /api/tasks/:id/notes)
 - [x] Task user search — find tasks by Feishu user ID (GET /api/tasks/user/:userId)
 - [x] Feishu card message format — rich card notifications instead of plain text
-- [ ] API response compression (gzip/deflate via @fastify/compress)
+- [x] API response compression (gzip/deflate via @fastify/compress)
 - [ ] Task dependency graph — full dependency tree endpoint (GET /api/tasks/:id/dependency-graph)
