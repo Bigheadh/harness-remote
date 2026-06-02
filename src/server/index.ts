@@ -15,6 +15,8 @@ import { createUserStore } from "./auth/store.js";
 import { registerUserRoutes } from "./auth/routes.js";
 import { createWebhookStore } from "./webhooks/store.js";
 import { registerWebhookRoutes } from "./webhooks/routes.js";
+import { RateLimiter } from "./ratelimit/limiter.js";
+import { registerRateLimitHook } from "./ratelimit/middleware.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -80,6 +82,14 @@ export async function startServer(): Promise<void> {
   registerAuditRoutes(server, auditStore, config.personalToken, userStore);
   registerUserRoutes(server, userStore, config.personalToken);
   registerWebhookRoutes(server, webhookStore, config.personalToken, userStore);
+
+  // Rate limiting — registered AFTER routes (so auth hook runs first)
+  const rateLimiter = new RateLimiter({
+    maxRequests: config.rateLimit?.maxRequests ?? 60,
+    windowMs: config.rateLimit?.windowMs ?? 60_000,
+    overrides: config.rateLimit?.overrides,
+  });
+  registerRateLimitHook(server, rateLimiter);
 
   // Start listening
   try {

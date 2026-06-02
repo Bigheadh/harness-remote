@@ -18,6 +18,15 @@ export interface ServerConfig {
   };
   /** Optional webhook delivery timeout in ms (default: 10000) */
   webhookTimeoutMs?: number;
+  /** Optional rate limiting config */
+  rateLimit?: {
+    /** Maximum requests per window per user/device. Default: 60 */
+    maxRequests?: number;
+    /** Window duration in ms. Default: 60000 (1 minute) */
+    windowMs?: number;
+    /** Per-key overrides: { "user:xxx": { maxRequests: 100 } } */
+    overrides?: Record<string, { maxRequests: number; windowMs?: number }>;
+  };
 }
 
 export function loadServerConfig(configPath?: string): ServerConfig {
@@ -66,6 +75,22 @@ export function loadServerConfig(configPath?: string): ServerConfig {
   }
   const allowedUserIds = feishu["allowedUserIds"] as string[];
 
+  // Parse optional rate limit config
+  let rateLimit: ServerConfig["rateLimit"];
+  if (obj["rateLimit"] && typeof obj["rateLimit"] === "object") {
+    const rl = obj["rateLimit"] as Record<string, unknown>;
+    rateLimit = {};
+    if (typeof rl["maxRequests"] === "number" && rl["maxRequests"] > 0) {
+      rateLimit.maxRequests = rl["maxRequests"] as number;
+    }
+    if (typeof rl["windowMs"] === "number" && rl["windowMs"] > 0) {
+      rateLimit.windowMs = rl["windowMs"] as number;
+    }
+    if (rl["overrides"] && typeof rl["overrides"] === "object") {
+      rateLimit.overrides = rl["overrides"] as Record<string, { maxRequests: number; windowMs?: number }>;
+    }
+  }
+
   return {
     port,
     publicBaseUrl,
@@ -78,5 +103,6 @@ export function loadServerConfig(configPath?: string): ServerConfig {
       encryptKey,
       allowedUserIds,
     },
+    ...(rateLimit ? { rateLimit } : {}),
   };
 }

@@ -5,6 +5,7 @@ export type ErrorCode =
   | "invalid_status"
   | "invalid_request"
   | "feishu_reply_failed"
+  | "rate_limited"
   | "internal_error";
 
 export class AppError extends Error {

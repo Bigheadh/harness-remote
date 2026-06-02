@@ -998,7 +998,9 @@ export function registerTaskRoutes(
                 ? 409
                 : error.code === "invalid_request"
                   ? 400
-                  : 500;
+                  : error.code === "rate_limited"
+                    ? 429
+                    : 500;
       return reply.code(statusCode).send({
         error: { code: error.code, message: error.message },
       });
