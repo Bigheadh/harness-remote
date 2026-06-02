@@ -33,6 +33,8 @@ export interface Task {
   tags?: string[];
   attachments?: Attachment[];
   assignedDeviceId?: string;
+  dueDate?: string;
+  reminderAt?: string;
   createdAt: string;
   updatedAt: string;
   resultSummary?: string;

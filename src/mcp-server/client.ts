@@ -25,6 +25,9 @@ export interface TaskApiClient {
   addTags(taskId: string, tags: string[]): Promise<Task>;
   removeTag(taskId: string, tag: string): Promise<Task>;
   listAllTags(): Promise<string[]>;
+  setDueDate(taskId: string, dueDate: string | null): Promise<Task>;
+  setReminder(taskId: string, reminderAt: string | null): Promise<Task>;
+  listOverdueTasks(): Promise<Task[]>;
 }
 
 export function createTaskApiClient(
@@ -280,6 +283,65 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { tags: string[] };
       return data.tags;
+    },
+
+    async setDueDate(taskId: string, dueDate: string | null): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/due`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ dueDate }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set due date: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async setReminder(taskId: string, reminderAt: string | null): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/reminder`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ reminderAt }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set reminder: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async listOverdueTasks(): Promise<Task[]> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/overdue`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list overdue tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { tasks: Task[] };
+      return data.tasks;
     },
   };
 }

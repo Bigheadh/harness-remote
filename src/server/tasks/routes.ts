@@ -129,6 +129,23 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
+  // GET /api/tasks/overdue - list overdue tasks (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get("/api/tasks/overdue", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const tasks = await store.listOverdueTasks();
+    return reply.send({ tasks, count: tasks.length });
+  });
+
   // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };
@@ -455,6 +472,106 @@ export function registerTaskRoutes(
           details: { tag },
         });
       }
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/due - set or clear due date (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { dueDate: string | null };
+  }>("/api/tasks/:id/due", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { dueDate?: string | null };
+
+    if (body?.dueDate !== null && body?.dueDate !== undefined && typeof body.dueDate !== "string") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "'dueDate' must be an ISO 8601 date string or null to clear",
+        },
+      });
+    }
+
+    if (body?.dueDate && isNaN(Date.parse(body.dueDate))) {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Invalid date format. Use ISO 8601 (e.g., '2026-06-15' or '2026-06-15T14:00:00Z')",
+        },
+      });
+    }
+
+    try {
+      const task = await store.setTaskDueDate(id, body?.dueDate ?? null);
+      log.info({ taskId: id, dueDate: body?.dueDate ?? null }, "Task due date updated");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/reminder - set or clear reminder (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { reminderAt: string | null };
+  }>("/api/tasks/:id/reminder", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { reminderAt?: string | null };
+
+    if (body?.reminderAt !== null && body?.reminderAt !== undefined && typeof body.reminderAt !== "string") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "'reminderAt' must be an ISO 8601 date string or null to clear",
+        },
+      });
+    }
+
+    if (body?.reminderAt && isNaN(Date.parse(body.reminderAt))) {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Invalid date format. Use ISO 8601 (e.g., '2026-06-15T09:00:00Z')",
+        },
+      });
+    }
+
+    try {
+      const task = await store.setTaskReminder(id, body?.reminderAt ?? null);
+      log.info({ taskId: id, reminderAt: body?.reminderAt ?? null }, "Task reminder updated");
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {

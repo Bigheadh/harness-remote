@@ -162,6 +162,59 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return ["bug", "feature", "urgent"];
     },
+
+    async setDueDate(taskId: string, dueDate: string | null): Promise<Task> {
+      calls.push({ method: "setDueDate", args: [taskId, dueDate] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_due",
+        feishuChatId: "oc_due",
+        feishuUserId: "ou_due",
+        commandText: "截止日期任务",
+        status: "pending",
+        dueDate: dueDate ?? undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async setReminder(taskId: string, reminderAt: string | null): Promise<Task> {
+      calls.push({ method: "setReminder", args: [taskId, reminderAt] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_remind",
+        feishuChatId: "oc_remind",
+        feishuUserId: "ou_remind",
+        commandText: "提醒任务",
+        status: "pending",
+        reminderAt: reminderAt ?? undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async listOverdueTasks(): Promise<Task[]> {
+      calls.push({ method: "listOverdueTasks", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_overdue_001",
+          source: "feishu",
+          feishuMessageId: "om_overdue",
+          feishuChatId: "oc_overdue",
+          feishuUserId: "ou_overdue",
+          commandText: "逾期任务",
+          status: "pending",
+          dueDate: "2026-05-01T00:00:00.000Z",
+          createdAt: "2026-04-01T12:00:00.000Z",
+          updatedAt: "2026-04-01T12:00:00.000Z",
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -217,8 +270,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 9 tools", () => {
-      expect(mockServer.registrations).toHaveLength(9);
+    it("registers all 12 tools", () => {
+      expect(mockServer.registrations).toHaveLength(12);
     });
 
     it("registers list_tasks with correct description", () => {

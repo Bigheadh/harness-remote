@@ -45,6 +45,23 @@ function stripTagMarkers(text: string): string {
   return text.replace(/#tag:\S+/gi, "").replace(/\s+/g, " ").trim();
 }
 
+/** Parse due date from message text. Looks for #due:YYYY-MM-DD or #due:YYYY-MM-DDTHH:mm */
+function parseDueDate(text: string): string | undefined {
+  const match = text.match(/#due:(\S+)/i);
+  if (match) {
+    const dateStr = match[1];
+    if (!isNaN(Date.parse(dateStr))) {
+      return dateStr;
+    }
+  }
+  return undefined;
+}
+
+/** Strip due date markers from text */
+function stripDueDateMarkers(text: string): string {
+  return text.replace(/#due:\S+/gi, "").replace(/\s+/g, " ").trim();
+}
+
 export interface FeishuEventContext {
   eventId: string;
   messageId: string;
@@ -226,8 +243,10 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
   const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const priority = parsePriority(event.text);
   const tags = parseTagsFromText(event.text);
+  const dueDate = parseDueDate(event.text);
   let cleanText = stripPriorityMarkers(event.text);
   cleanText = stripTagMarkers(cleanText);
+  cleanText = stripDueDateMarkers(cleanText);
 
   return {
     id: taskId,
@@ -240,6 +259,7 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
     priority,
     tags: tags.length > 0 ? tags : undefined,
     attachments: event.attachments.length > 0 ? event.attachments : undefined,
+    dueDate,
     createdAt: now,
     updatedAt: now,
   };

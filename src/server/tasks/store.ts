@@ -46,6 +46,9 @@ export interface TaskStore {
   addTags(taskId: string, tags: string[]): Promise<Task>;
   removeTag(taskId: string, tag: string): Promise<Task>;
   listAllTags(): Promise<string[]>;
+  setTaskDueDate(taskId: string, dueDate: string | null): Promise<Task>;
+  setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task>;
+  listOverdueTasks(): Promise<Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -95,6 +98,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     tags: parseTags(row["tags"]),
     attachments: parseAttachments(row["attachments"]),
     assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
+    dueDate: (row["due_date"] as string) ?? undefined,
+    reminderAt: (row["reminder_at"] as string) ?? undefined,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
     resultSummary: (row["result_summary"] as string) ?? undefined,
@@ -158,6 +163,20 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add due_date column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN due_date TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Add reminder_at column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN reminder_at TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -172,8 +191,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -255,6 +274,8 @@ export function createTaskStore(storagePath: string): TaskStore {
         tagsJson,
         attachmentsJson,
         task.assignedDeviceId ?? null,
+        task.dueDate ?? null,
+        task.reminderAt ?? null,
         task.createdAt ?? now,
         task.updatedAt ?? now,
       );
@@ -530,6 +551,66 @@ export function createTaskStore(storagePath: string): TaskStore {
         }
       }
       return [...tagSet].sort();
+    },
+
+    async setTaskDueDate(taskId: string, dueDate: string | null): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      // Validate date format if provided
+      if (dueDate && isNaN(Date.parse(dueDate))) {
+        throw new Error(`Invalid date format: ${dueDate}. Use ISO 8601.`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET due_date = ?, updated_at = ? WHERE id = ?`).run(
+        dueDate,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      // Validate date format if provided
+      if (reminderAt && isNaN(Date.parse(reminderAt))) {
+        throw new Error(`Invalid date format: ${reminderAt}. Use ISO 8601.`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET reminder_at = ?, updated_at = ? WHERE id = ?`).run(
+        reminderAt,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async listOverdueTasks(): Promise<Task[]> {
+      const now = new Date().toISOString();
+      const rows = db.prepare(`
+        SELECT * FROM tasks
+        WHERE due_date IS NOT NULL
+        AND due_date < ?
+        AND status IN ('pending', 'picked', 'running')
+        ORDER BY due_date ASC
+      `).all(now) as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
   };
 }

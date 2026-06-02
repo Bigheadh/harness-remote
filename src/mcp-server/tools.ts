@@ -405,6 +405,140 @@ export function registerMcpTools(
     },
   );
 
+  // set_task_due_date tool
+  server.registerTool(
+    "set_task_due_date",
+    {
+      description:
+        "Set or clear the due date for a task. Pass a valid ISO 8601 date string to set, or null to clear. Tasks with due dates that are past their deadline appear in overdue queries.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set the due date for"),
+        dueDate: z
+          .string()
+          .nullable()
+          .describe("ISO 8601 date string (e.g., '2026-06-15' or '2026-06-15T14:00:00Z') or null to clear the due date"),
+      },
+    },
+    async (args) => {
+      const { taskId, dueDate } = args;
+
+      try {
+        const task = await client.setDueDate(taskId, dueDate);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: dueDate
+                  ? `Due date set to ${dueDate}`
+                  : "Due date cleared",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // set_task_reminder tool
+  server.registerTool(
+    "set_task_reminder",
+    {
+      description:
+        "Set or clear a reminder time for a task. Pass a valid ISO 8601 datetime string to set, or null to clear. Reminders can be used to notify when a task needs attention.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set the reminder for"),
+        reminderAt: z
+          .string()
+          .nullable()
+          .describe("ISO 8601 datetime string (e.g., '2026-06-15T09:00:00Z') or null to clear the reminder"),
+      },
+    },
+    async (args) => {
+      const { taskId, reminderAt } = args;
+
+      try {
+        const task = await client.setReminder(taskId, reminderAt);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: reminderAt
+                  ? `Reminder set to ${reminderAt}`
+                  : "Reminder cleared",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_overdue_tasks tool
+  server.registerTool(
+    "list_overdue_tasks",
+    {
+      description:
+        "List all tasks that are past their due date and still active (pending, picked, or running). Returns tasks sorted by due date (earliest overdue first). Use this to check for deadline violations.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const tasks = await client.listOverdueTasks();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                tasks,
+                count: tasks.length,
+                message: tasks.length === 0
+                  ? "No overdue tasks"
+                  : `${tasks.length} task(s) overdue`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // manage_task_tags tool
   server.registerTool(
     "manage_task_tags",
