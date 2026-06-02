@@ -207,3 +207,66 @@ export interface TaskTemplate {
   createdAt: string;
   updatedAt: string;
 }
+
+/** SLA policy — defines resolution time targets per priority or tag */
+export interface SlaPolicy {
+  id: string;
+  /** Human-readable name for this SLA policy */
+  name: string;
+  description?: string;
+  /** Target resolution time in minutes */
+  targetMinutes: number;
+  /** Warning threshold as percentage of target (e.g., 80 = warn at 80% of target time). Default: 80 */
+  warningThresholdPercent: number;
+  /** Optional: match tasks with these priorities. If empty, applies to all priorities */
+  matchPriorities?: TaskPriority[];
+  /** Optional: match tasks with these tags (all specified tags must match) */
+  matchTags?: string[];
+  /** Whether this policy is active */
+  enabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** SLA breach severity */
+export type SlaBreachType = "warning" | "breach";
+
+/** SLA status for a task */
+export type SlaStatus = "no_sla" | "on_track" | "warning" | "breached";
+
+/** An SLA breach log entry — records when a task breached its SLA policy */
+export interface SlaBreachLog {
+  id: number;
+  taskId: string;
+  policyId: string;
+  policyName: string;
+  breachType: SlaBreachType;
+  /** Target resolution time in minutes from the matched policy */
+  targetMinutes: number;
+  /** Actual elapsed minutes from task creation to detection */
+  actualMinutes: number;
+  detectedAt: string;
+  /** Set when the breach was resolved (task completed or SLA extended) */
+  resolvedAt?: string;
+}
+
+/** SLA compliance summary */
+export interface SlaSummary {
+  totalTasksTracked: number;
+  onTrack: number;
+  warning: number;
+  breached: number;
+  /** Average resolution time in minutes for completed tasks */
+  avgResolutionMinutes?: number;
+  /** Policy-level breakdown */
+  policyStats: Array<{
+    policyId: string;
+    policyName: string;
+    targetMinutes: number;
+    tasksTracked: number;
+    onTrack: number;
+    warning: number;
+    breached: number;
+  }>;
+}

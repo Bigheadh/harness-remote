@@ -139,4 +139,4 @@
 - [x] Task dependencies (prerequisite chains: task B waits for task A)
 - [x] API key rotation with grace period (auto-expire old tokens after rotation)
 - [x] Export/import tasks (JSON backup and restore across instances)
-- [ ] SLA monitoring and alerts (track resolution time, alert on breaches)
+- [x] SLA monitoring and alerts (track resolution time, alert on breaches)

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
 import type { TaskComment, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
+import type { SlaPolicy, SlaBreachLog, SlaBreachType, SlaStatus, SlaSummary } from "../../shared/types.js";
 
 /** Full export payload for backup/restore across instances */
 export interface TaskExportPayload {
@@ -90,6 +91,16 @@ export interface TaskStore {
   // Export/Import methods
   exportAll(): Promise<TaskExportPayload>;
   importAll(data: TaskExportPayload, mode: "skip" | "overwrite"): Promise<{ imported: number; skipped: number; errors: string[] }>;
+  // SLA methods
+  createSlaPolicy(policy: Omit<SlaPolicy, "id" | "createdAt" | "updatedAt">): Promise<SlaPolicy>;
+  listSlaPolicies(): Promise<SlaPolicy[]>;
+  getSlaPolicy(id: string): Promise<SlaPolicy | undefined>;
+  updateSlaPolicy(id: string, updates: Partial<Pick<SlaPolicy, "name" | "description" | "targetMinutes" | "warningThresholdPercent" | "matchPriorities" | "matchTags" | "enabled">>): Promise<SlaPolicy>;
+  deleteSlaPolicy(id: string): Promise<boolean>;
+  getSlaStatusForTask(taskId: string): Promise<{ status: SlaStatus; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
+  listSlaBreaches(): Promise<SlaBreachLog[]>;
+  getSlaSummary(): Promise<SlaSummary>;
+  checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -181,6 +192,47 @@ function rowToScheduledTask(row: Record<string, unknown>): ScheduledTask {
     createdBy: row["created_by"] as string,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
+  };
+}
+
+function parsePriorities(raw: unknown): TaskPriority[] | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed as TaskPriority[];
+  } catch {
+    return undefined;
+  }
+}
+
+function rowToSlaPolicy(row: Record<string, unknown>): SlaPolicy {
+  return {
+    id: row["id"] as string,
+    name: row["name"] as string,
+    description: (row["description"] as string) ?? undefined,
+    targetMinutes: row["target_minutes"] as number,
+    warningThresholdPercent: row["warning_threshold_percent"] as number,
+    matchPriorities: parsePriorities(row["match_priorities"]),
+    matchTags: parseTags(row["match_tags"]),
+    enabled: Number(row["enabled"]) === 1,
+    createdBy: row["created_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
+  };
+}
+
+function rowToSlaBreachLog(row: Record<string, unknown>): SlaBreachLog {
+  return {
+    id: row["id"] as number,
+    taskId: row["task_id"] as string,
+    policyId: row["policy_id"] as string,
+    policyName: row["policy_name"] as string,
+    breachType: row["breach_type"] as SlaBreachType,
+    targetMinutes: row["target_minutes"] as number,
+    actualMinutes: row["actual_minutes"] as number,
+    detectedAt: row["detected_at"] as string,
+    resolvedAt: (row["resolved_at"] as string) ?? undefined,
   };
 }
 
@@ -341,10 +393,17 @@ export function createTaskStore(storagePath: string): TaskStore {
     )
   `);
 
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on
-      ON task_dependencies(depends_on_task_id)
-  `);
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on\n      ON task_dependencies(depends_on_task_id)\n  `);
+
+  // SLA policies table
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS sla_policies (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      description TEXT,\n      target_minutes INTEGER NOT NULL,\n      warning_threshold_percent INTEGER NOT NULL DEFAULT 80,\n      match_priorities TEXT,\n      match_tags TEXT,\n      enabled INTEGER NOT NULL DEFAULT 1,\n      created_by TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
+
+  // SLA breach log table
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS sla_breach_log (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      task_id TEXT NOT NULL,\n      policy_id TEXT NOT NULL,\n      policy_name TEXT NOT NULL,\n      breach_type TEXT NOT NULL,\n      target_minutes INTEGER NOT NULL,\n      actual_minutes REAL NOT NULL,\n      detected_at TEXT NOT NULL,\n      resolved_at TEXT,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,\n      FOREIGN KEY (policy_id) REFERENCES sla_policies(id) ON DELETE CASCADE\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_sla_breach_log_task_id\n      ON sla_breach_log(task_id)\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_sla_breach_log_policy_id\n      ON sla_breach_log(policy_id)\n  `);
 
   // Prepare statements
   const insertTask = db.prepare(`
@@ -1414,6 +1473,283 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       return { imported, skipped, errors };
+    },
+
+    // ── SLA Methods ──────────────────────────────────────────────
+
+    async createSlaPolicy(policy: Omit<SlaPolicy, "id" | "createdAt" | "updatedAt">): Promise<SlaPolicy> {
+      const id = `sla_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      const prioritiesJson = policy.matchPriorities && policy.matchPriorities.length > 0
+        ? JSON.stringify(policy.matchPriorities)
+        : null;
+      const tagsJson = policy.matchTags && policy.matchTags.length > 0
+        ? JSON.stringify(policy.matchTags)
+        : null;
+
+      db.prepare(`\n        INSERT INTO sla_policies (id, name, description, target_minutes, warning_threshold_percent, match_priorities, match_tags, enabled, created_by, created_at, updated_at)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n      `).run(
+        id,
+        policy.name,
+        policy.description ?? null,
+        policy.targetMinutes,
+        policy.warningThresholdPercent,
+        prioritiesJson,
+        tagsJson,
+        policy.enabled ? 1 : 0,
+        policy.createdBy,
+        now,
+        now,
+      );
+
+      const row = db.prepare(`SELECT * FROM sla_policies WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToSlaPolicy(row);
+    },
+
+    async listSlaPolicies(): Promise<SlaPolicy[]> {
+      const rows = db.prepare(`SELECT * FROM sla_policies ORDER BY created_at DESC`).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToSlaPolicy);
+    },
+
+    async getSlaPolicy(id: string): Promise<SlaPolicy | undefined> {
+      const row = db.prepare(`SELECT * FROM sla_policies WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      return row ? rowToSlaPolicy(row) : undefined;
+    },
+
+    async updateSlaPolicy(
+      id: string,
+      updates: Partial<Pick<SlaPolicy, "name" | "description" | "targetMinutes" | "warningThresholdPercent" | "matchPriorities" | "matchTags" | "enabled">>,
+    ): Promise<SlaPolicy> {
+      const existing = db.prepare(`SELECT * FROM sla_policies WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      if (!existing) {
+        throw new Error(`SLA policy not found: ${id}`);
+      }
+
+      const now = new Date().toISOString();
+      const setClauses: string[] = [];
+      const params: (string | number | null)[] = [];
+
+      if (updates.name !== undefined) { setClauses.push("name = ?"); params.push(updates.name); }
+      if (updates.description !== undefined) { setClauses.push("description = ?"); params.push(updates.description ?? null); }
+      if (updates.targetMinutes !== undefined) { setClauses.push("target_minutes = ?"); params.push(updates.targetMinutes); }
+      if (updates.warningThresholdPercent !== undefined) { setClauses.push("warning_threshold_percent = ?"); params.push(updates.warningThresholdPercent); }
+      if (updates.matchPriorities !== undefined) {
+        setClauses.push("match_priorities = ?");
+        params.push(updates.matchPriorities && updates.matchPriorities.length > 0 ? JSON.stringify(updates.matchPriorities) : null);
+      }
+      if (updates.matchTags !== undefined) {
+        setClauses.push("match_tags = ?");
+        params.push(updates.matchTags && updates.matchTags.length > 0 ? JSON.stringify(updates.matchTags) : null);
+      }
+      if (updates.enabled !== undefined) { setClauses.push("enabled = ?"); params.push(updates.enabled ? 1 : 0); }
+
+      if (setClauses.length === 0) {
+        return rowToSlaPolicy(existing);
+      }
+
+      setClauses.push("updated_at = ?");
+      params.push(now);
+      params.push(id);
+
+      db.prepare(`UPDATE sla_policies SET ${setClauses.join(", ")} WHERE id = ?`).run(...params);
+
+      const row = db.prepare(`SELECT * FROM sla_policies WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToSlaPolicy(row);
+    },
+
+    async deleteSlaPolicy(id: string): Promise<boolean> {
+      // Delete associated breach logs first
+      db.prepare(`DELETE FROM sla_breach_log WHERE policy_id = ?`).run(id);
+      const result = db.prepare(`DELETE FROM sla_policies WHERE id = ?`).run(id);
+      return Number(result.changes) > 0;
+    },
+
+    async getSlaStatusForTask(taskId: string): Promise<{ status: SlaStatus; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {
+      const task = await this.getTask(taskId);
+      if (!task) {
+        return { status: "no_sla", elapsedMinutes: 0 };
+      }
+
+      const elapsedMinutes = (Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60);
+
+      // Find matching SLA policy
+      const policies = await this.listSlaPolicies();
+      const matchingPolicy = policies.find((p) => {
+        if (!p.enabled) return false;
+        // Check priority match
+        if (p.matchPriorities && p.matchPriorities.length > 0) {
+          if (!p.matchPriorities.includes(task.priority)) return false;
+        }
+        // Check tag match (all specified tags must be present)
+        if (p.matchTags && p.matchTags.length > 0) {
+          const taskTags = task.tags ?? [];
+          if (!p.matchTags.every((t) => taskTags.includes(t))) return false;
+        }
+        return true;
+      });
+
+      if (!matchingPolicy) {
+        return { status: "no_sla", elapsedMinutes };
+      }
+
+      // Calculate SLA status based on elapsed time vs target
+      const warningMinutes = (matchingPolicy.targetMinutes * matchingPolicy.warningThresholdPercent) / 100;
+
+      if (elapsedMinutes >= matchingPolicy.targetMinutes) {
+        return { status: "breached", policy: matchingPolicy, elapsedMinutes, targetMinutes: matchingPolicy.targetMinutes };
+      } else if (elapsedMinutes >= warningMinutes) {
+        return { status: "warning", policy: matchingPolicy, elapsedMinutes, targetMinutes: matchingPolicy.targetMinutes };
+      } else {
+        return { status: "on_track", policy: matchingPolicy, elapsedMinutes, targetMinutes: matchingPolicy.targetMinutes };
+      }
+    },
+
+    async listSlaBreaches(): Promise<SlaBreachLog[]> {
+      const rows = db.prepare(`\n        SELECT * FROM sla_breach_log\n        WHERE resolved_at IS NULL\n        ORDER BY detected_at DESC\n      `).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToSlaBreachLog);
+    },
+
+    async getSlaSummary(): Promise<SlaSummary> {
+      const policies = await this.listSlaPolicies();
+      const policyStats: SlaSummary["policyStats"] = [];
+      let totalTracked = 0;
+      let totalOnTrack = 0;
+      let totalWarning = 0;
+      let totalBreached = 0;
+      let totalResolutionMinutes = 0;
+      let resolvedCount = 0;
+
+      for (const policy of policies) {
+        if (!policy.enabled) continue;
+
+        // Find tasks matching this policy
+        const conditions: string[] = ["status IN ('pending', 'picked', 'running')"];
+        const params: (string | number | null)[] = [];
+
+        if (policy.matchPriorities && policy.matchPriorities.length > 0) {
+          const placeholders = policy.matchPriorities.map(() => "?").join(",");
+          conditions.push(`priority IN (${placeholders})`);
+          params.push(...policy.matchPriorities);
+        }
+
+        const whereClause = `WHERE ${conditions.join(" AND ")}`;
+        const taskRows = db.prepare(`SELECT * FROM tasks ${whereClause}`).all(...params) as Array<Record<string, unknown>>;
+
+        let onTrack = 0;
+        let warning = 0;
+        let breached = 0;
+
+        for (const taskRow of taskRows) {
+          const task = rowToTask(taskRow);
+          // Apply tag filter in JS
+          if (policy.matchTags && policy.matchTags.length > 0) {
+            const taskTags = task.tags ?? [];
+            if (!policy.matchTags.every((t) => taskTags.includes(t))) continue;
+          }
+
+          const elapsedMinutes = (Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60);
+          const warningMinutes = (policy.targetMinutes * policy.warningThresholdPercent) / 100;
+
+          if (elapsedMinutes >= policy.targetMinutes) {
+            breached++;
+          } else if (elapsedMinutes >= warningMinutes) {
+            warning++;
+          } else {
+            onTrack++;
+          }
+        }
+
+        totalTracked += onTrack + warning + breached;
+        totalOnTrack += onTrack;
+        totalWarning += warning;
+        totalBreached += breached;
+
+        policyStats.push({
+          policyId: policy.id,
+          policyName: policy.name,
+          targetMinutes: policy.targetMinutes,
+          tasksTracked: onTrack + warning + breached,
+          onTrack,
+          warning,
+          breached,
+        });
+      }
+
+      // Calculate average resolution time for completed tasks
+      const avgRow = db.prepare(`\n        SELECT AVG((julianday(updated_at) - julianday(created_at)) * 24 * 60) as avg_minutes\n        FROM tasks\n        WHERE status IN ('done', 'failed')\n      `).get() as Record<string, unknown> | undefined;
+      if (avgRow && avgRow["avg_minutes"] != null) {
+        totalResolutionMinutes = Number(avgRow["avg_minutes"]);
+        resolvedCount = 1; // Flag that we have data
+      }
+
+      return {
+        totalTasksTracked: totalTracked,
+        onTrack: totalOnTrack,
+        warning: totalWarning,
+        breached: totalBreached,
+        avgResolutionMinutes: resolvedCount > 0 ? totalResolutionMinutes : undefined,
+        policyStats,
+      };
+    },
+
+    async checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+      const policies = await this.listSlaPolicies();
+      let warnings = 0;
+      let breaches = 0;
+      const now = new Date().toISOString();
+
+      for (const policy of policies) {
+        if (!policy.enabled) continue;
+
+        // Find active tasks matching this policy
+        const conditions: string[] = ["status IN ('pending', 'picked', 'running')"];
+        const params: (string | number | null)[] = [];
+
+        if (policy.matchPriorities && policy.matchPriorities.length > 0) {
+          const placeholders = policy.matchPriorities.map(() => "?").join(",");
+          conditions.push(`priority IN (${placeholders})`);
+          params.push(...policy.matchPriorities);
+        }
+
+        const whereClause = `WHERE ${conditions.join(" AND ")}`;
+        const taskRows = db.prepare(`SELECT * FROM tasks ${whereClause}`).all(...params) as Array<Record<string, unknown>>;
+
+        for (const taskRow of taskRows) {
+          const task = rowToTask(taskRow);
+          // Apply tag filter
+          if (policy.matchTags && policy.matchTags.length > 0) {
+            const taskTags = task.tags ?? [];
+            if (!policy.matchTags.every((t) => taskTags.includes(t))) continue;
+          }
+
+          const elapsedMinutes = (Date.now() - new Date(task.createdAt).getTime()) / (1000 * 60);
+          const warningMinutes = (policy.targetMinutes * policy.warningThresholdPercent) / 100;
+
+          // Check if we already have a log for this task+policy+type
+          const existingWarning = db.prepare(`\n            SELECT 1 FROM sla_breach_log\n            WHERE task_id = ? AND policy_id = ? AND breach_type = 'warning' AND resolved_at IS NULL\n          `).get(task.id, policy.id) as unknown;
+
+          const existingBreach = db.prepare(`\n            SELECT 1 FROM sla_breach_log\n            WHERE task_id = ? AND policy_id = ? AND breach_type = 'breach' AND resolved_at IS NULL\n          `).get(task.id, policy.id) as unknown;
+
+          if (elapsedMinutes >= policy.targetMinutes && !existingBreach) {
+            // Record breach
+            db.prepare(`\n              INSERT INTO sla_breach_log (task_id, policy_id, policy_name, breach_type, target_minutes, actual_minutes, detected_at)\n              VALUES (?, ?, ?, 'breach', ?, ?, ?)\n            `).run(task.id, policy.id, policy.name, policy.targetMinutes, elapsedMinutes, now);
+
+            // Auto-resolve warning if exists
+            if (existingWarning) {
+              db.prepare(`UPDATE sla_breach_log SET resolved_at = ? WHERE task_id = ? AND policy_id = ? AND breach_type = 'warning' AND resolved_at IS NULL`).run(now, task.id, policy.id);
+            }
+            breaches++;
+          } else if (elapsedMinutes >= warningMinutes && !existingWarning && !existingBreach) {
+            // Record warning
+            db.prepare(`\n              INSERT INTO sla_breach_log (task_id, policy_id, policy_name, breach_type, target_minutes, actual_minutes, detected_at)\n              VALUES (?, ?, ?, 'warning', ?, ?, ?)\n            `).run(task.id, policy.id, policy.name, policy.targetMinutes, elapsedMinutes, now);
+            warnings++;
+          }
+        }
+      }
+
+      // Auto-resolve breaches/warnings for completed tasks
+      db.prepare(`\n        UPDATE sla_breach_log SET resolved_at = ?\n        WHERE resolved_at IS NULL\n        AND task_id IN (SELECT id FROM tasks WHERE status IN ('done', 'failed'))\n      `).run(now);
+
+      return { warnings, breaches };
     },
   };
 }

@@ -539,6 +539,151 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { imported: 0, skipped: 0, errors: [] };
     },
+
+    // SLA mocks
+    async listSlaPolicies(): Promise<import("../../src/shared/types.js").SlaPolicy[]> {
+      calls.push({ method: "listSlaPolicies", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "sla_policy_001",
+          name: "High Priority SLA",
+          description: "4-hour SLA for high priority tasks",
+          targetMinutes: 240,
+          warningThresholdPercent: 80,
+          matchPriorities: ["high", "urgent"],
+          matchTags: [],
+          enabled: true,
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getSlaPolicy(policyId: string): Promise<import("../../src/shared/types.js").SlaPolicy> {
+      calls.push({ method: "getSlaPolicy", args: [policyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: policyId,
+        name: "High Priority SLA",
+        description: "4-hour SLA for high priority tasks",
+        targetMinutes: 240,
+        warningThresholdPercent: 80,
+        matchPriorities: ["high", "urgent"],
+        matchTags: [],
+        enabled: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createSlaPolicy(policy: { name: string; description?: string; targetMinutes: number; warningThresholdPercent?: number; matchPriorities?: string[]; matchTags?: string[]; enabled?: boolean }): Promise<import("../../src/shared/types.js").SlaPolicy> {
+      calls.push({ method: "createSlaPolicy", args: [policy] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "sla_policy_new",
+        name: policy.name,
+        description: policy.description,
+        targetMinutes: policy.targetMinutes,
+        warningThresholdPercent: policy.warningThresholdPercent ?? 80,
+        matchPriorities: policy.matchPriorities as ("low" | "normal" | "high" | "urgent")[] | undefined,
+        matchTags: policy.matchTags,
+        enabled: policy.enabled ?? true,
+        createdAt: "2026-06-02T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async updateSlaPolicy(policyId: string, updates: Record<string, unknown>): Promise<import("../../src/shared/types.js").SlaPolicy> {
+      calls.push({ method: "updateSlaPolicy", args: [policyId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: policyId,
+        name: (updates.name as string) ?? "Updated SLA",
+        description: (updates.description as string) ?? "Updated description",
+        targetMinutes: (updates.targetMinutes as number) ?? 120,
+        warningThresholdPercent: (updates.warningThresholdPercent as number) ?? 80,
+        matchPriorities: (updates.matchPriorities as ("low" | "normal" | "high" | "urgent")[]) ?? undefined,
+        matchTags: (updates.matchTags as string[]) ?? undefined,
+        enabled: (updates.enabled as boolean) ?? true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async deleteSlaPolicy(policyId: string): Promise<void> {
+      calls.push({ method: "deleteSlaPolicy", args: [policyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async getSlaSummary(): Promise<import("../../src/shared/types.js").SlaSummary> {
+      calls.push({ method: "getSlaSummary", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        totalTasksTracked: 5,
+        onTrack: 4,
+        warning: 1,
+        breached: 0,
+        avgResolutionMinutes: 120,
+        policyStats: [
+          {
+            policyId: "sla_policy_001",
+            policyName: "High Priority SLA",
+            targetMinutes: 240,
+            tasksTracked: 3,
+            onTrack: 2,
+            warning: 1,
+            breached: 0,
+          },
+        ],
+      };
+    },
+
+    async listSlaBreaches(): Promise<import("../../src/shared/types.js").SlaBreachLog[]> {
+      calls.push({ method: "listSlaBreaches", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: 1,
+          taskId: "task_001",
+          policyId: "sla_policy_001",
+          policyName: "High Priority SLA",
+          breachType: "warning",
+          targetMinutes: 240,
+          actualMinutes: 200,
+          detectedAt: "2026-06-02T10:00:00.000Z",
+          resolvedAt: null,
+        },
+      ];
+    },
+
+    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+      calls.push({ method: "checkSlaBreaches", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { warnings: 1, breaches: 0 };
+    },
+
+    async getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: import("../../src/shared/types.js").SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {
+      calls.push({ method: "getTaskSlaStatus", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        status: "ok",
+        policy: {
+          id: "sla_policy_001",
+          name: "High Priority SLA",
+          description: "4-hour SLA for high priority tasks",
+          targetMinutes: 240,
+          warningThresholdPercent: 80,
+          matchPriorities: ["high", "urgent"],
+          matchTags: [],
+          enabled: true,
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+        elapsedMinutes: 60,
+        targetMinutes: 240,
+      };
+    },
   };
   return mock;
 }
@@ -595,7 +740,7 @@ describe("MCP tools", () => {
 
   describe("tool registration", () => {
     it("registers all 34 tools", () => {
-      expect(mockServer.registrations).toHaveLength(34);
+      expect(mockServer.registrations).toHaveLength(43);
     });
 
     it("registers list_tasks with correct description", () => {

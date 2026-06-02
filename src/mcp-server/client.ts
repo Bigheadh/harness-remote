@@ -1,5 +1,6 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
 import type { TaskComment, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
+import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
@@ -55,6 +56,16 @@ export interface TaskApiClient {
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
+  // SLA methods
+  listSlaPolicies(): Promise<SlaPolicy[]>;
+  getSlaPolicy(policyId: string): Promise<SlaPolicy>;
+  createSlaPolicy(policy: { name: string; description?: string; targetMinutes: number; warningThresholdPercent?: number; matchPriorities?: string[]; matchTags?: string[]; enabled?: boolean }): Promise<SlaPolicy>;
+  updateSlaPolicy(policyId: string, updates: Record<string, unknown>): Promise<SlaPolicy>;
+  deleteSlaPolicy(policyId: string): Promise<void>;
+  getSlaSummary(): Promise<SlaSummary>;
+  listSlaBreaches(): Promise<SlaBreachLog[]>;
+  checkSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
+  getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
 }
 
 export function createTaskApiClient(
@@ -687,6 +698,108 @@ export function createTaskApiClient(
       }
       const result = (await response.json()) as { imported: number; skipped: number; errors: string[] };
       return { imported: result.imported, skipped: result.skipped, errors: result.errors };
+    },
+
+    // ── SLA Methods ──────────────────────────────────────────────
+
+    async listSlaPolicies(): Promise<SlaPolicy[]> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/policies`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list SLA policies: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { policies: SlaPolicy[] };
+      return data.policies;
+    },
+
+    async getSlaPolicy(policyId: string): Promise<SlaPolicy> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { policy: SlaPolicy };
+      return data.policy;
+    },
+
+    async createSlaPolicy(policy: { name: string; description?: string; targetMinutes: number; warningThresholdPercent?: number; matchPriorities?: string[]; matchTags?: string[]; enabled?: boolean }): Promise<SlaPolicy> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/policies`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(policy),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { policy: SlaPolicy };
+      return data.policy;
+    },
+
+    async updateSlaPolicy(policyId: string, updates: Record<string, unknown>): Promise<SlaPolicy> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { policy: SlaPolicy };
+      return data.policy;
+    },
+
+    async deleteSlaPolicy(policyId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async getSlaSummary(): Promise<SlaSummary> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/summary`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get SLA summary: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as SlaSummary;
+    },
+
+    async listSlaBreaches(): Promise<SlaBreachLog[]> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/breaches`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list SLA breaches: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { breaches: SlaBreachLog[] };
+      return data.breaches;
+    },
+
+    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/sla/check`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to check SLA breaches: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { warnings: number; breaches: number };
+      return { warnings: data.warnings, breaches: data.breaches };
+    },
+
+    async getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/sla`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get task SLA status: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as { status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number };
     },
   };
 }
