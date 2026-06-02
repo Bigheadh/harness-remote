@@ -108,6 +108,9 @@ export interface TaskStore {
   retryTask(taskId: string): Promise<Task>;
   // Task cloning methods
   cloneTask(taskId: string): Promise<Task>;
+  // Task pinning methods
+  pinTask(taskId: string): Promise<Task>;
+  unpinTask(taskId: string): Promise<Task>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -161,6 +164,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     reminderAt: (row["reminder_at"] as string) ?? undefined,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
+    pinned: Number(row["pinned"]) === 1,
     resultSummary: (row["result_summary"] as string) ?? undefined,
     resultDetails: (row["result_details"] as string) ?? undefined,
   };
@@ -313,6 +317,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add pinned column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -428,13 +439,14 @@ export function createTaskStore(storagePath: string): TaskStore {
     SELECT * FROM tasks
     WHERE status = COALESCE(?, status)
     AND (assigned_device_id IS NULL OR assigned_device_id = COALESCE(?, assigned_device_id))
-    ORDER BY
-      CASE priority
-        WHEN 'urgent' THEN 0
-        WHEN 'high' THEN 1
-        WHEN 'normal' THEN 2
-        WHEN 'low' THEN 3
-      END,
+      ORDER BY
+        pinned DESC,
+        CASE priority
+          WHEN 'urgent' THEN 0
+          WHEN 'high' THEN 1
+          WHEN 'normal' THEN 2
+          WHEN 'low' THEN 3
+        END,
       created_at DESC
     LIMIT ?
   `);
@@ -459,6 +471,14 @@ export function createTaskStore(storagePath: string): TaskStore {
     UPDATE tasks
     SET status = 'pending', result_summary = NULL, result_details = NULL, updated_at = ?
     WHERE id = ?
+  `);
+
+  const pinTaskStmt = db.prepare(`
+    UPDATE tasks SET pinned = 1, updated_at = ? WHERE id = ?
+  `);
+
+  const unpinTaskStmt = db.prepare(`
+    UPDATE tasks SET pinned = 0, updated_at = ? WHERE id = ?
   `);
 
   const insertEvent = db.prepare(`
@@ -683,6 +703,32 @@ export function createTaskStore(storagePath: string): TaskStore {
 
       const cloned = selectTaskById.get(newId) as Record<string, unknown>;
       return rowToTask(cloned);
+    },
+
+    async pinTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      const now = new Date().toISOString();
+      Number(pinTaskStmt.run(now, taskId));
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async unpinTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      const now = new Date().toISOString();
+      Number(unpinTaskStmt.run(now, taskId));
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
     },
 
     async getTaskMessageId(id: string): Promise<string | undefined> {

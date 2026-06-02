@@ -70,6 +70,9 @@ export interface TaskApiClient {
   retryTask(taskId: string): Promise<Task>;
   // Task clone
   cloneTask(taskId: string): Promise<Task>;
+  // Task pinning
+  pinTask(taskId: string): Promise<Task>;
+  unpinTask(taskId: string): Promise<Task>;
 }
 
 export function createTaskApiClient(
@@ -827,6 +830,32 @@ export function createTaskApiClient(
       if (!response.ok) {
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to clone task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async pinTask(taskId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/pin`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to pin task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async unpinTask(taskId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/unpin`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to unpin task: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       const data = (await response.json()) as { task: Task };
       return data.task;

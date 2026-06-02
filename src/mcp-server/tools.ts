@@ -1962,4 +1962,72 @@ export function registerMcpTools(
       }
     },
   );
+
+  // pin_task tool
+  server.registerTool(
+    "pin_task",
+    {
+      description:
+        "Pin a task to the top of the task listing. Pinned tasks appear above all other tasks regardless of priority. Use this to keep important tasks visible and easily accessible.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to pin"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.pinTask(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task pinned successfully. Task ${task.id} will now appear at the top of listings.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // unpin_task tool
+  server.registerTool(
+    "unpin_task",
+    {
+      description:
+        "Unpin a previously pinned task, returning it to normal priority-based ordering in the task listing.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to unpin"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.unpinTask(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task unpinned successfully. Task ${task.id} will now follow normal priority ordering.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

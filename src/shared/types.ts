@@ -39,6 +39,7 @@ export interface Task {
   reminderAt?: string;
   createdAt: string;
   updatedAt: string;
+  pinned?: boolean;
   resultSummary?: string;
   resultDetails?: string;
 }

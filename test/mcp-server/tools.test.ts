@@ -716,6 +716,40 @@ function createMockClient(): TaskApiClient & {
         updatedAt: "2026-06-01T12:03:00.000Z",
       };
     },
+
+    async pinTask(taskId: string): Promise<Task> {
+      calls.push({ method: "pinTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_pin",
+        feishuChatId: "oc_pin",
+        feishuUserId: "ou_pin",
+        commandText: "固定任务",
+        status: "pending",
+        pinned: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:04:00.000Z",
+      };
+    },
+
+    async unpinTask(taskId: string): Promise<Task> {
+      calls.push({ method: "unpinTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_unpin",
+        feishuChatId: "oc_unpin",
+        feishuUserId: "ou_unpin",
+        commandText: "取消固定任务",
+        status: "pending",
+        pinned: false,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:05:00.000Z",
+      };
+    },
   };
   return mock;
 }
@@ -771,8 +805,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 45 tools", () => {
-      expect(mockServer.registrations).toHaveLength(45);
+    it("registers all 47 tools", () => {
+      expect(mockServer.registrations).toHaveLength(47);
     });
 
     it("registers list_tasks with correct description", () => {
