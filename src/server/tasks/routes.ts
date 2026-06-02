@@ -14,8 +14,12 @@ export function registerTaskRoutes(
   personalToken: string,
   feishuClient?: FeishuReplyClient,
 ): void {
-  // Health endpoint
+  // Health endpoint with DB connectivity check
   server.get("/health", async (_req, reply) => {
+    const dbOk = await store.healthCheck();
+    if (!dbOk) {
+      return reply.code(503).send({ ok: false, error: "Database unreachable" });
+    }
     return reply.send({ ok: true });
   });
 
@@ -147,6 +151,16 @@ export function registerTaskRoutes(
     const resetCount = await store.resetStaleTasks(timeoutMs);
     log.info({ resetCount, timeoutMs }, "Stale tasks reset");
     return reply.send({ ok: true, resetCount });
+  });
+
+  // POST /api/tasks/cleanup-events - clean up old processed events
+  server.post("/api/tasks/cleanup-events", async (req, reply) => {
+    const body = req.body as { retentionDays?: number } | undefined;
+    const retentionDays = body?.retentionDays ?? 7; // Default 7 days
+
+    const deletedCount = await store.cleanupProcessedEvents(retentionDays);
+    log.info({ deletedCount, retentionDays }, "Processed events cleaned up");
+    return reply.send({ ok: true, deletedCount });
   });
 
   // POST /api/tasks/:id/reply - reply to Feishu message

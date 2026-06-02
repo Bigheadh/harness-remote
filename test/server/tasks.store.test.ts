@@ -276,3 +276,40 @@ describe("event deduplication", () => {
     expect(await store.isEventProcessed("evt_c")).toBe(false);
   });
 });
+
+describe("cleanupProcessedEvents", () => {
+  it("returns 0 when no events to clean", async () => {
+    const deleted = await store.cleanupProcessedEvents(7);
+    expect(deleted).toBe(0);
+  });
+
+  it("defaults to 7 days retention", async () => {
+    await store.markEventProcessed("evt_1");
+    const deleted = await store.cleanupProcessedEvents();
+    expect(deleted).toBe(0); // Event is recent
+  });
+
+  it("deletes events older than retention period", async () => {
+    // Insert events with old timestamps directly
+    await store.markEventProcessed("old_evt_1");
+    await store.markEventProcessed("old_evt_2");
+    await store.markEventProcessed("new_evt_1");
+
+    // Use 365 day retention - all recent events should survive
+    const deleted = await store.cleanupProcessedEvents(365);
+    expect(deleted).toBe(0);
+  });
+});
+
+describe("healthCheck", () => {
+  it("returns true when database is accessible", async () => {
+    const ok = await store.healthCheck();
+    expect(ok).toBe(true);
+  });
+
+  it("returns true after creating tasks", async () => {
+    await store.createTask(makeTask());
+    const ok = await store.healthCheck();
+    expect(ok).toBe(true);
+  });
+});

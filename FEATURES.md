@@ -109,3 +109,9 @@
 - [x] Priority parsing from message text (#priority:urgent, !high)
 - [x] Priority-sorted task listing (urgent tasks first)
 - [x] Stale task detection and reset (configurable timeout)
+
+## Phase 18: Infrastructure Hardening
+- [x] SQLite WAL mode for better read concurrency
+- [x] Processed events cleanup (configurable retention period)
+- [x] Improved health check with DB connectivity verification
+- [x] POST /api/tasks/cleanup-events endpoint for manual cleanup

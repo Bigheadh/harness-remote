@@ -317,4 +317,28 @@ describe("End-to-end: Feishu event → Task API lifecycle", () => {
 
     expect(res.statusCode).toBe(400);
   });
+
+  it("POST /api/tasks/cleanup-events returns deleted count", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/tasks/cleanup-events",
+      headers: { authorization: `Bearer ${PERSONAL_TOKEN}` },
+      payload: { retentionDays: 7 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; deletedCount: number };
+    expect(body.ok).toBe(true);
+    expect(typeof body.deletedCount).toBe("number");
+  });
+
+  it("POST /api/tasks/cleanup-events without auth returns 401", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/api/tasks/cleanup-events",
+      payload: { retentionDays: 7 },
+    });
+
+    expect(res.statusCode).toBe(401);
+  });
 });

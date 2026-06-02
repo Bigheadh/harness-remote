@@ -16,8 +16,10 @@ export interface TaskStore {
   ): Promise<Task>;
   getTaskMessageId(id: string): Promise<string | undefined>;
   resetStaleTasks(timeoutMs?: number): Promise<number>;
+  cleanupProcessedEvents(retentionDays?: number): Promise<number>;
   isEventProcessed(eventId: string): Promise<boolean>;
   markEventProcessed(eventId: string): Promise<void>;
+  healthCheck(): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -54,6 +56,9 @@ export function createTaskStore(storagePath: string): TaskStore {
   mkdirSync(dirname(storagePath), { recursive: true });
 
   const db = new DatabaseSync(storagePath);
+
+  // Enable WAL mode for better concurrent read performance
+  db.exec(`PRAGMA journal_mode=WAL;`);
 
   // Create tables
   db.exec(`
@@ -247,6 +252,17 @@ export function createTaskStore(storagePath: string): TaskStore {
       return Number(result.changes);
     },
 
+    async cleanupProcessedEvents(retentionDays: number = 7): Promise<number> {
+      // Delete processed events older than retentionDays
+      const cutoff = new Date(
+        Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const result = db
+        .prepare(`DELETE FROM processed_events WHERE processed_at < ?`)
+        .run(cutoff);
+      return Number(result.changes);
+    },
+
     async isEventProcessed(eventId: string): Promise<boolean> {
       const row = selectEvent.get(eventId) as unknown;
       return row !== undefined;
@@ -255,6 +271,15 @@ export function createTaskStore(storagePath: string): TaskStore {
     async markEventProcessed(eventId: string): Promise<void> {
       const now = new Date().toISOString();
       insertEvent.run(eventId, now);
+    },
+
+    async healthCheck(): Promise<boolean> {
+      try {
+        db.prepare(`SELECT 1`).get();
+        return true;
+      } catch {
+        return false;
+      }
     },
   };
 }
