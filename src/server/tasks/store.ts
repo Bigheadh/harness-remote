@@ -4,6 +4,17 @@ import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
 import type { TaskComment, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
 
+/** Full export payload for backup/restore across instances */
+export interface TaskExportPayload {
+  exportedAt: string;
+  version: 1;
+  tasks: Task[];
+  comments: Array<{ taskId: string; author: string; authorType: AuditLogEntry["actorType"]; body: string; createdAt: string }>;
+  dependencies: Array<{ taskId: string; dependsOnIds: string[] }>;
+  templates: TaskTemplate[];
+  scheduledTasks: ScheduledTask[];
+}
+
 export interface SearchOptions {
   q?: string;
   status?: TaskStatus;
@@ -76,6 +87,9 @@ export interface TaskStore {
   getDependents(taskId: string): Promise<string[]>;
   isTaskBlocked(taskId: string): Promise<boolean>;
   listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
+  // Export/Import methods
+  exportAll(): Promise<TaskExportPayload>;
+  importAll(data: TaskExportPayload, mode: "skip" | "overwrite"): Promise<{ imported: number; skipped: number; errors: string[] }>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -1197,6 +1211,209 @@ export function createTaskStore(storagePath: string): TaskStore {
         }
         return task;
       });
+    },
+
+    // ── Export/Import ────────────────────────────────────────────
+
+    async exportAll(): Promise<TaskExportPayload> {
+      // Export all tasks
+      const taskRows = db.prepare(`SELECT * FROM tasks ORDER BY created_at ASC`).all() as Array<Record<string, unknown>>;
+      const tasks = taskRows.map(rowToTask);
+
+      // Export all comments
+      const commentRows = db.prepare(`SELECT * FROM task_comments ORDER BY created_at ASC`).all() as Array<Record<string, unknown>>;
+      const comments = commentRows.map((row) => ({
+        taskId: row["task_id"] as string,
+        author: row["author"] as string,
+        authorType: row["author_type"] as AuditLogEntry["actorType"],
+        body: row["body"] as string,
+        createdAt: row["created_at"] as string,
+      }));
+
+      // Export all dependencies
+      const depRows = db.prepare(`SELECT task_id, depends_on_task_id FROM task_dependencies ORDER BY task_id`).all() as Array<Record<string, unknown>>;
+      const depMap = new Map<string, string[]>();
+      for (const row of depRows) {
+        const taskId = row["task_id"] as string;
+        const depId = row["depends_on_task_id"] as string;
+        const existing = depMap.get(taskId) ?? [];
+        existing.push(depId);
+        depMap.set(taskId, existing);
+      }
+      const dependencies = [...depMap.entries()].map(([taskId, dependsOnIds]) => ({ taskId, dependsOnIds }));
+
+      // Export all templates
+      const templateRows = db.prepare(`SELECT * FROM task_templates ORDER BY created_at ASC`).all() as Array<Record<string, unknown>>;
+      const templates = templateRows.map(rowToTemplate);
+
+      // Export all scheduled tasks
+      const scheduledRows = db.prepare(`SELECT * FROM scheduled_tasks ORDER BY created_at ASC`).all() as Array<Record<string, unknown>>;
+      const scheduledTasks = scheduledRows.map(rowToScheduledTask);
+
+      return {
+        exportedAt: new Date().toISOString(),
+        version: 1,
+        tasks,
+        comments,
+        dependencies,
+        templates,
+        scheduledTasks,
+      };
+    },
+
+    async importAll(data: TaskExportPayload, mode: "skip" | "overwrite"): Promise<{ imported: number; skipped: number; errors: string[] }> {
+      const errors: string[] = [];
+      let imported = 0;
+      let skipped = 0;
+
+      if (!data || !Array.isArray(data.tasks)) {
+        throw new Error("Invalid export data: missing tasks array");
+      }
+
+      // Import tasks
+      for (const task of data.tasks) {
+        try {
+          const existing = selectTaskById.get(task.id) as Record<string, unknown> | undefined;
+          if (existing) {
+            if (mode === "skip") {
+              skipped++;
+              continue;
+            }
+            // overwrite mode: delete existing task and its children first
+            db.prepare(`DELETE FROM task_comments WHERE task_id = ?`).run(task.id);
+            db.prepare(`DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?`).run(task.id, task.id);
+            db.prepare(`DELETE FROM tasks WHERE id = ?`).run(task.id);
+          }
+
+          const tagsJson = task.tags && task.tags.length > 0 ? JSON.stringify(task.tags) : null;
+          const attachmentsJson = task.attachments && task.attachments.length > 0 ? JSON.stringify(task.attachments) : null;
+
+          insertTask.run(
+            task.id,
+            task.source,
+            task.feishuMessageId,
+            task.feishuChatId,
+            task.feishuUserId,
+            task.commandText,
+            task.status,
+            task.priority,
+            tagsJson,
+            attachmentsJson,
+            task.assignedDeviceId ?? null,
+            task.dueDate ?? null,
+            task.reminderAt ?? null,
+            task.createdAt,
+            task.updatedAt,
+          );
+
+          // Restore result fields if present
+          if (task.resultSummary || task.resultDetails) {
+            db.prepare(`UPDATE tasks SET result_summary = ?, result_details = ? WHERE id = ?`).run(
+              task.resultSummary ?? null,
+              task.resultDetails ?? null,
+              task.id,
+            );
+          }
+
+          imported++;
+        } catch (e) {
+          errors.push(`Task ${task.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // Import dependencies (after tasks are imported)
+      if (data.dependencies && data.dependencies.length > 0) {
+        for (const dep of data.dependencies) {
+          try {
+            // Verify both tasks exist
+            const taskExists = selectTaskById.get(dep.taskId) as Record<string, unknown> | undefined;
+            if (!taskExists) {
+              errors.push(`Dependency skip: task ${dep.taskId} not found`);
+              continue;
+            }
+            // Clear existing deps for this task
+            db.prepare(`DELETE FROM task_dependencies WHERE task_id = ?`).run(dep.taskId);
+            for (const depId of dep.dependsOnIds) {
+              const depExists = selectTaskById.get(depId) as Record<string, unknown> | undefined;
+              if (!depExists) {
+                errors.push(`Dependency skip: prerequisite ${depId} not found for task ${dep.taskId}`);
+                continue;
+              }
+              db.prepare(`INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)`).run(dep.taskId, depId);
+            }
+          } catch (e) {
+            errors.push(`Dependency for ${dep.taskId}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
+
+      // Import comments (after tasks are imported)
+      if (data.comments && data.comments.length > 0) {
+        for (const comment of data.comments) {
+          try {
+            const taskExists = selectTaskById.get(comment.taskId) as Record<string, unknown> | undefined;
+            if (!taskExists) {
+              errors.push(`Comment skip: task ${comment.taskId} not found`);
+              continue;
+            }
+            db.prepare(`INSERT INTO task_comments (task_id, author, author_type, body, created_at) VALUES (?, ?, ?, ?, ?)`).run(
+              comment.taskId,
+              comment.author,
+              comment.authorType,
+              comment.body,
+              comment.createdAt,
+            );
+          } catch (e) {
+            errors.push(`Comment on ${comment.taskId}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
+
+      // Import templates
+      if (data.templates && data.templates.length > 0) {
+        for (const template of data.templates) {
+          try {
+            const existing = db.prepare(`SELECT 1 FROM task_templates WHERE id = ?`).get(template.id) as unknown;
+            if (existing) {
+              if (mode === "skip") continue;
+              db.prepare(`DELETE FROM task_templates WHERE id = ?`).run(template.id);
+            }
+            const tagsJson = template.tags && template.tags.length > 0 ? JSON.stringify(template.tags) : null;
+            db.prepare(`INSERT INTO task_templates (id, name, description, command_text, priority, tags, assigned_device_id, due_date_offset_ms, reminder_offset_ms, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+              template.id, template.name, template.description ?? null, template.commandText,
+              template.priority ?? "normal", tagsJson, template.assignedDeviceId ?? null,
+              template.dueDateOffsetMs ?? null, template.reminderOffsetMs ?? null,
+              template.createdBy, template.createdAt, template.updatedAt,
+            );
+          } catch (e) {
+            errors.push(`Template ${template.id}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
+
+      // Import scheduled tasks
+      if (data.scheduledTasks && data.scheduledTasks.length > 0) {
+        for (const sch of data.scheduledTasks) {
+          try {
+            const existing = db.prepare(`SELECT 1 FROM scheduled_tasks WHERE id = ?`).get(sch.id) as unknown;
+            if (existing) {
+              if (mode === "skip") continue;
+              db.prepare(`DELETE FROM scheduled_tasks WHERE id = ?`).run(sch.id);
+            }
+            const tagsJson = sch.tags && sch.tags.length > 0 ? JSON.stringify(sch.tags) : null;
+            db.prepare(`INSERT INTO scheduled_tasks (id, template_id, command_text, frequency, priority, tags, assigned_device_id, next_run_at, last_run_at, last_task_id, enabled, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+              sch.id, sch.templateId ?? null, sch.commandText, sch.frequency,
+              sch.priority ?? "normal", tagsJson, sch.assignedDeviceId ?? null,
+              sch.nextRunAt, sch.lastRunAt ?? null, sch.lastTaskId ?? null,
+              sch.enabled ? 1 : 0, sch.createdBy, sch.createdAt, sch.updatedAt,
+            );
+          } catch (e) {
+            errors.push(`Scheduled task ${sch.id}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      }
+
+      return { imported, skipped, errors };
     },
   };
 }

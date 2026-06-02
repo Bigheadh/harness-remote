@@ -1495,4 +1495,79 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Export/Import Tools ──────────────────────────────────────────
+
+  // export_tasks tool
+  server.registerTool(
+    "export_tasks",
+    {
+      description:
+        "Export all tasks, comments, dependencies, templates, and scheduled tasks as a JSON backup payload. Use this to back up the current instance or migrate data to another instance.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const data = await client.exportTasks();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...data,
+                message: `Exported ${(data.tasks as unknown[])?.length ?? 0} tasks, ${(data.comments as unknown[])?.length ?? 0} comments, ${(data.templates as unknown[])?.length ?? 0} templates`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // import_tasks tool
+  server.registerTool(
+    "import_tasks",
+    {
+      description:
+        "Import tasks from a previously exported JSON payload. Use mode 'skip' (default) to ignore duplicates, or 'overwrite' to replace existing tasks. This restores tasks, comments, dependencies, templates, and scheduled tasks.",
+      inputSchema: {
+        data: z
+          .record(z.string(), z.unknown())
+          .describe("The export payload JSON object (from export_tasks)"),
+        mode: z
+          .enum(["skip", "overwrite"])
+          .optional()
+          .describe("How to handle duplicate IDs: 'skip' (default) ignores them, 'overwrite' replaces them"),
+      },
+    },
+    async (args) => {
+      const { data, mode } = args;
+      try {
+        const result = await client.importTasks(data as Record<string, unknown>, mode);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: `Imported ${result.imported} tasks, skipped ${result.skipped}${result.errors.length > 0 ? ` (${result.errors.length} errors)` : ""}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

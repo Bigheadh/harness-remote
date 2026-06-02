@@ -518,6 +518,27 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    // Export/Import mocks
+    async exportTasks(): Promise<Record<string, unknown>> {
+      calls.push({ method: "exportTasks", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        exportedAt: "2026-06-02T12:00:00.000Z",
+        version: 1,
+        tasks: [],
+        comments: [],
+        dependencies: [],
+        templates: [],
+        scheduledTasks: [],
+      };
+    },
+
+    async importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
+      calls.push({ method: "importTasks", args: [data, mode] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { imported: 0, skipped: 0, errors: [] };
+    },
   };
   return mock;
 }
@@ -573,8 +594,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 32 tools", () => {
-      expect(mockServer.registrations).toHaveLength(32);
+    it("registers all 34 tools", () => {
+      expect(mockServer.registrations).toHaveLength(34);
     });
 
     it("registers list_tasks with correct description", () => {

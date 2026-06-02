@@ -138,5 +138,5 @@
 - [x] Scheduled/recurring tasks (cron-like scheduling for periodic task creation)
 - [x] Task dependencies (prerequisite chains: task B waits for task A)
 - [x] API key rotation with grace period (auto-expire old tokens after rotation)
-- [ ] Export/import tasks (JSON backup and restore across instances)
+- [x] Export/import tasks (JSON backup and restore across instances)
 - [ ] SLA monitoring and alerts (track resolution time, alert on breaches)

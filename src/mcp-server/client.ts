@@ -52,6 +52,9 @@ export interface TaskApiClient {
   getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }>;
   removeDependency(taskId: string, depId: string): Promise<Task>;
   listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
+  // Export/Import methods
+  exportTasks(): Promise<Record<string, unknown>>;
+  importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
 }
 
 export function createTaskApiClient(
@@ -657,6 +660,33 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    // ── Export/Import ──────────────────────────────────────────────
+
+    async exportTasks(): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/export`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to export tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as Record<string, unknown>;
+    },
+
+    async importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
+      const payload = { ...data };
+      if (mode) payload.mode = mode;
+      const response = await fetch(`${serverBaseUrl}/api/tasks/import`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to import tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { imported: number; skipped: number; errors: string[] };
+      return { imported: result.imported, skipped: result.skipped, errors: result.errors };
     },
   };
 }

@@ -476,6 +476,72 @@ export function registerTaskRoutes(
     return reply.send({ tasks, count: tasks.length });
   });
 
+  // GET /api/tasks/export - export all tasks, comments, dependencies, templates, scheduled tasks (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get("/api/tasks/export", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    try {
+      const data = await store.exportAll();
+      log.info({ taskCount: data.tasks.length, commentCount: data.comments.length }, "Tasks exported");
+      return reply.send(data);
+    } catch (e) {
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/import - import tasks from JSON payload (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/import", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { tasks?: unknown[]; version?: number; mode?: string } & Record<string, unknown>;
+    if (!body || !Array.isArray(body.tasks)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must be a valid export payload with 'tasks' array" },
+      });
+    }
+
+    const mode = (body.mode as string) === "overwrite" ? "overwrite" : "skip";
+
+    try {
+      const result = await store.importAll(body as never, mode);
+      log.info({ imported: result.imported, skipped: result.skipped, errors: result.errors.length }, "Tasks imported");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.created",
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "import", imported: result.imported, skipped: result.skipped, errorCount: result.errors.length },
+        });
+      }
+      return reply.send({ ok: true, ...result });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("Invalid export data")) {
+        return reply.code(400).send({
+          error: { code: "invalid_request", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
   // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };
