@@ -1,5 +1,6 @@
 export type ErrorCode =
   | "unauthorized"
+  | "forbidden"
   | "not_found"
   | "invalid_status"
   | "invalid_request"

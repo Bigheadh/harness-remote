@@ -3,7 +3,8 @@ import type { TaskStore } from "./store.js";
 import type { TaskStatus } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
 import type { AuditLogStore } from "../audit/store.js";
-import { requireBearerToken } from "../../shared/http.js";
+import type { UserStore } from "../auth/store.js";
+import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 
@@ -15,8 +16,9 @@ export function registerTaskRoutes(
   personalToken: string,
   feishuClient?: FeishuReplyClient,
   auditStore?: AuditLogStore,
+  userStore?: UserStore,
 ): void {
-  // Health endpoint with DB connectivity check
+  // Health endpoint with DB connectivity check (no auth required)
   server.get("/health", async (_req, reply) => {
     const dbOk = await store.healthCheck();
     if (!dbOk) {
@@ -25,11 +27,13 @@ export function registerTaskRoutes(
     return reply.send({ ok: true });
   });
 
-  // Auth hook for /api/* routes
+  // RBAC-aware auth hook for /api/* routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/")) {
       try {
-        requireBearerToken(req.headers["authorization"], personalToken);
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        // Attach auth context for downstream handlers
+        (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {
         if (e instanceof AppError) {
           return reply.code(401).send({
@@ -43,8 +47,18 @@ export function registerTaskRoutes(
     }
   });
 
-  // GET /api/tasks - list tasks
+  // GET /api/tasks - list tasks (requires tasks.read)
   server.get("/api/tasks", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { status, limit, deviceId } = req.query as {
       status?: TaskStatus;
       limit?: number;
@@ -54,8 +68,18 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
-  // GET /api/tasks/search - search task history
+  // GET /api/tasks/search - search task history (requires tasks.search)
   server.get("/api/tasks/search", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.search");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { q, status, from, to, limit, deviceId } = req.query as {
       q?: string;
       status?: TaskStatus;
@@ -87,10 +111,20 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
-  // GET /api/tasks/:id - get task detail
+  // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };
   }>("/api/tasks/:id", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const task = await store.getTask(id);
     if (!task) {
@@ -101,11 +135,21 @@ export function registerTaskRoutes(
     return reply.send({ task });
   });
 
-  // POST /api/tasks/:id/status - update status
+  // POST /api/tasks/:id/status - update status (requires tasks.status)
   server.post<{
     Params: { id: string };
     Body: { status: TaskStatus };
   }>("/api/tasks/:id/status", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.status");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const { status } = req.body as { status?: TaskStatus };
 
@@ -128,7 +172,7 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "task.status_changed",
           taskId: id,
-          actor: "api",
+          actor: authCtx.user?.username ?? "api",
           actorType: "api",
           details: { from: task.status, to: status },
         });
@@ -149,11 +193,21 @@ export function registerTaskRoutes(
     }
   });
 
-  // POST /api/tasks/:id/result - report result
+  // POST /api/tasks/:id/result - report result (requires tasks.result)
   server.post<{
     Params: { id: string };
     Body: { success: boolean; summary: string; details?: string };
   }>("/api/tasks/:id/result", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.result");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const body = req.body as {
       success?: boolean;
@@ -181,7 +235,7 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "task.result_reported",
           taskId: id,
-          actor: "api",
+          actor: authCtx.user?.username ?? "api",
           actorType: "api",
           details: { success: body.success, summary: body.summary },
         });
@@ -197,11 +251,21 @@ export function registerTaskRoutes(
     }
   });
 
-  // POST /api/tasks/:id/assign - assign task to device
+  // POST /api/tasks/:id/assign - assign task to device (requires tasks.assign)
   server.post<{
     Params: { id: string };
     Body: { deviceId: string };
   }>("/api/tasks/:id/assign", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.assign");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const body = req.body as { deviceId?: string };
 
@@ -221,8 +285,8 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "task.assigned",
           taskId: id,
-          actor: body.deviceId.trim(),
-          actorType: "device",
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
           details: { deviceId: body.deviceId.trim() },
         });
       }
@@ -237,10 +301,20 @@ export function registerTaskRoutes(
     }
   });
 
-  // POST /api/tasks/:id/unassign - unassign task from device
+  // POST /api/tasks/:id/unassign - unassign task from device (requires tasks.assign)
   server.post<{
     Params: { id: string };
   }>("/api/tasks/:id/unassign", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.assign");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
 
     try {
@@ -250,7 +324,7 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "task.unassigned",
           taskId: id,
-          actor: "api",
+          actor: authCtx.user?.username ?? "api",
           actorType: "api",
         });
       }
@@ -265,8 +339,18 @@ export function registerTaskRoutes(
     }
   });
 
-  // POST /api/tasks/reset-stale - reset stale tasks back to pending
+  // POST /api/tasks/reset-stale - reset stale tasks (requires tasks.reset_stale)
   server.post("/api/tasks/reset-stale", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.reset_stale");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const body = req.body as { timeoutMs?: number } | undefined;
     const timeoutMs = body?.timeoutMs ?? 30 * 60 * 1000; // Default 30 minutes
 
@@ -275,7 +359,7 @@ export function registerTaskRoutes(
     if (auditStore && resetCount > 0) {
       await auditStore.log({
         action: "task.reset_stale",
-        actor: "system",
+        actor: authCtx.user?.username ?? "system",
         actorType: "system",
         details: { resetCount, timeoutMs },
       });
@@ -283,8 +367,18 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, resetCount });
   });
 
-  // POST /api/tasks/cleanup-events - clean up old processed events
+  // POST /api/tasks/cleanup-events - clean up old processed events (requires tasks.cleanup)
   server.post("/api/tasks/cleanup-events", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.cleanup");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const body = req.body as { retentionDays?: number } | undefined;
     const retentionDays = body?.retentionDays ?? 7; // Default 7 days
 
@@ -293,7 +387,7 @@ export function registerTaskRoutes(
     if (auditStore && deletedCount > 0) {
       await auditStore.log({
         action: "cleanup.processed_events",
-        actor: "system",
+        actor: authCtx.user?.username ?? "system",
         actorType: "system",
         details: { deletedCount, retentionDays },
       });
@@ -301,11 +395,21 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, deletedCount });
   });
 
-  // POST /api/tasks/:id/reply - reply to Feishu message
+  // POST /api/tasks/:id/reply - reply to Feishu message (requires tasks.reply)
   server.post<{
     Params: { id: string };
     Body: { message: string };
   }>("/api/tasks/:id/reply", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.reply");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const body = req.body as { message?: string };
 
@@ -341,7 +445,7 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "feishu.reply_sent",
           taskId: id,
-          actor: "api",
+          actor: authCtx.user?.username ?? "api",
           actorType: "api",
         });
       }
@@ -353,7 +457,7 @@ export function registerTaskRoutes(
         await auditStore.log({
           action: "feishu.reply_failed",
           taskId: id,
-          actor: "api",
+          actor: authCtx.user?.username ?? "api",
           actorType: "api",
           details: { error: message },
         });
@@ -370,13 +474,15 @@ export function registerTaskRoutes(
       const statusCode =
         error.code === "unauthorized"
           ? 401
-          : error.code === "not_found"
-            ? 404
-            : error.code === "invalid_status"
-              ? 409
-              : error.code === "invalid_request"
-                ? 400
-                : 500;
+          : error.code === "forbidden"
+            ? 403
+            : error.code === "not_found"
+              ? 404
+              : error.code === "invalid_status"
+                ? 409
+                : error.code === "invalid_request"
+                  ? 400
+                  : 500;
       return reply.code(statusCode).send({
         error: { code: error.code, message: error.message },
       });

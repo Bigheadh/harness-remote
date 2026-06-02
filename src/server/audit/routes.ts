@@ -1,19 +1,22 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { AuditLogStore } from "./store.js";
 import type { AuditAction, AuditLogEntry } from "../../shared/types.js";
-import { requireBearerToken } from "../../shared/http.js";
+import type { UserStore } from "../auth/store.js";
+import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 
 export function registerAuditRoutes(
   server: FastifyInstance,
   auditStore: AuditLogStore,
   personalToken: string,
+  userStore?: UserStore,
 ): void {
   // Auth hook for /api/audit routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/audit")) {
       try {
-        requireBearerToken(req.headers["authorization"], personalToken);
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {
         if (e instanceof AppError) {
           return reply.code(401).send({
@@ -27,8 +30,18 @@ export function registerAuditRoutes(
     }
   });
 
-  // GET /api/audit - query audit log
+  // GET /api/audit - query audit log (requires audit.read)
   server.get("/api/audit", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "audit.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { action, taskId, actor, actorType, from, to, limit } = req.query as {
       action?: AuditAction;
       taskId?: string;
@@ -67,14 +80,34 @@ export function registerAuditRoutes(
     return reply.send({ entries, count: entries.length });
   });
 
-  // GET /api/audit/count - total audit log count
-  server.get("/api/audit/count", async (_req, reply) => {
+  // GET /api/audit/count - total audit log count (requires audit.read)
+  server.get("/api/audit/count", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "audit.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const count = await auditStore.count();
     return reply.send({ count });
   });
 
-  // POST /api/audit/cleanup - clean up old audit logs
-  server.post("/api/audit/cleanup", async (req, reply) => {
+  // POST /api/audit/cleanup - clean up old audit logs (requires audit.cleanup)
+  server.post("/api/audit/cleanup", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "audit.cleanup");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const body = req.body as { retentionDays?: number } | undefined;
     const retentionDays = body?.retentionDays ?? 30;
     const deletedCount = await auditStore.cleanup(retentionDays);

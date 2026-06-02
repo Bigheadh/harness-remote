@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { DeviceStore } from "./store.js";
-import { requireBearerToken } from "../../shared/http.js";
+import type { UserStore } from "../auth/store.js";
+import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 
@@ -10,9 +11,39 @@ export function registerDeviceRoutes(
   server: FastifyInstance,
   store: DeviceStore,
   personalToken: string,
+  userStore?: UserStore,
 ): void {
-  // POST /api/devices - register a new device
+  // Auth hook for /api/devices routes
+  server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
+    if (req.url.startsWith("/api/devices")) {
+      try {
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
+      } catch (e) {
+        if (e instanceof AppError) {
+          return reply.code(401).send({
+            error: { code: e.code, message: e.message },
+          });
+        }
+        return reply.code(401).send({
+          error: { code: "unauthorized", message: "Missing or invalid bearer token" },
+        });
+      }
+    }
+  });
+
+  // POST /api/devices - register a new device (requires devices.write)
   server.post("/api/devices", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "devices.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const body = req.body as { name?: string; capabilities?: string } | undefined;
 
     if (typeof body?.name !== "string" || body.name.trim() === "") {
@@ -29,16 +60,36 @@ export function registerDeviceRoutes(
     return reply.code(201).send({ device });
   });
 
-  // GET /api/devices - list all devices
-  server.get("/api/devices", async (_req: FastifyRequest, reply: FastifyReply) => {
+  // GET /api/devices - list all devices (requires devices.read)
+  server.get("/api/devices", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "devices.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const devices = await store.listDevices();
     return reply.send({ devices });
   });
 
-  // GET /api/devices/:id - get device details
+  // GET /api/devices/:id - get device details (requires devices.read)
   server.get<{
     Params: { id: string };
   }>("/api/devices/:id", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "devices.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const device = await store.getDevice(id);
     if (!device) {
@@ -49,10 +100,20 @@ export function registerDeviceRoutes(
     return reply.send({ device });
   });
 
-  // POST /api/devices/:id/heartbeat - update device last seen
+  // POST /api/devices/:id/heartbeat - update device last seen (requires devices.write)
   server.post<{
     Params: { id: string };
   }>("/api/devices/:id/heartbeat", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "devices.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const device = await store.getDevice(id);
     if (!device) {
@@ -64,10 +125,20 @@ export function registerDeviceRoutes(
     return reply.send({ ok: true });
   });
 
-  // DELETE /api/devices/:id - remove device
+  // DELETE /api/devices/:id - remove device (requires devices.delete)
   server.delete<{
     Params: { id: string };
   }>("/api/devices/:id", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "devices.delete");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
     const { id } = req.params;
     const deleted = await store.deleteDevice(id);
     if (!deleted) {

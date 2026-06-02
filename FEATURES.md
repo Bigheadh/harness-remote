@@ -123,4 +123,12 @@
 - [x] Web management dashboard (read-only task viewer)
 - [x] Multi-device task assignment (device registry and routing)
 - [x] Audit logging (who did what when)
-- [ ] Finer permission control (per-user token and RBAC)
+- [x] Finer permission control (per-user token and RBAC)
+
+## Phase 20: v3 Advanced Features
+- [ ] Task tags/labels system (categorize and filter tasks by custom tags)
+- [ ] Task due dates and reminders (deadline tracking with overdue alerts)
+- [ ] Task comments/activity timeline (comment thread on each task)
+- [ ] Batch task operations (bulk status update, bulk assign, bulk delete)
+- [ ] Webhook notifications (external URL callback on task events)
+- [ ] Rate limiting per user/device (API abuse prevention)

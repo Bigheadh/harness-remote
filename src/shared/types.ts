@@ -78,3 +78,17 @@ export interface ApiErrorBody {
     message: string;
   };
 }
+
+/** RBAC role for API users */
+export type UserRole = "admin" | "operator" | "viewer";
+
+/** API user with per-user token */
+export interface User {
+  id: string;
+  username: string;
+  token: string;
+  role: UserRole;
+  feishuUserId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
