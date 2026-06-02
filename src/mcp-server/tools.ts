@@ -1894,4 +1894,38 @@ export function registerMcpTools(
       }
     },
   );
+
+  // retry_task tool
+  server.registerTool(
+    "retry_task",
+    {
+      description:
+        "Retry a failed or completed task by resetting it back to pending status. Clears previous results. Only works on tasks in 'done' or 'failed' status.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to retry"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.retryTask(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: "Task has been reset to pending and is ready for reprocessing.",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

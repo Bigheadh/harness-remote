@@ -717,6 +717,52 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/retry - requeue a failed/done task back to pending (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/retry", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+
+    try {
+      const task = await store.retryTask(id);
+      log.info({ taskId: id }, "Task retried (reset to pending)");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.status_changed",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "retry", fromStatus: "done/failed", toStatus: "pending" },
+        });
+      }
+      // Broadcast SSE event for status change
+      broadcastTaskStatusChanged(task, "pending");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (e instanceof Error && e.message.includes("Cannot retry")) {
+        return reply.code(409).send({
+          error: { code: "invalid_status", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/:id/assign - assign task to device (requires tasks.assign)
   server.post<{
     Params: { id: string };

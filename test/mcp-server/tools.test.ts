@@ -684,6 +684,22 @@ function createMockClient(): TaskApiClient & {
         targetMinutes: 240,
       };
     },
+
+    async retryTask(taskId: string): Promise<Task> {
+      calls.push({ method: "retryTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_retry",
+        feishuChatId: "oc_retry",
+        feishuUserId: "ou_retry",
+        commandText: "重试任务",
+        status: "pending",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:03:00.000Z",
+      };
+    },
   };
   return mock;
 }
@@ -739,8 +755,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 34 tools", () => {
-      expect(mockServer.registrations).toHaveLength(43);
+    it("registers all 44 tools", () => {
+      expect(mockServer.registrations).toHaveLength(44);
     });
 
     it("registers list_tasks with correct description", () => {

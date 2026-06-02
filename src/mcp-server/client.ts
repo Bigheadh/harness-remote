@@ -66,6 +66,8 @@ export interface TaskApiClient {
   listSlaBreaches(): Promise<SlaBreachLog[]>;
   checkSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
   getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
+  // Task retry
+  retryTask(taskId: string): Promise<Task>;
 }
 
 export function createTaskApiClient(
@@ -800,6 +802,19 @@ export function createTaskApiClient(
         throw new Error(`Failed to get task SLA status: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       return (await response.json()) as { status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number };
+    },
+
+    async retryTask(taskId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/retry`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to retry task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
     },
   };
 }

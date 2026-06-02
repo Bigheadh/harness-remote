@@ -104,6 +104,8 @@ export interface TaskStore {
 
   // Analytics methods
   getTaskStats(): Promise<import("../../shared/types.js").TaskStats>;
+  // Task retry/requeue methods
+  retryTask(taskId: string): Promise<Task>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -451,6 +453,12 @@ export function createTaskStore(storagePath: string): TaskStore {
     UPDATE tasks SET assigned_device_id = NULL, updated_at = ? WHERE id = ?
   `);
 
+  const retryTaskStmt = db.prepare(`
+    UPDATE tasks
+    SET status = 'pending', result_summary = NULL, result_details = NULL, updated_at = ?
+    WHERE id = ?
+  `);
+
   const insertEvent = db.prepare(`
     INSERT OR IGNORE INTO processed_events (event_id, processed_at) VALUES (?, ?)
   `);
@@ -613,6 +621,27 @@ export function createTaskStore(storagePath: string): TaskStore {
       );
 
       const updated = selectTaskById.get(id) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+    async retryTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const currentStatus = row["status"] as TaskStatus;
+      if (currentStatus !== "done" && currentStatus !== "failed") {
+        throw new Error(
+          `Cannot retry task in status '${currentStatus}'. Only 'done' or 'failed' tasks can be retried.`,
+        );
+      }
+
+      const now = new Date().toISOString();
+      Number(retryTaskStmt.run(now, taskId));
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
       return rowToTask(updated);
     },
 
