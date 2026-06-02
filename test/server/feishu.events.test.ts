@@ -361,4 +361,77 @@ describe("createTaskFromFeishuEvent", () => {
     const task = createTaskFromFeishuEvent(event);
     expect(task.attachments).toBeUndefined();
   });
+
+  it("parses tags from message text", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_tag_1",
+      messageId: "msg_tag_1",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#tag:bug #tag:urgent 请修复登录问题",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toEqual(["bug", "urgent"]);
+    expect(task.commandText).toBe("请修复登录问题");
+  });
+
+  it("deduplicates tags from message text", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_tag_2",
+      messageId: "msg_tag_2",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#tag:bug 检查 #tag:bug 状态",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toEqual(["bug"]);
+    expect(task.commandText).toBe("检查 状态");
+  });
+
+  it("sets tags to undefined when no tags in message", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_tag_3",
+      messageId: "msg_tag_3",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "普通消息",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toBeUndefined();
+    expect(task.commandText).toBe("普通消息");
+  });
+
+  it("parses tags combined with priority", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_tag_4",
+      messageId: "msg_tag_4",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#priority:urgent #tag:critical 紧急修复",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("urgent");
+    expect(task.tags).toEqual(["critical"]);
+    expect(task.commandText).toBe("紧急修复");
+  });
 });

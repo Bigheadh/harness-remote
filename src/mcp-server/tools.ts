@@ -62,7 +62,7 @@ export function registerMcpTools(
     "search_tasks",
     {
       description:
-        "Search task history by text, status, and date range. Returns matching tasks sorted by creation time (newest first).",
+        "Search task history by text, status, date range, and tags. Returns matching tasks sorted by creation time (newest first).",
       inputSchema: {
         q: z
           .string()
@@ -91,13 +91,17 @@ export function registerMcpTools(
           .string()
           .optional()
           .describe("Filter by assigned device ID"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Filter by tags (all specified tags must match)"),
       },
     },
     async (args) => {
-      const { q, status, from, to, limit, deviceId } = args;
+      const { q, status, from, to, limit, deviceId, tags } = args;
 
       try {
-        const tasks = await client.searchTasks({ q, status, from, to, limit, deviceId });
+        const tasks = await client.searchTasks({ q, status, from, to, limit, deviceId, tags });
         return {
           content: [
             {
@@ -385,6 +389,113 @@ export function registerMcpTools(
               text: JSON.stringify({ entries, count: entries.length }, null, 2),
             },
           ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // manage_task_tags tool
+  server.registerTool(
+    "manage_task_tags",
+    {
+      description:
+        "Manage tags on a task. Supports adding tags, removing a tag, or listing all tags. Use action 'add' to add tags, 'remove' to remove a tag, or 'list' to get all unique tags in the system.",
+      inputSchema: {
+        action: z
+          .enum(["add", "remove", "list"])
+          .describe("The tag action to perform"),
+        taskId: z
+          .string()
+          .optional()
+          .describe("The task ID (required for add/remove actions)"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Tags to add (required for 'add' action)"),
+        tag: z
+          .string()
+          .optional()
+          .describe("Tag to remove (required for 'remove' action)"),
+      },
+    },
+    async (args) => {
+      const { action, taskId, tags, tag } = args;
+
+      try {
+        if (action === "list") {
+          const allTags = await client.listAllTags();
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ tags: allTags, count: allTags.length }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (action === "add") {
+          if (!taskId) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "taskId is required for 'add' action" }) }],
+              isError: true,
+            };
+          }
+          if (!tags || tags.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "tags array is required for 'add' action" }) }],
+              isError: true,
+            };
+          }
+          const task = await client.addTags(taskId, tags);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ task, message: `Added tags: ${tags.join(", ")}` }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (action === "remove") {
+          if (!taskId) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "taskId is required for 'remove' action" }) }],
+              isError: true,
+            };
+          }
+          if (!tag) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "tag is required for 'remove' action" }) }],
+              isError: true,
+            };
+          }
+          const task = await client.removeTag(taskId, tag);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ task, message: `Removed tag: ${tag}` }, null, 2),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown action: ${action}` }) }],
+          isError: true,
         };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

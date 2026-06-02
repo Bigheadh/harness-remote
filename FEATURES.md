@@ -126,7 +126,7 @@
 - [x] Finer permission control (per-user token and RBAC)
 
 ## Phase 20: v3 Advanced Features
-- [ ] Task tags/labels system (categorize and filter tasks by custom tags)
+- [x] Task tags/labels system (categorize and filter tasks by custom tags)
 - [ ] Task due dates and reminders (deadline tracking with overdue alerts)
 - [ ] Task comments/activity timeline (comment thread on each task)
 - [ ] Batch task operations (bulk status update, bulk assign, bulk delete)

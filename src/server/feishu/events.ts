@@ -26,6 +26,25 @@ function stripPriorityMarkers(text: string): string {
     .trim();
 }
 
+/** Parse tags from message text. Looks for #tag:name patterns. */
+function parseTagsFromText(text: string): string[] {
+  const tags: string[] = [];
+  const regex = /#tag:(\S+)/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const tag = match[1].toLowerCase();
+    if (!tags.includes(tag)) {
+      tags.push(tag);
+    }
+  }
+  return tags;
+}
+
+/** Strip tag markers from text */
+function stripTagMarkers(text: string): string {
+  return text.replace(/#tag:\S+/gi, "").replace(/\s+/g, " ").trim();
+}
+
 export interface FeishuEventContext {
   eventId: string;
   messageId: string;
@@ -206,7 +225,9 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
   const now = new Date().toISOString();
   const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const priority = parsePriority(event.text);
-  const cleanText = stripPriorityMarkers(event.text);
+  const tags = parseTagsFromText(event.text);
+  let cleanText = stripPriorityMarkers(event.text);
+  cleanText = stripTagMarkers(cleanText);
 
   return {
     id: taskId,
@@ -217,6 +238,7 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
     commandText: cleanText,
     status: "pending",
     priority,
+    tags: tags.length > 0 ? tags : undefined,
     attachments: event.attachments.length > 0 ? event.attachments : undefined,
     createdAt: now,
     updatedAt: now,

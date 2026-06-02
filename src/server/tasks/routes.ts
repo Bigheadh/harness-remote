@@ -47,6 +47,22 @@ export function registerTaskRoutes(
     }
   });
 
+  // GET /api/tasks/tags - list all unique tags (requires tasks.read)
+  server.get("/api/tasks/tags", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const tags = await store.listAllTags();
+    return reply.send({ tags });
+  });
+
   // GET /api/tasks - list tasks (requires tasks.read)
   server.get("/api/tasks", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
@@ -80,13 +96,14 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { q, status, from, to, limit, deviceId } = req.query as {
+    const { q, status, from, to, limit, deviceId, tags } = req.query as {
       q?: string;
       status?: TaskStatus;
       from?: string;
       to?: string;
       limit?: number;
       deviceId?: string;
+      tags?: string;
     };
 
     if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
@@ -107,7 +124,8 @@ export function registerTaskRoutes(
       });
     }
 
-    const tasks = await store.searchTasks({ q, status, from, to, limit, deviceId });
+    const parsedTags = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+    const tasks = await store.searchTasks({ q, status, from, to, limit, deviceId, tags: parsedTags });
     return reply.send({ tasks });
   });
 
@@ -326,6 +344,115 @@ export function registerTaskRoutes(
           taskId: id,
           actor: authCtx.user?.username ?? "api",
           actorType: "api",
+        });
+      }
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/tags - add tags to a task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { tags: string[] };
+  }>("/api/tasks/:id/tags", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { tags?: string[] };
+
+    if (!Array.isArray(body?.tags) || body.tags.length === 0) {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request body must include 'tags' (non-empty array of strings)",
+        },
+      });
+    }
+
+    // Validate all tags are non-empty strings
+    const validTags = body.tags
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t.length > 0);
+
+    if (validTags.length === 0) {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "All tags must be non-empty strings",
+        },
+      });
+    }
+
+    try {
+      const task = await store.addTags(id, validTags);
+      log.info({ taskId: id, tags: validTags }, "Tags added to task");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.tags_added",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { tags: validTags },
+        });
+      }
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // DELETE /api/tasks/:id/tags/:tag - remove a tag from a task (requires tasks.write)
+  server.delete<{
+    Params: { id: string; tag: string };
+  }>("/api/tasks/:id/tags/:tag", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id, tag } = req.params;
+
+    if (!tag || tag.trim() === "") {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Tag must be a non-empty string" },
+      });
+    }
+
+    try {
+      const task = await store.removeTag(id, tag);
+      log.info({ taskId: id, tag }, "Tag removed from task");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.tags_removed",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { tag },
         });
       }
       return reply.send({ task });

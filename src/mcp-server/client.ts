@@ -9,6 +9,7 @@ export interface TaskApiClient {
     to?: string;
     limit?: number;
     deviceId?: string;
+    tags?: string[];
   }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
@@ -21,6 +22,9 @@ export interface TaskApiClient {
   replyFeishu(taskId: string, message: string): Promise<void>;
   registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }>;
   queryAuditLog(options: AuditLogSearchOptions): Promise<AuditLogEntry[]>;
+  addTags(taskId: string, tags: string[]): Promise<Task>;
+  removeTag(taskId: string, tag: string): Promise<Task>;
+  listAllTags(): Promise<string[]>;
 }
 
 export function createTaskApiClient(
@@ -63,6 +67,7 @@ export function createTaskApiClient(
       to?: string;
       limit?: number;
       deviceId?: string;
+      tags?: string[];
     }): Promise<Task[]> {
       const params = new URLSearchParams();
       if (options.q) params.set("q", options.q);
@@ -72,6 +77,9 @@ export function createTaskApiClient(
       if (options.limit) params.set("limit", String(options.limit));
       const effectiveDeviceId = options.deviceId ?? deviceId;
       if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
+      if (options.tags && options.tags.length > 0) {
+        params.set("tags", options.tags.join(","));
+      }
 
       const qs = params.toString();
       const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
@@ -214,6 +222,64 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { entries: AuditLogEntry[] };
       return data.entries;
+    },
+
+    async addTags(taskId: string, tags: string[]): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/tags`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ tags }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to add tags: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async removeTag(taskId: string, tag: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/tags/${encodeURIComponent(tag)}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to remove tag: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async listAllTags(): Promise<string[]> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/tags`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list tags: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { tags: string[] };
+      return data.tags;
     },
   };
 }

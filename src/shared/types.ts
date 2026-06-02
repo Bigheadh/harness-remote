@@ -30,6 +30,7 @@ export interface Task {
   commandText: string;
   status: TaskStatus;
   priority: TaskPriority;
+  tags?: string[];
   attachments?: Attachment[];
   assignedDeviceId?: string;
   createdAt: string;
@@ -55,6 +56,8 @@ export type AuditAction =
   | "task.assigned"
   | "task.unassigned"
   | "task.reset_stale"
+  | "task.tags_added"
+  | "task.tags_removed"
   | "event.received"
   | "event.duplicate"
   | "event.non_allowed_user"

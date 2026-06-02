@@ -10,6 +10,7 @@ export interface SearchOptions {
   to?: string;
   limit?: number;
   deviceId?: string;
+  tags?: string[];
 }
 
 export interface TaskCounts {
@@ -42,6 +43,9 @@ export interface TaskStore {
   markEventProcessed(eventId: string): Promise<void>;
   healthCheck(): Promise<boolean>;
   countTasksByStatus(): Promise<TaskCounts>;
+  addTags(taskId: string, tags: string[]): Promise<Task>;
+  removeTag(taskId: string, tag: string): Promise<Task>;
+  listAllTags(): Promise<string[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -67,6 +71,17 @@ function parseAttachments(raw: unknown): Attachment[] | undefined {
   }
 }
 
+function parseTags(raw: unknown): string[] | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed as string[];
+  } catch {
+    return undefined;
+  }
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row["id"] as string,
@@ -77,6 +92,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     commandText: row["command_text"] as string,
     status: row["status"] as TaskStatus,
     priority: (row["priority"] as TaskPriority) ?? "normal",
+    tags: parseTags(row["tags"]),
     attachments: parseAttachments(row["attachments"]),
     assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
     createdAt: row["created_at"] as string,
@@ -106,6 +122,7 @@ export function createTaskStore(storagePath: string): TaskStore {
       command_text TEXT NOT NULL,
       status TEXT NOT NULL,
       priority TEXT NOT NULL DEFAULT 'normal',
+      tags TEXT,
       result_summary TEXT,
       result_details TEXT,
       created_at TEXT NOT NULL,
@@ -134,6 +151,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add tags column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN tags TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -148,8 +172,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, attachments, assigned_device_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -212,6 +236,9 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       const id = task.id ?? `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const tagsJson = task.tags && task.tags.length > 0
+        ? JSON.stringify(task.tags)
+        : null;
       const attachmentsJson = task.attachments && task.attachments.length > 0
         ? JSON.stringify(task.attachments)
         : null;
@@ -225,6 +252,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.commandText,
         status,
         priority,
+        tagsJson,
         attachmentsJson,
         task.assignedDeviceId ?? null,
         task.createdAt ?? now,
@@ -271,6 +299,13 @@ export function createTaskStore(storagePath: string): TaskStore {
       if (options.deviceId) {
         conditions.push("assigned_device_id = ?");
         params.push(options.deviceId);
+      }
+
+      if (options.tags && options.tags.length > 0) {
+        for (const tag of options.tags) {
+          conditions.push("tags LIKE ?");
+          params.push(`%"${tag}"%`);
+        }
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -432,6 +467,69 @@ export function createTaskStore(storagePath: string): TaskStore {
         counts.total += cnt;
       }
       return counts;
+    },
+
+    async addTags(taskId: string, tags: string[]): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const existingTags = parseTags(row["tags"]) ?? [];
+      const mergedTags = [...new Set([...existingTags, ...tags])].sort();
+      const tagsJson = JSON.stringify(mergedTags);
+      const now = new Date().toISOString();
+
+      db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(
+        tagsJson,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async removeTag(taskId: string, tag: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const existingTags = parseTags(row["tags"]) ?? [];
+      const filteredTags = existingTags.filter((t) => t !== tag);
+      const tagsJson =
+        filteredTags.length > 0 ? JSON.stringify(filteredTags) : null;
+      const now = new Date().toISOString();
+
+      db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(
+        tagsJson,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async listAllTags(): Promise<string[]> {
+      const rows = db.prepare(`
+        SELECT tags FROM tasks WHERE tags IS NOT NULL AND tags != '[]'
+      `).all() as Array<Record<string, unknown>>;
+      const tagSet = new Set<string>();
+      for (const row of rows) {
+        const tags = parseTags(row["tags"]);
+        if (tags) {
+          for (const tag of tags) {
+            tagSet.add(tag);
+          }
+        }
+      }
+      return [...tagSet].sort();
     },
   };
 }

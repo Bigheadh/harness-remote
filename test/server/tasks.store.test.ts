@@ -504,4 +504,146 @@ describe("attachments", () => {
     expect(results[0].attachments).toHaveLength(1);
     expect(results[0].attachments![0].fileName).toBe("result.xlsx");
   });
+
+  describe("tags", () => {
+    it("stores and retrieves tags", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_tags_1",
+          feishuMessageId: "msg_tags_1",
+          tags: ["bug", "urgent"],
+        }),
+      );
+      const task = await store.getTask("t_tags_1");
+      expect(task).toBeDefined();
+      expect(task!.tags).toEqual(["bug", "urgent"]);
+    });
+
+    it("creates task without tags", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_no_tags",
+          feishuMessageId: "msg_no_tags",
+        }),
+      );
+      const task = await store.getTask("t_no_tags");
+      expect(task).toBeDefined();
+      expect(task!.tags).toBeUndefined();
+    });
+
+    it("adds tags to a task", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_add_tags",
+          feishuMessageId: "msg_add_tags",
+          tags: ["bug"],
+        }),
+      );
+      const updated = await store.addTags("t_add_tags", ["urgent", "bug"]);
+      expect(updated.tags).toEqual(["bug", "urgent"]);
+    });
+
+    it("deduplicates tags when adding", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_dedup_tags",
+          feishuMessageId: "msg_dedup_tags",
+          tags: ["bug"],
+        }),
+      );
+      const updated = await store.addTags("t_dedup_tags", ["bug", "feature"]);
+      expect(updated.tags).toEqual(["bug", "feature"]);
+    });
+
+    it("removes a tag from a task", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_rm_tag",
+          feishuMessageId: "msg_rm_tag",
+          tags: ["bug", "urgent"],
+        }),
+      );
+      const updated = await store.removeTag("t_rm_tag", "bug");
+      expect(updated.tags).toEqual(["urgent"]);
+    });
+
+    it("sets tags to undefined when all tags removed", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_rm_all",
+          feishuMessageId: "msg_rm_all",
+          tags: ["bug"],
+        }),
+      );
+      const updated = await store.removeTag("t_rm_all", "bug");
+      expect(updated.tags).toBeUndefined();
+    });
+
+    it("lists all unique tags", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_list_a",
+          feishuMessageId: "msg_list_a",
+          tags: ["bug", "urgent"],
+        }),
+      );
+      await store.createTask(
+        makeTask({
+          id: "t_list_b",
+          feishuMessageId: "msg_list_b",
+          tags: ["feature", "bug"],
+        }),
+      );
+      const tags = await store.listAllTags();
+      expect(tags).toEqual(["bug", "feature", "urgent"]);
+    });
+
+    it("filters tasks by tags in searchTasks", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_ftag_1",
+          feishuMessageId: "msg_ftag_1",
+          tags: ["bug", "urgent"],
+        }),
+      );
+      await store.createTask(
+        makeTask({
+          id: "t_ftag_2",
+          feishuMessageId: "msg_ftag_2",
+          tags: ["feature"],
+        }),
+      );
+      const results = await store.searchTasks({ tags: ["bug"] });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("t_ftag_1");
+    });
+
+    it("filters tasks by multiple tags in searchTasks", async () => {
+      await store.createTask(
+        makeTask({
+          id: "t_mtag_1",
+          feishuMessageId: "msg_mtag_1",
+          tags: ["bug", "urgent"],
+        }),
+      );
+      await store.createTask(
+        makeTask({
+          id: "t_mtag_2",
+          feishuMessageId: "msg_mtag_2",
+          tags: ["bug", "feature"],
+        }),
+      );
+      const results = await store.searchTasks({ tags: ["bug", "urgent"] });
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("t_mtag_1");
+    });
+
+    it("addTags throws for non-existent task", async () => {
+      await expect(store.addTags("nonexistent", ["tag"])).rejects.toThrow("Task not found");
+    });
+
+    it("removeTag throws for non-existent task", async () => {
+      await expect(store.removeTag("nonexistent", "tag")).rejects.toThrow("Task not found");
+    });
+  });
 });

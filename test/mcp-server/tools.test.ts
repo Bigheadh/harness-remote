@@ -103,6 +103,8 @@ function createMockClient(): TaskApiClient & {
       from?: string;
       to?: string;
       limit?: number;
+      deviceId?: string;
+      tags?: string[];
     }): Promise<Task[]> {
       calls.push({ method: "searchTasks", args: [options] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -120,6 +122,45 @@ function createMockClient(): TaskApiClient & {
           resultSummary: "搜索结果",
         },
       ];
+    },
+
+    async addTags(taskId: string, tags: string[]): Promise<Task> {
+      calls.push({ method: "addTags", args: [taskId, tags] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_tags",
+        feishuChatId: "oc_tags",
+        feishuUserId: "ou_tags",
+        commandText: "标签任务",
+        status: "pending",
+        tags,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async removeTag(taskId: string, tag: string): Promise<Task> {
+      calls.push({ method: "removeTag", args: [taskId, tag] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_tags",
+        feishuChatId: "oc_tags",
+        feishuUserId: "ou_tags",
+        commandText: "标签任务",
+        status: "pending",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async listAllTags(): Promise<string[]> {
+      calls.push({ method: "listAllTags", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return ["bug", "feature", "urgent"];
     },
   };
   return mock;
@@ -176,8 +217,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 7 tools", () => {
-      expect(mockServer.registrations).toHaveLength(8);
+    it("registers all 9 tools", () => {
+      expect(mockServer.registrations).toHaveLength(9);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -437,6 +478,103 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Search failed");
+    });
+
+    it("passes tags filter to client", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "search_tasks")!;
+      await tool.handler({ tags: ["bug", "urgent"] });
+
+      expect(mock.calls[0].args[0]).toHaveProperty("tags", ["bug", "urgent"]);
+    });
+  });
+
+  describe("manage_task_tags handler", () => {
+    it("registers manage_task_tags with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Manage tags");
+    });
+
+    it("lists all tags", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({ action: "list" });
+
+      expect(mock.calls[0].method).toBe("listAllTags");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.tags).toEqual(["bug", "feature", "urgent"]);
+      expect(parsed.count).toBe(3);
+    });
+
+    it("adds tags to a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({
+        action: "add",
+        taskId: "task_001",
+        tags: ["bug", "critical"],
+      });
+
+      expect(mock.calls[0].method).toBe("addTags");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toEqual(["bug", "critical"]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task).toBeDefined();
+      expect(parsed.message).toContain("bug");
+    });
+
+    it("removes a tag from a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({
+        action: "remove",
+        taskId: "task_001",
+        tag: "bug",
+      });
+
+      expect(mock.calls[0].method).toBe("removeTag");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe("bug");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task).toBeDefined();
+      expect(parsed.message).toContain("bug");
+    });
+
+    it("returns error when add action missing taskId", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({ action: "add", tags: ["bug"] });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("taskId is required");
+    });
+
+    it("returns error when add action missing tags", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({ action: "add", taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("tags array is required");
+    });
+
+    it("returns error when remove action missing tag", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({ action: "remove", taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("tag is required");
+    });
+
+    it("returns error on client failure", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
+      const result = await tool.handler({ action: "list" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
     });
   });
 });
