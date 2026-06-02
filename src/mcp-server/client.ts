@@ -68,6 +68,8 @@ export interface TaskApiClient {
   getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
   // Task retry
   retryTask(taskId: string): Promise<Task>;
+  // Task clone
+  cloneTask(taskId: string): Promise<Task>;
 }
 
 export function createTaskApiClient(
@@ -812,6 +814,19 @@ export function createTaskApiClient(
       if (!response.ok) {
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to retry task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async cloneTask(taskId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/clone`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to clone task: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       const data = (await response.json()) as { task: Task };
       return data.task;

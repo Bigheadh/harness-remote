@@ -1928,4 +1928,38 @@ export function registerMcpTools(
       }
     },
   );
+
+  // clone_task tool
+  server.registerTool(
+    "clone_task",
+    {
+      description:
+        "Clone an existing task to create a duplicate with the same command text, priority, and tags, but with a fresh 'pending' status and no results. Useful when you need to re-run the same command or create similar tasks.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to clone"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.cloneTask(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task cloned successfully. New task ID: ${task.id}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

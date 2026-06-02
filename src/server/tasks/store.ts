@@ -106,6 +106,8 @@ export interface TaskStore {
   getTaskStats(): Promise<import("../../shared/types.js").TaskStats>;
   // Task retry/requeue methods
   retryTask(taskId: string): Promise<Task>;
+  // Task cloning methods
+  cloneTask(taskId: string): Promise<Task>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -643,6 +645,44 @@ export function createTaskStore(storagePath: string): TaskStore {
 
       const updated = selectTaskById.get(taskId) as Record<string, unknown>;
       return rowToTask(updated);
+    },
+
+    async cloneTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const originalMessageId = row["feishu_message_id"] as string;
+      const clonedMessageId = `${originalMessageId}_clone_${Date.now()}`;
+
+      const tagsJson = row["tags"] as string | null;
+      const attachmentsJson = row["attachments"] as string | null;
+
+      Number(insertTask.run(
+        newId,
+        row["source"] as string,
+        clonedMessageId,
+        row["feishu_chat_id"] as string,
+        row["feishu_user_id"] as string,
+        row["command_text"] as string,
+        "pending",
+        (row["priority"] as string) ?? "normal",
+        tagsJson,
+        attachmentsJson,
+        null, // cloned task starts unassigned
+        (row["due_date"] as string) ?? null,
+        (row["reminder_at"] as string) ?? null,
+        now,
+        now,
+      ));
+
+      const cloned = selectTaskById.get(newId) as Record<string, unknown>;
+      return rowToTask(cloned);
     },
 
     async getTaskMessageId(id: string): Promise<string | undefined> {

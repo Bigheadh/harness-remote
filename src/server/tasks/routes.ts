@@ -763,6 +763,46 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/clone - duplicate a task with fresh pending status (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/clone", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+
+    try {
+      const clonedTask = await store.cloneTask(id);
+      log.info({ sourceTaskId: id, clonedTaskId: clonedTask.id }, "Task cloned");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.created",
+          taskId: clonedTask.id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "clone", sourceTaskId: id },
+        });
+      }
+      broadcastTaskUpdated(clonedTask);
+      return reply.code(201).send({ task: clonedTask });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/:id/assign - assign task to device (requires tasks.assign)
   server.post<{
     Params: { id: string };
