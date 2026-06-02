@@ -5,6 +5,7 @@ import type { AuditLogStore } from "../audit/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
+import { broadcastTaskCreated } from "../sse/broadcaster.js";
 
 const log = createLogger({ level: "info" });
 
@@ -340,6 +341,9 @@ export function registerFeishuRoutes(
     // Create task
     const task = createTaskFromFeishuEvent(eventContext);
     await store.createTask(task);
+
+    // Broadcast SSE event
+    broadcastTaskCreated(task);
 
     // Mark event as processed
     await store.markEventProcessed(eventContext.eventId);

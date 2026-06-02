@@ -12,6 +12,13 @@ import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
+import {
+  broadcastTaskUpdated,
+  broadcastTaskStatusChanged,
+  broadcastTaskResultReported,
+  broadcastTaskAssigned,
+  broadcastTaskDeleted,
+} from "../sse/broadcaster.js";
 
 const log = createLogger({ level: "info" });
 
@@ -453,6 +460,13 @@ export function registerTaskRoutes(
       });
     }
 
+    // Broadcast SSE events for each deleted task
+    for (const taskId of body.ids) {
+      if (!result.errors.includes(taskId)) {
+        broadcastTaskDeleted(taskId);
+      }
+    }
+
     return reply.send({ ok: true, ...result });
   });
 
@@ -616,6 +630,8 @@ export function registerTaskRoutes(
       if (webhookStore) {
         dispatchWebhook(webhookStore, "task.status_changed", task, { previousStatus }).catch(() => {});
       }
+      // Broadcast SSE event
+      broadcastTaskStatusChanged(task, previousStatus ?? "");
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -683,6 +699,8 @@ export function registerTaskRoutes(
       if (webhookStore) {
         dispatchWebhook(webhookStore, "task.result_reported", task, { success: body.success, summary: body.summary }).catch(() => {});
       }
+      // Broadcast SSE event
+      broadcastTaskResultReported(task, body.success, body.summary);
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -737,6 +755,8 @@ export function registerTaskRoutes(
       if (webhookStore) {
         dispatchWebhook(webhookStore, "task.assigned", task, { deviceId: body.deviceId.trim() }).catch(() => {});
       }
+      // Broadcast SSE event
+      broadcastTaskAssigned(task, body.deviceId.trim());
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {

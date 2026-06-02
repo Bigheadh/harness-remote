@@ -22,6 +22,7 @@ import { registerRateLimitHook } from "./ratelimit/middleware.js";
 import { registerScheduledTaskRoutes } from "./scheduled/routes.js";
 import { startScheduler } from "./scheduler/index.js";
 import { registerStatsRoutes } from "./stats/routes.js";
+import { registerSseRoutes } from "./sse/routes.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -94,6 +95,7 @@ export async function startServer(): Promise<void> {
   registerWebhookRoutes(server, webhookStore, config.personalToken, userStore, apiKeyStore);
   registerScheduledTaskRoutes(server, store, config.personalToken, auditStore);
   registerStatsRoutes(server, store, config.personalToken);
+  registerSseRoutes(server, config.personalToken);
 
   // Rate limiting — registered AFTER routes (so auth hook runs first)
   const rateLimiter = new RateLimiter({

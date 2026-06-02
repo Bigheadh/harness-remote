@@ -143,5 +143,5 @@
 
 ## Phase 22: v5 Observability & Analytics
 - [x] Task statistics and analytics endpoint (GET /api/stats/summary)
-- [ ] Server-sent events (SSE) for real-time task updates (/api/tasks/stream)
+- [x] Server-sent events (SSE) for real-time task updates (/api/tasks/stream)
 - [ ] Prometheus-compatible metrics endpoint (/metrics)
