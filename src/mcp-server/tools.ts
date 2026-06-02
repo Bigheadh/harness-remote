@@ -1,6 +1,22 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import type { TaskApiClient } from "./client.js";
+import type { DependencyGraph, DependencyTreeNode } from "../shared/types.js";
+
+/** Count nodes with status 'pending' that have all deps met (no unresolved children) */
+function countReadyNodes(graph: DependencyGraph): number {
+  let count = 0;
+  function walkUp(node: DependencyTreeNode): boolean {
+    const allChildrenDone = node.children.every((c) => c.status === "done" || c.status === "failed" || walkUp(c));
+    if (node.status === "pending" && allChildrenDone) count++;
+    return node.status === "done" || node.status === "failed";
+  }
+  for (const child of graph.upstream) walkUp(child);
+  // Root itself if pending and all upstream done
+  const rootAllUpstreamDone = graph.upstream.every((c) => c.status === "done" || c.status === "failed");
+  if (graph.status === "pending" && rootAllUpstreamDone) count++;
+  return count;
+}
 
 export function registerMcpTools(
   server: McpServer,
@@ -1482,6 +1498,43 @@ export function registerMcpTools(
                 message: tasks.length === 0
                   ? "No tasks ready for processing"
                   : `${tasks.length} task(s) ready — all prerequisites met`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_task_dependency_graph tool
+  server.registerTool(
+    "get_task_dependency_graph",
+    {
+      description:
+        "Get the full dependency graph for a task — recursively traverses all upstream (prerequisites) and downstream (dependents) tasks. Returns a tree structure with node details, edge list for visualization, depth stats, and total node count. Useful for understanding complex task chains.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to get the dependency graph for"),
+      },
+    },
+    async (args) => {
+      try {
+        const graph = await client.getDependencyGraph(args.taskId);
+        const readyCount = countReadyNodes(graph);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...graph,
+                message: graph.totalNodes === 1
+                  ? `Task ${args.taskId} has no dependencies`
+                  : `Dependency graph: ${graph.totalNodes} tasks, ${graph.edges.length} edges, max upstream depth ${graph.maxUpstreamDepth}, max downstream depth ${graph.maxDownstreamDepth}, ${readyCount} ready`,
               }, null, 2),
             },
           ],

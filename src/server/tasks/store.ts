@@ -119,6 +119,8 @@ export interface TaskStore {
   deleteNote(noteId: number, taskId: string): Promise<boolean>;
   // Task user search — find tasks by Feishu user ID
   listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
+  // Task dependency graph — full recursive tree traversal
+  getDependencyGraph(taskId: string): Promise<import("../../shared/types.js").DependencyGraph>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -1426,6 +1428,90 @@ export function createTaskStore(storagePath: string): TaskStore {
         }
         return task;
       });
+    },
+
+    async getDependencyGraph(taskId: string): Promise<import("../../shared/types.js").DependencyGraph> {
+      // Verify root task exists
+      const rootRow = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!rootRow) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      const rootTask = rowToTask(rootRow);
+
+      const edges: Array<{ from: string; to: string }> = [];
+      const visited = new Set<string>();
+      let maxUpstreamDepth = 0;
+      let maxDownstreamDepth = 0;
+
+      // Recursively build upstream tree (prerequisites)
+      function buildUpstream(id: string, depth: number): import("../../shared/types.js").DependencyTreeNode[] {
+        if (depth > maxUpstreamDepth) maxUpstreamDepth = depth;
+        const depIds = db.prepare(
+          `SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?`
+        ).all(id) as Array<Record<string, unknown>>;
+
+        return depIds.map((row) => {
+          const depId = row["depends_on_task_id"] as string;
+          edges.push({ from: id, to: depId });
+          visited.add(depId);
+
+          const depRow = selectTaskById.get(depId) as Record<string, unknown> | undefined;
+          if (!depRow) {
+            return { taskId: depId, status: "pending" as const, commandText: "(deleted)", children: [] };
+          }
+          const depTask = rowToTask(depRow);
+          return {
+            taskId: depId,
+            status: depTask.status,
+            commandText: depTask.commandText,
+            children: buildUpstream(depId, depth + 1),
+          };
+        });
+      }
+
+      // Recursively build downstream tree (dependents)
+      function buildDownstream(id: string, depth: number): import("../../shared/types.js").DependencyTreeNode[] {
+        if (depth > maxDownstreamDepth) maxDownstreamDepth = depth;
+        const dependentIds = db.prepare(
+          `SELECT task_id FROM task_dependencies WHERE depends_on_task_id = ?`
+        ).all(id) as Array<Record<string, unknown>>;
+
+        return dependentIds.map((row) => {
+          const depId = row["task_id"] as string;
+          edges.push({ from: depId, to: id });
+          visited.add(depId);
+
+          const depRow = selectTaskById.get(depId) as Record<string, unknown> | undefined;
+          if (!depRow) {
+            return { taskId: depId, status: "pending" as const, commandText: "(deleted)", children: [] };
+          }
+          const depTask = rowToTask(depRow);
+          return {
+            taskId: depId,
+            status: depTask.status,
+            commandText: depTask.commandText,
+            children: buildDownstream(depId, depth + 1),
+          };
+        });
+      }
+
+      const upstream = buildUpstream(taskId, 1);
+      const downstream = buildDownstream(taskId, 1);
+
+      // Count total unique nodes (root + all visited)
+      const totalNodes = visited.size + 1; // +1 for root
+
+      return {
+        taskId,
+        status: rootTask.status,
+        commandText: rootTask.commandText,
+        upstream,
+        downstream,
+        maxUpstreamDepth,
+        maxDownstreamDepth,
+        totalNodes,
+        edges,
+      };
     },
 
     // ── Export/Import ────────────────────────────────────────────

@@ -53,6 +53,7 @@ export interface TaskApiClient {
   getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }>;
   removeDependency(taskId: string, depId: string): Promise<Task>;
   listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
+  getDependencyGraph(taskId: string): Promise<import("../shared/types.js").DependencyGraph>;
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
@@ -685,6 +686,16 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    async getDependencyGraph(taskId: string): Promise<import("../shared/types.js").DependencyGraph> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependency-graph`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get dependency graph: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { graph: import("../shared/types.js").DependencyGraph };
+      return data.graph;
     },
 
     // ── Export/Import ──────────────────────────────────────────────

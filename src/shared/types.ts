@@ -44,6 +44,35 @@ export interface Task {
   resultDetails?: string;
 }
 
+/** A node in the dependency tree */
+export interface DependencyTreeNode {
+  taskId: string;
+  status: TaskStatus;
+  commandText: string;
+  /** Children in the appropriate direction (upstream: prerequisites, downstream: dependents) */
+  children: DependencyTreeNode[];
+}
+
+/** Full dependency graph for a task */
+export interface DependencyGraph {
+  /** The root task */
+  taskId: string;
+  status: TaskStatus;
+  commandText: string;
+  /** Tasks that must complete before this task (recursively) */
+  upstream: DependencyTreeNode[];
+  /** Tasks that wait on this task (recursively) */
+  downstream: DependencyTreeNode[];
+  /** Maximum depth of the upstream tree */
+  maxUpstreamDepth: number;
+  /** Maximum depth of the downstream tree */
+  maxDownstreamDepth: number;
+  /** Total number of unique nodes in the graph (including root) */
+  totalNodes: number;
+  /** Flat edge list for graph visualization: from → to means "from depends on to" */
+  edges: Array<{ from: string; to: string }>;
+}
+
 export interface AuditLogEntry {
   id: number;
   action: string;

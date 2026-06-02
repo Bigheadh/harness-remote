@@ -519,6 +519,22 @@ function createMockClient(): TaskApiClient & {
       ];
     },
 
+    async getDependencyGraph(taskId: string): Promise<import("../../src/shared/types.js").DependencyGraph> {
+      calls.push({ method: "getDependencyGraph", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        taskId,
+        status: "pending",
+        commandText: "Root task",
+        upstream: [],
+        downstream: [],
+        maxUpstreamDepth: 0,
+        maxDownstreamDepth: 0,
+        totalNodes: 1,
+        edges: [],
+      };
+    },
+
     // Export/Import mocks
     async exportTasks(): Promise<Record<string, unknown>> {
       calls.push({ method: "exportTasks", args: [] });
@@ -850,8 +866,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 51 tools", () => {
-      expect(mockServer.registrations).toHaveLength(51);
+    it("registers all 52 tools", () => {
+      expect(mockServer.registrations).toHaveLength(52);
     });
 
     it("registers list_tasks with correct description", () => {
