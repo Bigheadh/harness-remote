@@ -6,6 +6,7 @@ import type { WebhookStore } from "../webhooks/store.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
 import { broadcastTaskCreated } from "../sse/broadcaster.js";
+import { recordTaskCreated, recordEventProcessed } from "../metrics/collector.js";
 
 const log = createLogger({ level: "info" });
 
@@ -341,6 +342,7 @@ export function registerFeishuRoutes(
     // Create task
     const task = createTaskFromFeishuEvent(eventContext);
     await store.createTask(task);
+    recordTaskCreated();
 
     // Broadcast SSE event
     broadcastTaskCreated(task);

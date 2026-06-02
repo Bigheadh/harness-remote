@@ -23,6 +23,8 @@ import { registerScheduledTaskRoutes } from "./scheduled/routes.js";
 import { startScheduler } from "./scheduler/index.js";
 import { registerStatsRoutes } from "./stats/routes.js";
 import { registerSseRoutes } from "./sse/routes.js";
+import { registerMetricsRoutes } from "./metrics/routes.js";
+import { recordHttpRequest } from "./metrics/collector.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -81,6 +83,11 @@ export async function startServer(): Promise<void> {
       },
       "Request completed",
     );
+    // Record metrics for Prometheus (skip /metrics itself to avoid noise)
+    if (req.url !== "/metrics") {
+      const durationSeconds = duration / 1000;
+      recordHttpRequest(req.method, req.url, reply.statusCode, durationSeconds);
+    }
   });
 
   // Register routes — pass userStore for RBAC support
@@ -96,6 +103,7 @@ export async function startServer(): Promise<void> {
   registerScheduledTaskRoutes(server, store, config.personalToken, auditStore);
   registerStatsRoutes(server, store, config.personalToken);
   registerSseRoutes(server, config.personalToken);
+  registerMetricsRoutes(server, store);
 
   // Rate limiting — registered AFTER routes (so auth hook runs first)
   const rateLimiter = new RateLimiter({

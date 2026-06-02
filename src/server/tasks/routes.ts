@@ -12,6 +12,7 @@ import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
+import { recordTaskStatusChange, recordTaskCompleted } from "../metrics/collector.js";
 import {
   broadcastTaskUpdated,
   broadcastTaskStatusChanged,
@@ -632,6 +633,9 @@ export function registerTaskRoutes(
       }
       // Broadcast SSE event
       broadcastTaskStatusChanged(task, previousStatus ?? "");
+      if (previousStatus) {
+        recordTaskStatusChange(previousStatus, status);
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -699,8 +703,9 @@ export function registerTaskRoutes(
       if (webhookStore) {
         dispatchWebhook(webhookStore, "task.result_reported", task, { success: body.success, summary: body.summary }).catch(() => {});
       }
-      // Broadcast SSE event
+      // Broadcast SSE event for result report
       broadcastTaskResultReported(task, body.success, body.summary);
+      recordTaskCompleted(body.success ? "done" : "failed");
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {

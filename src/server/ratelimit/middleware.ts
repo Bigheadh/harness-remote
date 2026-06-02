@@ -15,6 +15,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { createHash } from "node:crypto";
 import type { RateLimiter } from "./limiter.js";
+import { recordRateLimitRejection } from "../metrics/collector.js";
 
 /**
  * Derive a rate limit key from the request context.
@@ -70,6 +71,7 @@ export function registerRateLimitHook(
     reply.header("X-RateLimit-Reset", Math.ceil(result.resetMs / 1000));
 
     if (!result.allowed) {
+      recordRateLimitRejection();
       reply.code(429).send({
         error: {
           code: "rate_limited",
