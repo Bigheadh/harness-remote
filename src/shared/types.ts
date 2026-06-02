@@ -270,3 +270,29 @@ export interface SlaSummary {
     breached: number;
   }>;
 }
+
+/** Comprehensive task statistics and analytics */
+export interface TaskStats {
+  /** Total task count */
+  total: number;
+  /** Count by status */
+  byStatus: Record<TaskStatus, number>;
+  /** Count by priority */
+  byPriority: Record<TaskPriority, number>;
+  /** Tasks created per day (last 7 days) */
+  dailyCreated: Array<{ date: string; count: number }>;
+  /** Tasks completed per day (last 7 days) */
+  dailyCompleted: Array<{ date: string; count: number }>;
+  /** Average resolution time in minutes for tasks completed in last 7 days */
+  avgResolutionMinutes: number | null;
+  /** Median resolution time in minutes for tasks completed in last 7 days */
+  medianResolutionMinutes: number | null;
+  /** Success rate (done / (done + failed)) as a percentage 0-100 */
+  successRate: number | null;
+  /** Top 10 tags by task count */
+  topTags: Array<{ tag: string; count: number }>;
+  /** Tasks currently overdue */
+  overdueCount: number;
+  /** Timestamp of when stats were computed */
+  computedAt: string;
+}

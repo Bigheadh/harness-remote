@@ -101,6 +101,9 @@ export interface TaskStore {
   listSlaBreaches(): Promise<SlaBreachLog[]>;
   getSlaSummary(): Promise<SlaSummary>;
   checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
+
+  // Analytics methods
+  getTaskStats(): Promise<import("../../shared/types.js").TaskStats>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -1749,7 +1752,113 @@ export function createTaskStore(storagePath: string): TaskStore {
       // Auto-resolve breaches/warnings for completed tasks
       db.prepare(`\n        UPDATE sla_breach_log SET resolved_at = ?\n        WHERE resolved_at IS NULL\n        AND task_id IN (SELECT id FROM tasks WHERE status IN ('done', 'failed'))\n      `).run(now);
 
-      return { warnings, breaches };
+     return { warnings, breaches };
+   },
+
+    async getTaskStats(): Promise<import("../../shared/types.js").TaskStats> {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+      // Total count
+      const totalRow = db.prepare(`SELECT COUNT(*) as cnt FROM tasks`).get() as Record<string, unknown>;
+      const total = Number(totalRow["cnt"]);
+
+      // Count by status
+      const statusRows = db.prepare(`SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status`).all() as Array<Record<string, unknown>>;
+      const byStatus: Record<TaskStatus, number> = { pending: 0, picked: 0, running: 0, done: 0, failed: 0 };
+      for (const row of statusRows) {
+        byStatus[row["status"] as TaskStatus] = Number(row["cnt"]);
+      }
+
+      // Count by priority
+      const priorityRows = db.prepare(`SELECT priority, COUNT(*) as cnt FROM tasks GROUP BY priority`).all() as Array<Record<string, unknown>>;
+      const byPriority: Record<TaskPriority, number> = { low: 0, normal: 0, high: 0, urgent: 0 };
+      for (const row of priorityRows) {
+        const p = (row["priority"] as TaskPriority) ?? "normal";
+        byPriority[p] = Number(row["cnt"]);
+      }
+
+      // Daily created (last 7 days)
+      const dailyCreatedRows = db.prepare(`
+        SELECT DATE(created_at) as day, COUNT(*) as cnt
+        FROM tasks
+        WHERE created_at >= ?
+        GROUP BY day ORDER BY day
+      `).all(sevenDaysAgoISO) as Array<Record<string, unknown>>;
+      const dailyCreated = dailyCreatedRows.map(r => ({ date: r["day"] as string, count: Number(r["cnt"]) }));
+
+      // Daily completed (last 7 days)
+      const dailyCompletedRows = db.prepare(`
+        SELECT DATE(updated_at) as day, COUNT(*) as cnt
+        FROM tasks
+        WHERE status IN ('done', 'failed') AND updated_at >= ?
+        GROUP BY day ORDER BY day
+      `).all(sevenDaysAgoISO) as Array<Record<string, unknown>>;
+      const dailyCompleted = dailyCompletedRows.map(r => ({ date: r["day"] as string, count: Number(r["cnt"]) }));
+
+      // Resolution times for completed tasks in last 7 days
+      const resolutionRows = db.prepare(`
+        SELECT (julianday(updated_at) - julianday(created_at)) * 24 * 60 as minutes
+        FROM tasks
+        WHERE status IN ('done', 'failed') AND updated_at >= ?
+        ORDER BY minutes
+      `).all(sevenDaysAgoISO) as Array<Record<string, unknown>>;
+
+      let avgResolutionMinutes: number | null = null;
+      let medianResolutionMinutes: number | null = null;
+      if (resolutionRows.length > 0) {
+        const values = resolutionRows.map(r => Number(r["minutes"]));
+        avgResolutionMinutes = values.reduce((a, b) => a + b, 0) / values.length;
+        const mid = Math.floor(values.length / 2);
+        medianResolutionMinutes = values.length % 2 !== 0
+          ? values[mid]
+          : (values[mid - 1] + values[mid]) / 2;
+      }
+
+      // Success rate
+      const doneCount = byStatus.done;
+      const failedCount = byStatus.failed;
+      const successRate = (doneCount + failedCount) > 0
+        ? Math.round((doneCount / (doneCount + failedCount)) * 1000) / 10
+        : null;
+
+      // Top 10 tags
+      const allTagRows = db.prepare(`SELECT tags FROM tasks WHERE tags IS NOT NULL AND tags != '[]'`).all() as Array<Record<string, unknown>>;
+      const tagCounts = new Map<string, number>();
+      for (const row of allTagRows) {
+        const tags = parseTags(row["tags"]);
+        if (tags) {
+          for (const tag of tags) {
+            tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+          }
+        }
+      }
+      const topTags = [...tagCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([tag, count]) => ({ tag, count }));
+
+      // Overdue count
+      const overdueRow = db.prepare(`
+        SELECT COUNT(*) as cnt FROM tasks
+        WHERE due_date IS NOT NULL AND due_date < ? AND status IN ('pending', 'picked', 'running')
+      `).get(now.toISOString()) as Record<string, unknown>;
+      const overdueCount = Number(overdueRow["cnt"]);
+
+      return {
+        total,
+        byStatus,
+        byPriority,
+        dailyCreated,
+        dailyCompleted,
+        avgResolutionMinutes: avgResolutionMinutes !== null ? Math.round(avgResolutionMinutes * 10) / 10 : null,
+        medianResolutionMinutes: medianResolutionMinutes !== null ? Math.round(medianResolutionMinutes * 10) / 10 : null,
+        successRate,
+        topTags,
+        overdueCount,
+        computedAt: now.toISOString(),
+      };
     },
   };
 }

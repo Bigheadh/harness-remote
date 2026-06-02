@@ -140,3 +140,8 @@
 - [x] API key rotation with grace period (auto-expire old tokens after rotation)
 - [x] Export/import tasks (JSON backup and restore across instances)
 - [x] SLA monitoring and alerts (track resolution time, alert on breaches)
+
+## Phase 22: v5 Observability & Analytics
+- [x] Task statistics and analytics endpoint (GET /api/stats/summary)
+- [ ] Server-sent events (SSE) for real-time task updates (/api/tasks/stream)
+- [ ] Prometheus-compatible metrics endpoint (/metrics)
