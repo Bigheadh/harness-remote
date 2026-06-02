@@ -93,3 +93,19 @@
 - [x] Error logging with redaction
 - [x] Data directory auto-creation
 - [x] Git initial commit + push to GitHub
+
+## Phase 15: Security & Code Quality
+- [x] Timing-safe token comparison (prevent timing attacks)
+- [x] Shared config validation helpers (eliminate duplication)
+- [x] FeishuReplyClient type export (better DI)
+
+## Phase 16: API Improvements
+- [x] Dedicated POST /api/tasks/:id/reply endpoint
+- [x] POST /api/tasks/reset-stale endpoint (stale task cleanup)
+- [x] Request logging middleware with duration tracking
+
+## Phase 17: Feature Enhancements
+- [x] Task priority field (low/normal/high/urgent)
+- [x] Priority parsing from message text (#priority:urgent, !high)
+- [x] Priority-sorted task listing (urgent tasks first)
+- [x] Stale task detection and reset (configurable timeout)
