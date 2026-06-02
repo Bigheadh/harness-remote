@@ -881,6 +881,54 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/forward - forward task to different device with message (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { deviceId?: string; message?: string };
+  }>("/api/tasks/:id/forward", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { deviceId?: string; message?: string };
+
+    if (!body?.deviceId || typeof body.deviceId !== "string" || body.deviceId.trim() === "") {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'deviceId' (non-empty string)" },
+      });
+    }
+
+    try {
+      const task = await store.forwardTask(id, body.deviceId.trim(), body.message);
+      log.info({ taskId: id, targetDeviceId: body.deviceId }, "Task forwarded");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.forwarded",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { targetDeviceId: body.deviceId, message: body.message },
+        });
+      }
+      broadcastTaskUpdated(task);
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/:id/assign - assign task to device (requires tasks.assign)
   server.post<{
     Params: { id: string };

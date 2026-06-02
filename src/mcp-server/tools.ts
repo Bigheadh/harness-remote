@@ -2030,4 +2030,43 @@ export function registerMcpTools(
       }
     },
   );
+
+  // forward_task tool
+  server.registerTool(
+    "forward_task",
+    {
+      description:
+        "Forward a task to a different device for processing. The task is reassigned to the target device and reset to pending status. Optionally include a message that will be added as a forwarding comment.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to forward"),
+        targetDeviceId: z.string().describe("The device ID to forward the task to"),
+        message: z
+          .string()
+          .optional()
+          .describe("Optional message to add as a forwarding comment"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.forwardTask(args.taskId, args.targetDeviceId, args.message);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task forwarded to device '${args.targetDeviceId}'. Task has been reset to pending status.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

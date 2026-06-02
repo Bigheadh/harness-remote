@@ -151,3 +151,11 @@
 - [x] Task cloning — duplicate a task with same command text and fresh status
 - [x] Task pinning — pin important tasks to top of listing
 - [x] Webhook delivery retry with exponential backoff
+
+## Phase 24: v7 Developer Experience & Integration
+- [x] Task forwarding — forward task to different device with message (POST /api/tasks/:id/forward)
+- [ ] Task notes — internal annotations not shared to requester (GET/POST /api/tasks/:id/notes)
+- [ ] Task user search — find tasks by Feishu user ID (GET /api/tasks/user/:userId)
+- [ ] Feishu card message format — rich card notifications instead of plain text
+- [ ] API response compression (gzip/deflate via @fastify/compress)
+- [ ] Task dependency graph — full dependency tree endpoint (GET /api/tasks/:id/dependency-graph)

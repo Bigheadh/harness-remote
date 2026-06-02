@@ -73,6 +73,8 @@ export interface TaskApiClient {
   // Task pinning
   pinTask(taskId: string): Promise<Task>;
   unpinTask(taskId: string): Promise<Task>;
+  // Task forwarding
+  forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task>;
 }
 
 export function createTaskApiClient(
@@ -856,6 +858,20 @@ export function createTaskApiClient(
       if (!response.ok) {
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to unpin task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/forward`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ deviceId: targetDeviceId, message }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to forward task: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       const data = (await response.json()) as { task: Task };
       return data.task;

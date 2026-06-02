@@ -111,6 +111,8 @@ export interface TaskStore {
   // Task pinning methods
   pinTask(taskId: string): Promise<Task>;
   unpinTask(taskId: string): Promise<Task>;
+  // Task forwarding methods
+  forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -727,6 +729,31 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
       const now = new Date().toISOString();
       Number(unpinTaskStmt.run(now, taskId));
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      // Assign to target device and reset to pending
+      Number(assignTaskStmt.run(targetDeviceId, now, taskId));
+      Number(retryTaskStmt.run(now, taskId));
+
+      // Add forwarding comment if message provided
+      if (message && message.trim()) {
+        db.prepare(`
+          INSERT INTO task_comments (task_id, author, author_type, body, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(taskId, "system", "system", `[Forwarded] ${message.trim()}`, now);
+      }
+
       const updated = selectTaskById.get(taskId) as Record<string, unknown>;
       return rowToTask(updated);
     },

@@ -74,7 +74,8 @@ export type AuditAction =
   | "task.dependencies_set"
   | "api_key.created"
   | "api_key.rotated"
-  | "api_key.revoked";
+  | "api_key.revoked"
+  | "task.forwarded";
 
 export interface AuditLogSearchOptions {
   action?: string;
