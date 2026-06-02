@@ -119,7 +119,7 @@
 ## Phase 19: v2 Feature Enhancements
 - [x] Task history search (GET /api/tasks/search with text, status, date range filters)
 - [x] Task history search MCP tool (search_tasks)
-- [ ] Task attachment support (file metadata on tasks)
+- [x] Task attachment support (file metadata on tasks)
 - [ ] Web management dashboard (read-only task viewer)
 - [ ] Multi-device task assignment (device registry and routing)
 - [ ] Audit logging (who did what when)

@@ -23,6 +23,7 @@ describe("parseFeishuEvent", () => {
         message_id: "msg_001",
         chat_id: "oc_chat1",
         chat_type: "p2p",
+        message_type: "text",
         content: JSON.stringify({ text: "do something" }),
         mentions: [],
       },
@@ -39,6 +40,8 @@ describe("parseFeishuEvent", () => {
       text: "do something",
       chatType: "p2p",
       mentionedBot: false,
+      messageType: "text",
+      attachments: [],
     });
   });
 
@@ -151,6 +154,118 @@ describe("parseFeishuEvent", () => {
     const ctx = parseFeishuEvent(payload);
     expect(ctx?.text).toBe("");
   });
+
+  // ── File attachment tests ────────────────────────────────────────────────
+
+  it("parses file message and extracts attachment metadata", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "file";
+    payload.event.message.content = JSON.stringify({
+      file_key: "file_v3_abc123",
+      file_name: "report.pdf",
+      file_size: 12345,
+      file_type: "pdf",
+    });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("file");
+    expect(ctx?.text).toBe("[附件] report.pdf");
+    expect(ctx?.attachments).toHaveLength(1);
+    expect(ctx?.attachments[0]).toEqual({
+      fileKey: "file_v3_abc123",
+      fileName: "report.pdf",
+      fileType: "pdf",
+      fileSize: 12345,
+      feishuFileType: "file",
+    });
+  });
+
+  it("parses image message and extracts attachment metadata", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "image";
+    payload.event.message.content = JSON.stringify({
+      image_key: "img_v3_xyz789",
+      height: 1080,
+      width: 1920,
+    });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("image");
+    expect(ctx?.text).toBe("[图片]");
+    expect(ctx?.attachments).toHaveLength(1);
+    expect(ctx?.attachments[0]).toEqual({
+      fileKey: "img_v3_xyz789",
+      fileName: "image",
+      fileType: "image",
+      feishuFileType: "image",
+    });
+  });
+
+  it("parses audio message and extracts attachment metadata", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "audio";
+    payload.event.message.content = JSON.stringify({
+      file_key: "audio_v3_def456",
+      duration: 5000,
+    });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("audio");
+    expect(ctx?.text).toBe("[语音]");
+    expect(ctx?.attachments).toHaveLength(1);
+    expect(ctx?.attachments[0]).toEqual({
+      fileKey: "audio_v3_def456",
+      fileName: "audio",
+      fileType: "audio",
+      feishuFileType: "audio",
+    });
+  });
+
+  it("parses media (video) message and extracts attachment metadata", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "media";
+    payload.event.message.content = JSON.stringify({
+      file_key: "media_v3_ghi789",
+      file_name: "demo.mp4",
+      duration: 30000,
+    });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("media");
+    expect(ctx?.text).toBe("[视频] demo.mp4");
+    expect(ctx?.attachments).toHaveLength(1);
+    expect(ctx?.attachments[0]).toEqual({
+      fileKey: "media_v3_ghi789",
+      fileName: "demo.mp4",
+      fileType: "video",
+      feishuFileType: "media",
+    });
+  });
+
+  it("defaults messageType to 'text' when message_type is absent", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    delete payload.event.message.message_type;
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("text");
+    expect(ctx?.attachments).toEqual([]);
+  });
+
+  it("handles unknown message type gracefully", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "sticker";
+    payload.event.message.content = JSON.stringify({ file_key: "stk_123" });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.messageType).toBe("sticker");
+    expect(ctx?.text).toBe("[sticker]");
+    expect(ctx?.attachments).toEqual([]);
+  });
+
+  it("handles file message with missing file_key gracefully", () => {
+    const payload = JSON.parse(JSON.stringify(validPayload));
+    payload.event.message.message_type = "file";
+    payload.event.message.content = JSON.stringify({
+      file_name: "broken.pdf",
+    });
+    const ctx = parseFeishuEvent(payload);
+    expect(ctx?.attachments).toEqual([]);
+    expect(ctx?.text).toBe("");
+  });
 });
 
 // ── createTaskFromFeishuEvent ───────────────────────────────────────────────
@@ -165,6 +280,8 @@ describe("createTaskFromFeishuEvent", () => {
       text: "run tests",
       chatType: "p2p" as const,
       mentionedBot: false,
+      messageType: "text",
+      attachments: [],
     };
 
     const task = createTaskFromFeishuEvent(event);
@@ -178,6 +295,7 @@ describe("createTaskFromFeishuEvent", () => {
     expect(task.id).toMatch(/^task_\d+_[a-z0-9]+$/);
     expect(task.createdAt).toBeTruthy();
     expect(task.updatedAt).toBeTruthy();
+    expect(task.attachments).toBeUndefined();
   });
 
   it("generates unique task IDs", () => {
@@ -189,6 +307,8 @@ describe("createTaskFromFeishuEvent", () => {
       text: "test",
       chatType: "p2p" as const,
       mentionedBot: false,
+      messageType: "text",
+      attachments: [],
     };
 
     const ids = new Set<string>();
@@ -196,5 +316,49 @@ describe("createTaskFromFeishuEvent", () => {
       ids.add(createTaskFromFeishuEvent(event).id);
     }
     expect(ids.size).toBe(20);
+  });
+
+  it("includes attachments when present", () => {
+    const event = {
+      eventId: "ev_1",
+      messageId: "msg_1",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "[附件] report.pdf",
+      chatType: "p2p" as const,
+      mentionedBot: false,
+      messageType: "file",
+      attachments: [
+        {
+          fileKey: "file_v3_abc",
+          fileName: "report.pdf",
+          fileType: "pdf",
+          fileSize: 12345,
+          feishuFileType: "file" as const,
+        },
+      ],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.attachments).toHaveLength(1);
+    expect(task.attachments![0].fileKey).toBe("file_v3_abc");
+    expect(task.attachments![0].fileName).toBe("report.pdf");
+  });
+
+  it("omits attachments when empty", () => {
+    const event = {
+      eventId: "ev_1",
+      messageId: "msg_1",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "hello",
+      chatType: "p2p" as const,
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.attachments).toBeUndefined();
   });
 });

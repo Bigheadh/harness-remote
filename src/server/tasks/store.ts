@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Task, TaskStatus, TaskPriority } from "../../shared/types.js";
+import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
 
 export interface SearchOptions {
   q?: string;
@@ -43,16 +43,28 @@ function isValidTransition(current: TaskStatus, next: TaskStatus): boolean {
   return VALID_TRANSITIONS[current]?.includes(next) ?? false;
 }
 
+function parseAttachments(raw: unknown): Attachment[] | undefined {
+  if (!raw || typeof raw !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed as Attachment[];
+  } catch {
+    return undefined;
+  }
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row["id"] as string,
-    source: row["source"] as "feishu",
+    source: "feishu",
     feishuMessageId: row["feishu_message_id"] as string,
     feishuChatId: row["feishu_chat_id"] as string,
     feishuUserId: row["feishu_user_id"] as string,
     commandText: row["command_text"] as string,
     status: row["status"] as TaskStatus,
     priority: (row["priority"] as TaskPriority) ?? "normal",
+    attachments: parseAttachments(row["attachments"]),
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
     resultSummary: (row["result_summary"] as string) ?? undefined,
@@ -94,6 +106,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add attachments column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN attachments TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -108,8 +127,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, attachments, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -163,6 +182,9 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       const id = task.id ?? `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const attachmentsJson = task.attachments && task.attachments.length > 0
+        ? JSON.stringify(task.attachments)
+        : null;
 
       insertTask.run(
         id,
@@ -173,6 +195,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.commandText,
         status,
         priority,
+        attachmentsJson,
         task.createdAt ?? now,
         task.updatedAt ?? now,
       );

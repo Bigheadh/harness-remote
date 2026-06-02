@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { Task, TaskPriority } from "../../shared/types.js";
+import type { Task, TaskPriority, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import { createLogger } from "../../shared/logger.js";
 
@@ -33,6 +33,8 @@ export interface FeishuEventContext {
   text: string;
   chatType: "p2p" | "group";
   mentionedBot: boolean;
+  messageType: string;
+  attachments: Attachment[];
 }
 
 interface FeishuEvent {
@@ -54,6 +56,7 @@ interface FeishuEvent {
       message_id?: string;
       chat_id?: string;
       chat_type?: string;
+      message_type?: string;
       content?: string;
       mentions?: Array<{
         key?: string;
@@ -108,11 +111,71 @@ export function parseFeishuEvent(payload: unknown): FeishuEventContext | null {
     return null;
   }
 
+  const messageType = message.message_type ?? "text";
   let text = "";
+  const attachments: Attachment[] = [];
+
   if (message.content) {
     try {
-      const content = JSON.parse(message.content) as { text?: string };
-      text = content.text ?? "";
+      const content = JSON.parse(message.content) as Record<string, unknown>;
+
+      if (messageType === "text") {
+        text = (content["text"] as string) ?? "";
+      } else if (messageType === "file") {
+        // File message: extract file metadata
+        const fileKey = content["file_key"] as string | undefined;
+        const fileName = content["file_name"] as string | undefined;
+        const fileSize = content["file_size"] as number | undefined;
+        const fileType = content["file_type"] as string | undefined;
+        if (fileKey) {
+          attachments.push({
+            fileKey,
+            fileName: fileName ?? "unknown",
+            fileType: fileType ?? "unknown",
+            fileSize,
+            feishuFileType: "file",
+          });
+          text = `[附件] ${fileName ?? "file"}`;
+        }
+      } else if (messageType === "image") {
+        // Image message: extract image metadata
+        const imageKey = content["image_key"] as string | undefined;
+        if (imageKey) {
+          attachments.push({
+            fileKey: imageKey,
+            fileName: "image",
+            fileType: "image",
+            feishuFileType: "image",
+          });
+          text = "[图片]";
+        }
+      } else if (messageType === "audio") {
+        const fileKey = content["file_key"] as string | undefined;
+        if (fileKey) {
+          attachments.push({
+            fileKey,
+            fileName: "audio",
+            fileType: "audio",
+            feishuFileType: "audio",
+          });
+          text = "[语音]";
+        }
+      } else if (messageType === "media") {
+        const fileKey = content["file_key"] as string | undefined;
+        const fileName = content["file_name"] as string | undefined;
+        if (fileKey) {
+          attachments.push({
+            fileKey,
+            fileName: fileName ?? "video",
+            fileType: "video",
+            feishuFileType: "media",
+          });
+          text = `[视频] ${fileName ?? ""}`;
+        }
+      } else {
+        // Unknown message type — try to extract text if available
+        text = (content["text"] as string) ?? `[${messageType}]`;
+      }
     } catch {
       text = message.content;
     }
@@ -133,6 +196,8 @@ export function parseFeishuEvent(payload: unknown): FeishuEventContext | null {
     text,
     chatType,
     mentionedBot,
+    messageType,
+    attachments,
   };
 }
 
@@ -151,6 +216,7 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
     commandText: cleanText,
     status: "pending",
     priority,
+    attachments: event.attachments.length > 0 ? event.attachments : undefined,
     createdAt: now,
     updatedAt: now,
   };

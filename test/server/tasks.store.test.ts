@@ -393,3 +393,115 @@ describe("searchTasks", () => {
     expect(results[1].commandText).toBe("旧任务");
   });
 });
+
+describe("attachments", () => {
+  it("stores and retrieves task with attachments", async () => {
+    const task = await store.createTask(
+      makeTask({
+        id: "t_att_1",
+        feishuMessageId: "msg_att_1",
+        attachments: [
+          {
+            fileKey: "file_v3_abc",
+            fileName: "report.pdf",
+            fileType: "pdf",
+            fileSize: 12345,
+            feishuFileType: "file",
+          },
+        ],
+      }),
+    );
+    expect(task.attachments).toHaveLength(1);
+    expect(task.attachments![0].fileKey).toBe("file_v3_abc");
+    expect(task.attachments![0].fileName).toBe("report.pdf");
+
+    const fetched = await store.getTask(task.id);
+    expect(fetched).toBeDefined();
+    expect(fetched!.attachments).toHaveLength(1);
+    expect(fetched!.attachments![0].fileKey).toBe("file_v3_abc");
+  });
+
+  it("stores task without attachments as undefined", async () => {
+    const task = await store.createTask(
+      makeTask({ id: "t_no_att", feishuMessageId: "msg_no_att" }),
+    );
+    expect(task.attachments).toBeUndefined();
+
+    const fetched = await store.getTask(task.id);
+    expect(fetched!.attachments).toBeUndefined();
+  });
+
+  it("stores multiple attachments", async () => {
+    const task = await store.createTask(
+      makeTask({
+        id: "t_multi",
+        feishuMessageId: "msg_multi",
+        attachments: [
+          {
+            fileKey: "img_v3_1",
+            fileName: "image",
+            fileType: "image",
+            feishuFileType: "image",
+          },
+          {
+            fileKey: "file_v3_2",
+            fileName: "doc.pdf",
+            fileType: "pdf",
+            fileSize: 9999,
+            feishuFileType: "file",
+          },
+        ],
+      }),
+    );
+    expect(task.attachments).toHaveLength(2);
+    expect(task.attachments![0].feishuFileType).toBe("image");
+    expect(task.attachments![1].feishuFileType).toBe("file");
+
+    const fetched = await store.getTask(task.id);
+    expect(fetched!.attachments).toHaveLength(2);
+  });
+
+  it("preserves attachments in listTasks", async () => {
+    await store.createTask(
+      makeTask({
+        id: "t_list_att",
+        feishuMessageId: "msg_list_att",
+        attachments: [
+          {
+            fileKey: "file_v3_list",
+            fileName: "data.csv",
+            fileType: "csv",
+            feishuFileType: "file",
+          },
+        ],
+      }),
+    );
+    const tasks = await store.listTasks();
+    const found = tasks.find((t) => t.id === "t_list_att");
+    expect(found).toBeDefined();
+    expect(found!.attachments).toHaveLength(1);
+    expect(found!.attachments![0].fileName).toBe("data.csv");
+  });
+
+  it("preserves attachments in searchTasks", async () => {
+    await store.createTask(
+      makeTask({
+        id: "t_search_att",
+        feishuMessageId: "msg_search_att",
+        commandText: "搜索附件测试",
+        attachments: [
+          {
+            fileKey: "file_v3_search",
+            fileName: "result.xlsx",
+            fileType: "xlsx",
+            feishuFileType: "file",
+          },
+        ],
+      }),
+    );
+    const results = await store.searchTasks({ q: "搜索附件" });
+    expect(results).toHaveLength(1);
+    expect(results[0].attachments).toHaveLength(1);
+    expect(results[0].attachments![0].fileName).toBe("result.xlsx");
+  });
+});
