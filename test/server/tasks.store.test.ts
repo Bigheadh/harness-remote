@@ -313,3 +313,83 @@ describe("healthCheck", () => {
     expect(ok).toBe(true);
   });
 });
+
+describe("searchTasks", () => {
+  it("returns empty array when no tasks match", async () => {
+    const results = await store.searchTasks({ q: "nonexistent" });
+    expect(results).toHaveLength(0);
+  });
+
+  it("searches by text in commandText", async () => {
+    await store.createTask(makeTask({ commandText: "帮我部署项目到服务器", status: "done" }));
+    await store.createTask(makeTask({ commandText: "写一个排序算法", status: "done" }));
+    await store.createTask(makeTask({ commandText: "部署数据库迁移脚本", status: "done" }));
+
+    const results = await store.searchTasks({ q: "部署" });
+    expect(results).toHaveLength(2);
+    expect(results.every((t) => t.commandText.includes("部署"))).toBe(true);
+  });
+
+  it("searches by text in resultSummary", async () => {
+    const taskA = await store.createTask(makeTask({ commandText: "任务A" }));
+    await store.saveTaskResult(taskA.id, true, "已部署到生产环境");
+    const taskB = await store.createTask(makeTask({ commandText: "任务B" }));
+    await store.saveTaskResult(taskB.id, true, "代码已提交");
+
+    const results = await store.searchTasks({ q: "部署" });
+    expect(results).toHaveLength(1);
+    expect(results[0].resultSummary).toContain("部署");
+  });
+
+  it("filters by status", async () => {
+    await store.createTask(makeTask({ commandText: "任务1", status: "pending" }));
+    await store.createTask(makeTask({ commandText: "任务2", status: "done" }));
+
+    const results = await store.searchTasks({ status: "done" });
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe("done");
+  });
+
+  it("filters by date range", async () => {
+    const oldDate = new Date("2025-01-01T00:00:00.000Z").toISOString();
+    const recentDate = new Date().toISOString();
+
+    await store.createTask(makeTask({ commandText: "旧任务", createdAt: oldDate, updatedAt: oldDate }));
+    await store.createTask(makeTask({ commandText: "新任务", createdAt: recentDate, updatedAt: recentDate }));
+
+    const results = await store.searchTasks({ from: "2026-01-01T00:00:00.000Z" });
+    expect(results).toHaveLength(1);
+    expect(results[0].commandText).toBe("新任务");
+  });
+
+  it("combines multiple filters", async () => {
+    await store.createTask(makeTask({ commandText: "部署任务", status: "done" }));
+    await store.createTask(makeTask({ commandText: "部署任务2", status: "pending" }));
+    await store.createTask(makeTask({ commandText: "其他任务", status: "done" }));
+
+    const results = await store.searchTasks({ q: "部署", status: "done" });
+    expect(results).toHaveLength(1);
+    expect(results[0].commandText).toBe("部署任务");
+  });
+
+  it("respects limit parameter", async () => {
+    for (let i = 0; i < 5; i++) {
+      await store.createTask(makeTask({ commandText: `搜索测试${i}` }));
+    }
+
+    const results = await store.searchTasks({ q: "搜索测试", limit: 3 });
+    expect(results).toHaveLength(3);
+  });
+
+  it("returns results sorted by created_at DESC", async () => {
+    const oldDate = new Date("2025-01-01T00:00:00.000Z").toISOString();
+    const newDate = new Date("2026-12-31T00:00:00.000Z").toISOString();
+
+    await store.createTask(makeTask({ commandText: "旧任务", createdAt: oldDate, updatedAt: oldDate }));
+    await store.createTask(makeTask({ commandText: "新任务", createdAt: newDate, updatedAt: newDate }));
+
+    const results = await store.searchTasks({ q: "任务" });
+    expect(results[0].commandText).toBe("新任务");
+    expect(results[1].commandText).toBe("旧任务");
+  });
+});

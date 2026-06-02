@@ -96,6 +96,31 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "replyFeishu", args: [taskId, message] });
       if (mock.failWith) throw new Error(mock.failWith);
     },
+
+    async searchTasks(options: {
+      q?: string;
+      status?: TaskStatus;
+      from?: string;
+      to?: string;
+      limit?: number;
+    }): Promise<Task[]> {
+      calls.push({ method: "searchTasks", args: [options] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_search_001",
+          source: "feishu",
+          feishuMessageId: "om_search",
+          feishuChatId: "oc_search",
+          feishuUserId: "ou_search",
+          commandText: "搜索测试任务",
+          status: options.status ?? "done",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+          resultSummary: "搜索结果",
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -151,8 +176,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 5 tools", () => {
-      expect(mockServer.registrations).toHaveLength(5);
+    it("registers all 6 tools", () => {
+      expect(mockServer.registrations).toHaveLength(6);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -183,6 +208,12 @@ describe("MCP tools", () => {
       const tool = mockServer.registrations.find((r) => r.name === "reply_feishu");
       expect(tool).toBeDefined();
       expect(tool!.description).toContain("reply");
+    });
+
+    it("registers search_tasks with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "search_tasks");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Search task history");
     });
   });
 
@@ -359,6 +390,53 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Feishu API error");
+    });
+  });
+
+  describe("search_tasks handler", () => {
+    it("calls client.searchTasks with text query", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "search_tasks")!;
+      const result = await tool.handler({ q: "检查" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("searchTasks");
+      expect(mock.calls[0].args[0]).toEqual({ q: "检查" });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.tasks).toHaveLength(1);
+      expect(parsed.count).toBe(1);
+    });
+
+    it("passes all filter options to client", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "search_tasks")!;
+      const result = await tool.handler({
+        q: "deploy",
+        status: "done",
+        from: "2026-06-01T00:00:00.000Z",
+        to: "2026-06-30T23:59:59.000Z",
+        limit: 10,
+      });
+
+      expect(mock.calls[0].args[0]).toEqual({
+        q: "deploy",
+        status: "done",
+        from: "2026-06-01T00:00:00.000Z",
+        to: "2026-06-30T23:59:59.000Z",
+        limit: 10,
+      });
+
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("returns error when client throws", async () => {
+      mock.failWith = "Search failed";
+      const tool = mockServer.registrations.find((r) => r.name === "search_tasks")!;
+      const result = await tool.handler({ q: "test" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Search failed");
     });
   });
 });

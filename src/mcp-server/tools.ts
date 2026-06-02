@@ -53,6 +53,66 @@ export function registerMcpTools(
     },
   );
 
+  // search_tasks tool
+  server.registerTool(
+    "search_tasks",
+    {
+      description:
+        "Search task history by text, status, and date range. Returns matching tasks sorted by creation time (newest first).",
+      inputSchema: {
+        q: z
+          .string()
+          .optional()
+          .describe("Full-text search on task command text and result summary"),
+        status: z
+          .enum(["pending", "picked", "running", "done", "failed"])
+          .optional()
+          .describe("Filter by task status"),
+        from: z
+          .string()
+          .optional()
+          .describe("ISO 8601 date string — only return tasks created on or after this date"),
+        to: z
+          .string()
+          .optional()
+          .describe("ISO 8601 date string — only return tasks created on or before this date"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of results. Default: 20, max: 100"),
+      },
+    },
+    async (args) => {
+      const { q, status, from, to, limit } = args;
+
+      try {
+        const tasks = await client.searchTasks({ q, status, from, to, limit });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ tasks, count: tasks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // get_task tool
   server.registerTool(
     "get_task",

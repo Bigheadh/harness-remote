@@ -51,6 +51,38 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
+  // GET /api/tasks/search - search task history
+  server.get("/api/tasks/search", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { q, status, from, to, limit } = req.query as {
+      q?: string;
+      status?: TaskStatus;
+      from?: string;
+      to?: string;
+      limit?: number;
+    };
+
+    if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: `Invalid status: ${status}` },
+      });
+    }
+
+    if (from && isNaN(Date.parse(from))) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Invalid 'from' date format. Use ISO 8601." },
+      });
+    }
+
+    if (to && isNaN(Date.parse(to))) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Invalid 'to' date format. Use ISO 8601." },
+      });
+    }
+
+    const tasks = await store.searchTasks({ q, status, from, to, limit });
+    return reply.send({ tasks });
+  });
+
   // GET /api/tasks/:id - get task detail
   server.get<{
     Params: { id: string };

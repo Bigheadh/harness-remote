@@ -115,3 +115,12 @@
 - [x] Processed events cleanup (configurable retention period)
 - [x] Improved health check with DB connectivity verification
 - [x] POST /api/tasks/cleanup-events endpoint for manual cleanup
+
+## Phase 19: v2 Feature Enhancements
+- [x] Task history search (GET /api/tasks/search with text, status, date range filters)
+- [x] Task history search MCP tool (search_tasks)
+- [ ] Task attachment support (file metadata on tasks)
+- [ ] Web management dashboard (read-only task viewer)
+- [ ] Multi-device task assignment (device registry and routing)
+- [ ] Audit logging (who did what when)
+- [ ] Finer permission control (per-user token and RBAC)

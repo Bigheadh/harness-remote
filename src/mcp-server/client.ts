@@ -2,6 +2,13 @@ import type { Task, TaskStatus } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number): Promise<Task[]>;
+  searchTasks(options: {
+    q?: string;
+    status?: TaskStatus;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
   reportTaskResult(
@@ -35,6 +42,35 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to list tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { tasks: Task[] };
+      return data.tasks;
+    },
+
+    async searchTasks(options: {
+      q?: string;
+      status?: TaskStatus;
+      from?: string;
+      to?: string;
+      limit?: number;
+    }): Promise<Task[]> {
+      const params = new URLSearchParams();
+      if (options.q) params.set("q", options.q);
+      if (options.status) params.set("status", options.status);
+      if (options.from) params.set("from", options.from);
+      if (options.to) params.set("to", options.to);
+      if (options.limit) params.set("limit", String(options.limit));
+
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to search tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 

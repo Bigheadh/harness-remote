@@ -3,9 +3,18 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority } from "../../shared/types.js";
 
+export interface SearchOptions {
+  q?: string;
+  status?: TaskStatus;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
   listTasks(status?: TaskStatus, limit?: number): Promise<Task[]>;
+  searchTasks(options: SearchOptions): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   updateTaskStatus(id: string, status: TaskStatus): Promise<Task>;
   saveTaskResult(
@@ -175,6 +184,46 @@ export function createTaskStore(storagePath: string): TaskStore {
     async listTasks(status?: TaskStatus, limit?: number): Promise<Task[]> {
       const effectiveLimit = limit ?? 20;
       const rows = selectTasks.all(status ?? null, effectiveLimit) as Array<
+        Record<string, unknown>
+      >;
+      return rows.map(rowToTask);
+    },
+
+    async searchTasks(options: SearchOptions): Promise<Task[]> {
+      const conditions: string[] = [];
+      const params: (string | number | null)[] = [];
+
+      if (options.status) {
+        conditions.push("status = ?");
+        params.push(options.status);
+      }
+
+      if (options.from) {
+        conditions.push("created_at >= ?");
+        params.push(options.from);
+      }
+
+      if (options.to) {
+        conditions.push("created_at <= ?");
+        params.push(options.to);
+      }
+
+      if (options.q) {
+        conditions.push("(command_text LIKE ? OR result_summary LIKE ?)");
+        const pattern = `%${options.q}%`;
+        params.push(pattern, pattern);
+      }
+
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const effectiveLimit = Math.min(options.limit ?? 20, 100);
+
+      const sql = `
+        SELECT * FROM tasks ${where}
+        ORDER BY created_at DESC
+        LIMIT ?
+      `;
+
+      const rows = db.prepare(sql).all(...params, effectiveLimit) as Array<
         Record<string, unknown>
       >;
       return rows.map(rowToTask);
