@@ -117,6 +117,8 @@ export interface TaskStore {
   addNote(taskId: string, author: string, body: string): Promise<TaskNote>;
   listNotes(taskId: string): Promise<TaskNote[]>;
   deleteNote(noteId: number, taskId: string): Promise<boolean>;
+  // Task user search — find tasks by Feishu user ID
+  listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -2055,6 +2057,16 @@ export function createTaskStore(storagePath: string): TaskStore {
         `DELETE FROM task_notes WHERE id = ? AND task_id = ?`,
       ).run(noteId, taskId);
       return Number(result.changes) > 0;
+    },
+
+    // ── Task User Search ──────────────────────────────────────────
+
+    async listTasksByUser(userId: string, limit?: number): Promise<Task[]> {
+      const effectiveLimit = Math.min(limit ?? 20, 100);
+      const rows = db.prepare(
+        `SELECT * FROM tasks WHERE feishu_user_id = ? ORDER BY created_at DESC LIMIT ?`,
+      ).all(userId, effectiveLimit) as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
   };
 }

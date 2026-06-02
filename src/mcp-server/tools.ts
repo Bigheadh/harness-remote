@@ -2157,4 +2157,53 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_user_tasks tool
+  server.registerTool(
+    "list_user_tasks",
+    {
+      description:
+        "Find all tasks created by a specific Feishu user. Returns tasks sorted by creation time (newest first). Useful for tracking a user's task history and current workload.",
+      inputSchema: {
+        userId: z.string().describe("The Feishu user ID to search tasks for"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of tasks to return. Default: 20, max: 100"),
+      },
+    },
+    async (args) => {
+      const { userId, limit } = args;
+
+      try {
+        const tasks = await client.listTasksByUser(userId, limit);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { tasks, count: tasks.length, userId },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

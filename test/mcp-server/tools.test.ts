@@ -776,6 +776,25 @@ function createMockClient(): TaskApiClient & {
         createdAt: "2026-06-02T12:00:00.000Z",
       };
     },
+
+    async listTasksByUser(userId: string, limit?: number): Promise<Task[]> {
+      calls.push({ method: "listTasksByUser", args: [userId, limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_user_001",
+          source: "feishu",
+          feishuMessageId: "msg_user_001",
+          feishuChatId: "chat_001",
+          feishuUserId: userId,
+          commandText: "Check deploy status",
+          status: "pending",
+          priority: "normal" as const,
+          createdAt: "2026-06-01T10:00:00.000Z",
+          updatedAt: "2026-06-01T10:00:00.000Z",
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -831,8 +850,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 50 tools", () => {
-      expect(mockServer.registrations).toHaveLength(50);
+    it("registers all 51 tools", () => {
+      expect(mockServer.registrations).toHaveLength(51);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1245,6 +1264,39 @@ describe("MCP tools", () => {
       mock.failWith = "Server error";
       const tool = mockServer.registrations.find((r) => r.name === "list_task_comments")!;
       const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
+    });
+
+    it("lists tasks by user", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_user_tasks")!;
+      const result = await tool.handler({ userId: "ou_abc123" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("listTasksByUser");
+      expect(mock.calls[0].args[0]).toBe("ou_abc123");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.tasks).toHaveLength(1);
+      expect(parsed.tasks[0].feishuUserId).toBe("ou_abc123");
+      expect(parsed.count).toBe(1);
+      expect(parsed.userId).toBe("ou_abc123");
+    });
+
+    it("passes limit to listTasksByUser", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_user_tasks")!;
+      const result = await tool.handler({ userId: "ou_abc123", limit: 5 });
+
+      expect(mock.calls[0].args[1]).toBe(5);
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("returns error when list_user_tasks fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_user_tasks")!;
+      const result = await tool.handler({ userId: "ou_abc123" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);

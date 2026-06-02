@@ -78,6 +78,8 @@ export interface TaskApiClient {
   // Task notes (internal annotations)
   listNotes(taskId: string): Promise<TaskNote[]>;
   addNote(taskId: string, body: string): Promise<TaskNote>;
+  // Task user search
+  listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
 }
 
 export function createTaskApiClient(
@@ -904,6 +906,22 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { note: TaskNote };
       return data.note;
+    },
+
+    // ── Task User Search ──────────────────────────────────────────
+
+    async listTasksByUser(userId: string, limit?: number): Promise<Task[]> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/user/${encodeURIComponent(userId)}${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list tasks by user: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { tasks: Task[] };
+      return data.tasks;
     },
   };
 }

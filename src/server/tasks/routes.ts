@@ -558,6 +558,32 @@ export function registerTaskRoutes(
     }
   });
 
+  // GET /api/tasks/user/:userId - find tasks by Feishu user ID (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get<{ Params: { userId: string } }>("/api/tasks/user/:userId", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { userId } = req.params;
+    const { limit } = req.query as { limit?: number };
+
+    if (!userId || userId.trim() === "") {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "userId parameter is required" },
+      });
+    }
+
+    const tasks = await store.listTasksByUser(userId.trim(), limit);
+    return reply.send({ tasks, count: tasks.length });
+  });
+
   // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };
