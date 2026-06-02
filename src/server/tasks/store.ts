@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
-import type { TaskComment, AuditLogEntry, TaskTemplate } from "../../shared/types.js";
+import type { TaskComment, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
 
 export interface SearchOptions {
   q?: string;
@@ -62,6 +62,14 @@ export interface TaskStore {
   getTemplate(id: string): Promise<TaskTemplate | undefined>;
   updateTemplate(id: string, updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>): Promise<TaskTemplate>;
   deleteTemplate(id: string): Promise<boolean>;
+  // Scheduled task methods
+  createScheduledTask(data: Omit<ScheduledTask, "id" | "createdAt" | "updatedAt">): Promise<ScheduledTask>;
+  listScheduledTasks(): Promise<ScheduledTask[]>;
+  getScheduledTask(id: string): Promise<ScheduledTask | undefined>;
+  updateScheduledTask(id: string, updates: Partial<Pick<ScheduledTask, "commandText" | "frequency" | "priority" | "tags" | "assignedDeviceId" | "nextRunAt" | "enabled" | "templateId">>): Promise<ScheduledTask>;
+  deleteScheduledTask(id: string): Promise<boolean>;
+  getDueScheduledTasks(now: string): Promise<ScheduledTask[]>;
+  markScheduledTaskRun(id: string, nextRunAt: string, taskId: string): Promise<void>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -131,6 +139,25 @@ function rowToTemplate(row: Record<string, unknown>): TaskTemplate {
     assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
     dueDateOffsetMs: row["due_date_offset_ms"] != null ? Number(row["due_date_offset_ms"]) : undefined,
     reminderOffsetMs: row["reminder_offset_ms"] != null ? Number(row["reminder_offset_ms"]) : undefined,
+    createdBy: row["created_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
+  };
+}
+
+function rowToScheduledTask(row: Record<string, unknown>): ScheduledTask {
+  return {
+    id: row["id"] as string,
+    templateId: (row["template_id"] as string) ?? undefined,
+    commandText: row["command_text"] as string,
+    frequency: row["frequency"] as ScheduledTask["frequency"],
+    priority: (row["priority"] as TaskPriority) ?? "normal",
+    tags: parseTags(row["tags"]),
+    assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
+    nextRunAt: row["next_run_at"] as string,
+    lastRunAt: (row["last_run_at"] as string) ?? undefined,
+    lastTaskId: (row["last_task_id"] as string) ?? undefined,
+    enabled: Number(row["enabled"]) === 1,
     createdBy: row["created_by"] as string,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
@@ -256,6 +283,31 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_task_templates_name
       ON task_templates(name)
+  `);
+
+  // Scheduled tasks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      template_id TEXT,
+      command_text TEXT NOT NULL,
+      frequency TEXT NOT NULL DEFAULT 'daily',
+      priority TEXT DEFAULT 'normal',
+      tags TEXT,
+      assigned_device_id TEXT,
+      next_run_at TEXT NOT NULL,
+      last_run_at TEXT,
+      last_task_id TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
+      ON scheduled_tasks(next_run_at, enabled)
   `);
 
   // Prepare statements
@@ -890,6 +942,120 @@ export function createTaskStore(storagePath: string): TaskStore {
     async deleteTemplate(id: string): Promise<boolean> {
       const result = db.prepare(`DELETE FROM task_templates WHERE id = ?`).run(id);
       return Number(result.changes) > 0;
+    },
+
+    // ── Scheduled Tasks ─────────────────────────────────────────────
+
+    async createScheduledTask(
+      data: Omit<ScheduledTask, "id" | "createdAt" | "updatedAt">,
+    ): Promise<ScheduledTask> {
+      const id = `sch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      const tagsJson =
+        data.tags && data.tags.length > 0
+          ? JSON.stringify(data.tags)
+          : null;
+
+      db.prepare(`
+        INSERT INTO scheduled_tasks (id, template_id, command_text, frequency, priority, tags, assigned_device_id, next_run_at, last_run_at, last_task_id, enabled, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        data.templateId ?? null,
+        data.commandText,
+        data.frequency,
+        data.priority ?? "normal",
+        tagsJson,
+        data.assignedDeviceId ?? null,
+        data.nextRunAt,
+        data.lastRunAt ?? null,
+        data.lastTaskId ?? null,
+        data.enabled ? 1 : 0,
+        data.createdBy,
+        now,
+        now,
+      );
+
+      const row = db.prepare(`SELECT * FROM scheduled_tasks WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToScheduledTask(row);
+    },
+
+    async listScheduledTasks(): Promise<ScheduledTask[]> {
+      const rows = db.prepare(
+        `SELECT * FROM scheduled_tasks ORDER BY next_run_at ASC`,
+      ).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToScheduledTask);
+    },
+
+    async getScheduledTask(id: string): Promise<ScheduledTask | undefined> {
+      const row = db.prepare(
+        `SELECT * FROM scheduled_tasks WHERE id = ?`,
+      ).get(id) as Record<string, unknown> | undefined;
+      return row ? rowToScheduledTask(row) : undefined;
+    },
+
+    async updateScheduledTask(
+      id: string,
+      updates: Partial<Pick<ScheduledTask, "commandText" | "frequency" | "priority" | "tags" | "assignedDeviceId" | "nextRunAt" | "enabled" | "templateId">>,
+    ): Promise<ScheduledTask> {
+      const existing = db.prepare(
+        `SELECT * FROM scheduled_tasks WHERE id = ?`,
+      ).get(id) as Record<string, unknown> | undefined;
+      if (!existing) {
+        throw new Error(`Scheduled task not found: ${id}`);
+      }
+
+      const now = new Date().toISOString();
+      const setClauses: string[] = [];
+      const params: (string | number | null)[] = [];
+
+      if (updates.commandText !== undefined) { setClauses.push("command_text = ?"); params.push(updates.commandText); }
+      if (updates.frequency !== undefined) { setClauses.push("frequency = ?"); params.push(updates.frequency); }
+      if (updates.priority !== undefined) { setClauses.push("priority = ?"); params.push(updates.priority); }
+      if (updates.tags !== undefined) {
+        setClauses.push("tags = ?");
+        params.push(updates.tags && updates.tags.length > 0 ? JSON.stringify(updates.tags) : null);
+      }
+      if (updates.assignedDeviceId !== undefined) { setClauses.push("assigned_device_id = ?"); params.push(updates.assignedDeviceId ?? null); }
+      if (updates.nextRunAt !== undefined) { setClauses.push("next_run_at = ?"); params.push(updates.nextRunAt); }
+      if (updates.enabled !== undefined) { setClauses.push("enabled = ?"); params.push(updates.enabled ? 1 : 0); }
+      if (updates.templateId !== undefined) { setClauses.push("template_id = ?"); params.push(updates.templateId ?? null); }
+
+      if (setClauses.length === 0) {
+        return rowToScheduledTask(existing);
+      }
+
+      setClauses.push("updated_at = ?");
+      params.push(now);
+      params.push(id);
+
+      db.prepare(`UPDATE scheduled_tasks SET ${setClauses.join(", ")} WHERE id = ?`).run(...params);
+
+      const row = db.prepare(`SELECT * FROM scheduled_tasks WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToScheduledTask(row);
+    },
+
+    async deleteScheduledTask(id: string): Promise<boolean> {
+      const result = db.prepare(`DELETE FROM scheduled_tasks WHERE id = ?`).run(id);
+      return Number(result.changes) > 0;
+    },
+
+    async getDueScheduledTasks(now: string): Promise<ScheduledTask[]> {
+      const rows = db.prepare(`
+        SELECT * FROM scheduled_tasks
+        WHERE enabled = 1 AND next_run_at <= ?
+        ORDER BY next_run_at ASC
+      `).all(now) as Array<Record<string, unknown>>;
+      return rows.map(rowToScheduledTask);
+    },
+
+    async markScheduledTaskRun(id: string, nextRunAt: string, taskId: string): Promise<void> {
+      const now = new Date().toISOString();
+      db.prepare(`
+        UPDATE scheduled_tasks
+        SET last_run_at = ?, last_task_id = ?, next_run_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(now, taskId, nextRunAt, now, id);
     },
   };
 }

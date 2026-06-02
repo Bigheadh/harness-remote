@@ -135,7 +135,7 @@
 
 ## Phase 21: v4 Enterprise Features
 - [x] Task templates (reusable task definitions for common operations)
-- [ ] Scheduled/recurring tasks (cron-like scheduling for periodic task creation)
+- [x] Scheduled/recurring tasks (cron-like scheduling for periodic task creation)
 - [ ] Task dependencies (prerequisite chains: task B waits for task A)
 - [ ] API key rotation with grace period (auto-expire old tokens after rotation)
 - [ ] Export/import tasks (JSON backup and restore across instances)

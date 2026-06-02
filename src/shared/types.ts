@@ -153,6 +153,37 @@ export interface User {
   updatedAt: string;
 }
 
+/** How often a scheduled task should create a new task */
+export type ScheduleFrequency = "once" | "hourly" | "daily" | "weekly" | "monthly";
+
+/** A scheduled/recurring task definition — periodically creates new tasks */
+export interface ScheduledTask {
+  id: string;
+  /** Optional template ID to base the created task on */
+  templateId?: string;
+  /** The command text for the task to create */
+  commandText: string;
+  /** How often to create a task */
+  frequency: ScheduleFrequency;
+  /** Optional task priority */
+  priority?: TaskPriority;
+  /** Optional tags to apply to created tasks */
+  tags?: string[];
+  /** Optional device to assign created tasks to */
+  assignedDeviceId?: string;
+  /** ISO 8601 — when to next create a task */
+  nextRunAt: string;
+  /** ISO 8601 — when the last task was created */
+  lastRunAt?: string;
+  /** ID of the most recently created task */
+  lastTaskId?: string;
+  /** Whether this schedule is active */
+  enabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** A reusable task definition — templates let users quickly create common tasks */
 export interface TaskTemplate {
   id: string;

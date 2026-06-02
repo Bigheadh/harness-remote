@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus, TaskComment } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskComment, ScheduledTask, ScheduleFrequency } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -347,6 +347,113 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "deleteTemplate", args: [templateId] });
       if (mock.failWith) throw new Error(mock.failWith);
     },
+
+    // Scheduled task mocks
+    async listScheduledTasks(): Promise<ScheduledTask[]> {
+      calls.push({ method: "listScheduledTasks", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "sch_001",
+          commandText: "Daily backup check",
+          frequency: "daily",
+          priority: "normal",
+          nextRunAt: "2026-06-03T09:00:00.000Z",
+          enabled: true,
+          createdBy: "test-user",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getScheduledTask(scheduledId: string): Promise<ScheduledTask> {
+      calls.push({ method: "getScheduledTask", args: [scheduledId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: scheduledId,
+        commandText: "Daily backup check",
+        frequency: "daily",
+        priority: "normal",
+        nextRunAt: "2026-06-03T09:00:00.000Z",
+        enabled: true,
+        createdBy: "test-user",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createScheduledTask(data: { commandText: string; frequency: ScheduleFrequency; priority?: string; tags?: string[]; assignedDeviceId?: string; nextRunAt?: string; enabled?: boolean; templateId?: string }): Promise<ScheduledTask> {
+      calls.push({ method: "createScheduledTask", args: [data] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "sch_new_001",
+        commandText: data.commandText,
+        frequency: data.frequency,
+        priority: (data.priority as "low" | "normal" | "high" | "urgent") ?? "normal",
+        tags: data.tags,
+        assignedDeviceId: data.assignedDeviceId,
+        nextRunAt: data.nextRunAt ?? "2026-06-02T12:00:00.000Z",
+        enabled: data.enabled !== false,
+        templateId: data.templateId,
+        createdBy: "test-user",
+        createdAt: "2026-06-02T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async updateScheduledTask(scheduledId: string, updates: Record<string, unknown>): Promise<ScheduledTask> {
+      calls.push({ method: "updateScheduledTask", args: [scheduledId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: scheduledId,
+        commandText: (updates.commandText as string) ?? "Daily backup check",
+        frequency: (updates.frequency as ScheduleFrequency) ?? "daily",
+        priority: (updates.priority as "low" | "normal" | "high" | "urgent") ?? "normal",
+        tags: (updates.tags as string[]) ?? undefined,
+        nextRunAt: (updates.nextRunAt as string) ?? "2026-06-03T09:00:00.000Z",
+        enabled: (updates.enabled as boolean) ?? true,
+        createdBy: "test-user",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async deleteScheduledTask(scheduledId: string): Promise<void> {
+      calls.push({ method: "deleteScheduledTask", args: [scheduledId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async runScheduledTask(scheduledId: string): Promise<{ task: Task; scheduledTask: ScheduledTask }> {
+      calls.push({ method: "runScheduledTask", args: [scheduledId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        task: {
+          id: "task_scheduled_001",
+          source: "feishu",
+          feishuMessageId: "om_scheduled",
+          feishuChatId: "oc_scheduled",
+          feishuUserId: "ou_scheduled",
+          commandText: "Scheduled task result",
+          status: "pending",
+          createdAt: "2026-06-02T12:00:00.000Z",
+          updatedAt: "2026-06-02T12:00:00.000Z",
+        },
+        scheduledTask: {
+          id: scheduledId,
+          commandText: "Daily backup check",
+          frequency: "daily",
+          priority: "normal",
+          nextRunAt: "2026-06-03T09:00:00.000Z",
+          lastRunAt: "2026-06-02T12:00:00.000Z",
+          lastTaskId: "task_scheduled_001",
+          enabled: true,
+          createdBy: "test-user",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-02T12:00:00.000Z",
+        },
+      };
+    },
   };
   return mock;
 }
@@ -403,7 +510,7 @@ describe("MCP tools", () => {
 
   describe("tool registration", () => {
     it("registers all 17 tools", () => {
-      expect(mockServer.registrations).toHaveLength(22);
+      expect(mockServer.registrations).toHaveLength(28);
     });
 
     it("registers list_tasks with correct description", () => {

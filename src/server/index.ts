@@ -17,6 +17,8 @@ import { createWebhookStore } from "./webhooks/store.js";
 import { registerWebhookRoutes } from "./webhooks/routes.js";
 import { RateLimiter } from "./ratelimit/limiter.js";
 import { registerRateLimitHook } from "./ratelimit/middleware.js";
+import { registerScheduledTaskRoutes } from "./scheduled/routes.js";
+import { startScheduler } from "./scheduler/index.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -82,6 +84,7 @@ export async function startServer(): Promise<void> {
   registerAuditRoutes(server, auditStore, config.personalToken, userStore);
   registerUserRoutes(server, userStore, config.personalToken);
   registerWebhookRoutes(server, webhookStore, config.personalToken, userStore);
+  registerScheduledTaskRoutes(server, store, config.personalToken, auditStore);
 
   // Rate limiting — registered AFTER routes (so auth hook runs first)
   const rateLimiter = new RateLimiter({
@@ -100,9 +103,13 @@ export async function startServer(): Promise<void> {
     process.exit(1);
   }
 
+  // Start the task scheduler (checks every 60 seconds for due scheduled tasks)
+  const stopScheduler = startScheduler(store, 60_000);
+
   // Graceful shutdown
   const shutdown = async () => {
     log.info({}, "Shutting down...");
+    stopScheduler();
     await server.close();
     process.exit(0);
   };

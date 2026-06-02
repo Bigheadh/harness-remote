@@ -1,5 +1,5 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
-import type { TaskComment, TaskTemplate } from "../shared/types.js";
+import type { TaskComment, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
@@ -40,6 +40,13 @@ export interface TaskApiClient {
   createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate>;
   updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
+  // Scheduled task methods
+  listScheduledTasks(): Promise<ScheduledTask[]>;
+  getScheduledTask(scheduledId: string): Promise<ScheduledTask>;
+  createScheduledTask(data: { commandText: string; frequency: ScheduleFrequency; priority?: string; tags?: string[]; assignedDeviceId?: string; nextRunAt?: string; enabled?: boolean; templateId?: string }): Promise<ScheduledTask>;
+  updateScheduledTask(scheduledId: string, updates: Record<string, unknown>): Promise<ScheduledTask>;
+  deleteScheduledTask(scheduledId: string): Promise<void>;
+  runScheduledTask(scheduledId: string): Promise<{ task: Task; scheduledTask: ScheduledTask }>;
 }
 
 export function createTaskApiClient(
@@ -516,6 +523,80 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete template: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    // ── Scheduled Tasks ──────────────────────────────────────────────
+
+    async listScheduledTasks(): Promise<ScheduledTask[]> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list scheduled tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { scheduledTasks: ScheduledTask[] };
+      return data.scheduledTasks;
+    },
+
+    async getScheduledTask(scheduledId: string): Promise<ScheduledTask> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { scheduledTask: ScheduledTask };
+      return data.scheduledTask;
+    },
+
+    async createScheduledTask(data: { commandText: string; frequency: ScheduleFrequency; priority?: string; tags?: string[]; assignedDeviceId?: string; nextRunAt?: string; enabled?: boolean; templateId?: string }): Promise<ScheduledTask> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { scheduledTask: ScheduledTask };
+      return result.scheduledTask;
+    },
+
+    async updateScheduledTask(scheduledId: string, updates: Record<string, unknown>): Promise<ScheduledTask> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { scheduledTask: ScheduledTask };
+      return result.scheduledTask;
+    },
+
+    async deleteScheduledTask(scheduledId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async runScheduledTask(scheduledId: string): Promise<{ task: Task; scheduledTask: ScheduledTask }> {
+      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}/run`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to run scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task; scheduledTask: ScheduledTask };
+      return { task: data.task, scheduledTask: data.scheduledTask };
     },
   };
 }

@@ -1082,4 +1082,254 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Scheduled Task Tools ──────────────────────────────────────────
+
+  // list_scheduled_tasks tool
+  server.registerTool(
+    "list_scheduled_tasks",
+    {
+      description:
+        "List all scheduled/recurring tasks. These are task definitions that automatically create new tasks on a schedule (hourly, daily, weekly, monthly).",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const scheduledTasks = await client.listScheduledTasks();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ scheduledTasks, count: scheduledTasks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_scheduled_task tool
+  server.registerTool(
+    "get_scheduled_task",
+    {
+      description: "Get details of a specific scheduled task by ID.",
+      inputSchema: {
+        scheduledTaskId: z.string().describe("The scheduled task ID to retrieve"),
+      },
+    },
+    async (args) => {
+      try {
+        const scheduledTask = await client.getScheduledTask(args.scheduledTaskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ scheduledTask }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_scheduled_task tool
+  server.registerTool(
+    "create_scheduled_task",
+    {
+      description:
+        "Create a new scheduled/recurring task. This will automatically create tasks on the specified frequency (once, hourly, daily, weekly, monthly).",
+      inputSchema: {
+        commandText: z.string().describe("The command text for tasks created by this schedule"),
+        frequency: z
+          .enum(["once", "hourly", "daily", "weekly", "monthly"])
+          .describe("How often to create a task"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Priority for created tasks. Default: normal"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Tags to apply to created tasks"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("Device ID to assign created tasks to"),
+        nextRunAt: z
+          .string()
+          .optional()
+          .describe("ISO 8601 datetime for when to first run. Default: now"),
+        enabled: z
+          .boolean()
+          .optional()
+          .describe("Whether the schedule is active. Default: true"),
+        templateId: z
+          .string()
+          .optional()
+          .describe("Optional template ID to base tasks on"),
+      },
+    },
+    async (args) => {
+      try {
+        const scheduledTask = await client.createScheduledTask(args);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                scheduledTask,
+                message: `Scheduled task created (id: ${scheduledTask.id}, frequency: ${scheduledTask.frequency})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_scheduled_task tool
+  server.registerTool(
+    "update_scheduled_task",
+    {
+      description: "Update an existing scheduled task. Only specified fields will be changed.",
+      inputSchema: {
+        scheduledTaskId: z.string().describe("The scheduled task ID to update"),
+        commandText: z.string().optional().describe("New command text"),
+        frequency: z
+          .enum(["once", "hourly", "daily", "weekly", "monthly"])
+          .optional()
+          .describe("New frequency"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("New priority"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("New tags"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("New device ID (pass null to clear)"),
+        nextRunAt: z
+          .string()
+          .optional()
+          .describe("New next run time (ISO 8601)"),
+        enabled: z
+          .boolean()
+          .optional()
+          .describe("Enable or disable the schedule"),
+      },
+    },
+    async (args) => {
+      const { scheduledTaskId, ...updates } = args;
+      const filteredUpdates: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          filteredUpdates[key] = value;
+        }
+      }
+
+      try {
+        const scheduledTask = await client.updateScheduledTask(scheduledTaskId, filteredUpdates);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ scheduledTask, message: `Scheduled task ${scheduledTaskId} updated` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_scheduled_task tool
+  server.registerTool(
+    "delete_scheduled_task",
+    {
+      description: "Delete a scheduled task. This will stop future task creation from this schedule. WARNING: This operation is irreversible.",
+      inputSchema: {
+        scheduledTaskId: z.string().describe("The scheduled task ID to delete"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteScheduledTask(args.scheduledTaskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: true, message: `Scheduled task ${args.scheduledTaskId} deleted` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // run_scheduled_task tool
+  server.registerTool(
+    "run_scheduled_task",
+    {
+      description:
+        "Manually trigger a scheduled task to create a task immediately, without waiting for the next scheduled run. The schedule's next run time is still updated.",
+      inputSchema: {
+        scheduledTaskId: z.string().describe("The scheduled task ID to trigger"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.runScheduledTask(args.scheduledTaskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task: result.task,
+                scheduledTask: result.scheduledTask,
+                message: `Task ${result.task.id} created from scheduled task ${args.scheduledTaskId}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
