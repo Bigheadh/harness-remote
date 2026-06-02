@@ -70,6 +70,12 @@ export interface TaskStore {
   deleteScheduledTask(id: string): Promise<boolean>;
   getDueScheduledTasks(now: string): Promise<ScheduledTask[]>;
   markScheduledTaskRun(id: string, nextRunAt: string, taskId: string): Promise<void>;
+  // Task dependency methods
+  setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task>;
+  getDependencies(taskId: string): Promise<string[]>;
+  getDependents(taskId: string): Promise<string[]>;
+  isTaskBlocked(taskId: string): Promise<boolean>;
+  listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -308,6 +314,22 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
       ON scheduled_tasks(next_run_at, enabled)
+  `);
+
+  // Task dependencies table (many-to-many prerequisite relationships)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id TEXT NOT NULL,
+      depends_on_task_id TEXT NOT NULL,
+      PRIMARY KEY (task_id, depends_on_task_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on
+      ON task_dependencies(depends_on_task_id)
   `);
 
   // Prepare statements
@@ -1056,6 +1078,125 @@ export function createTaskStore(storagePath: string): TaskStore {
         SET last_run_at = ?, last_task_id = ?, next_run_at = ?, updated_at = ?
         WHERE id = ?
       `).run(now, taskId, nextRunAt, now, id);
+    },
+
+    // ── Task Dependencies ─────────────────────────────────────────
+
+    async setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task> {
+      // Verify task exists
+      const taskRow = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      // Verify all dependency tasks exist
+      for (const depId of dependsOnIds) {
+        if (depId === taskId) {
+          throw new Error(`Task cannot depend on itself: ${taskId}`);
+        }
+        const depRow = selectTaskById.get(depId) as Record<string, unknown> | undefined;
+        if (!depRow) {
+          throw new Error(`Dependency task not found: ${depId}`);
+        }
+      }
+
+      // Check for circular dependencies
+      if (dependsOnIds.length > 0) {
+        const visited = new Set<string>();
+        const stack = [...dependsOnIds];
+        while (stack.length > 0) {
+          const current = stack.pop()!;
+          if (current === taskId) {
+            throw new Error(`Circular dependency detected: task ${taskId} would create a cycle`);
+          }
+          if (visited.has(current)) continue;
+          visited.add(current);
+          // Get this task's dependencies and add to stack
+          const deps = db.prepare(
+            `SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?`
+          ).all(current) as Array<Record<string, unknown>>;
+          for (const dep of deps) {
+            stack.push(dep["depends_on_task_id"] as string);
+          }
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Replace all existing dependencies
+      db.prepare(`DELETE FROM task_dependencies WHERE task_id = ?`).run(taskId);
+
+      for (const depId of dependsOnIds) {
+        db.prepare(
+          `INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)`
+        ).run(taskId, depId);
+      }
+
+      db.prepare(`UPDATE tasks SET updated_at = ? WHERE id = ?`).run(now, taskId);
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async getDependencies(taskId: string): Promise<string[]> {
+      const rows = db.prepare(
+        `SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?`
+      ).all(taskId) as Array<Record<string, unknown>>;
+      return rows.map((r) => r["depends_on_task_id"] as string);
+    },
+
+    async getDependents(taskId: string): Promise<string[]> {
+      const rows = db.prepare(
+        `SELECT task_id FROM task_dependencies WHERE depends_on_task_id = ?`
+      ).all(taskId) as Array<Record<string, unknown>>;
+      return rows.map((r) => r["task_id"] as string);
+    },
+
+    async isTaskBlocked(taskId: string): Promise<boolean> {
+      const deps = db.prepare(
+        `SELECT d.depends_on_task_id, t.status
+         FROM task_dependencies d
+         JOIN tasks t ON t.id = d.depends_on_task_id
+         WHERE d.task_id = ?`
+      ).all(taskId) as Array<Record<string, unknown>>;
+      // Blocked if any dependency is not done/failed
+      return deps.some((d) => d["status"] !== "done" && d["status"] !== "failed");
+    },
+
+    async listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]> {
+      const effectiveLimit = limit ?? 20;
+      const rows = db.prepare(`
+        SELECT t.* FROM tasks t
+        WHERE t.status = 'pending'
+        AND (t.assigned_device_id IS NULL OR t.assigned_device_id = COALESCE(?, t.assigned_device_id))
+        AND NOT EXISTS (
+          SELECT 1 FROM task_dependencies d
+          JOIN tasks dep ON dep.id = d.depends_on_task_id
+          WHERE d.task_id = t.id
+          AND dep.status NOT IN ('done', 'failed')
+        )
+        ORDER BY
+          CASE t.priority
+            WHEN 'urgent' THEN 0
+            WHEN 'high' THEN 1
+            WHEN 'normal' THEN 2
+            WHEN 'low' THEN 3
+          END,
+          t.created_at DESC
+        LIMIT ?
+      `).all(deviceId ?? null, effectiveLimit) as Array<Record<string, unknown>>;
+
+      // Enrich with dependency info
+      return rows.map((row) => {
+        const task = rowToTask(row);
+        const deps = db.prepare(
+          `SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?`
+        ).all(task.id) as Array<Record<string, unknown>>;
+        if (deps.length > 0) {
+          task.dependsOn = deps.map((d) => d["depends_on_task_id"] as string);
+        }
+        return task;
+      });
     },
   };
 }

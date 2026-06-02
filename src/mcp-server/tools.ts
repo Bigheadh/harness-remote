@@ -1332,4 +1332,167 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Task Dependency Tools ──────────────────────────────────────────
+
+  // set_task_dependencies tool
+  server.registerTool(
+    "set_task_dependencies",
+    {
+      description:
+        "Set prerequisite dependencies for a task. The task will not be ready for processing until ALL its dependencies are completed (done/failed). Pass an empty array to clear all dependencies. Circular dependencies are prevented.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set dependencies for"),
+        dependsOn: z
+          .array(z.string())
+          .describe("Array of task IDs that must complete before this task is ready"),
+      },
+    },
+    async (args) => {
+      const { taskId, dependsOn } = args;
+      try {
+        const task = await client.setDependencies(taskId, dependsOn);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: dependsOn.length === 0
+                  ? `All dependencies cleared for task ${taskId}`
+                  : `Task ${taskId} now depends on ${dependsOn.length} task(s): ${dependsOn.join(", ")}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_task_dependencies tool
+  server.registerTool(
+    "get_task_dependencies",
+    {
+      description:
+        "Get the dependency graph for a task. Returns: 1) tasks it depends on (prerequisites), 2) tasks that depend on it (dependents), 3) whether the task is blocked by unmet dependencies.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to check dependencies for"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.getDependencies(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: result.blocked
+                  ? `Task ${args.taskId} is BLOCKED — ${result.dependencies.filter((d) => d.status !== "done" && d.status !== "failed").length} prerequisite(s) not yet met`
+                  : result.dependencies.length === 0
+                    ? `Task ${args.taskId} has no dependencies`
+                    : `Task ${args.taskId} is ready — all ${result.dependencies.length} prerequisite(s) met`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // remove_task_dependency tool
+  server.registerTool(
+    "remove_task_dependency",
+    {
+      description:
+        "Remove a specific dependency from a task. The task will no longer wait for the removed prerequisite.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to remove a dependency from"),
+        dependsOnId: z.string().describe("The dependency task ID to remove"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.removeDependency(args.taskId, args.dependsOnId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Removed dependency ${args.dependsOnId} from task ${args.taskId}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_ready_tasks tool
+  server.registerTool(
+    "list_ready_tasks",
+    {
+      description:
+        "List tasks that are ready for processing — pending tasks with ALL dependencies satisfied. This is the recommended way to pick up work, as it excludes tasks still blocked by prerequisites.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of tasks to return. Default: 20, max: 100"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Filter by assigned device ID"),
+      },
+    },
+    async (args) => {
+      const { limit, deviceId } = args;
+      try {
+        const tasks = await client.listReadyTasks(limit, deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                tasks,
+                count: tasks.length,
+                message: tasks.length === 0
+                  ? "No tasks ready for processing"
+                  : `${tasks.length} task(s) ready — all prerequisites met`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

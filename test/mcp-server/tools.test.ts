@@ -454,6 +454,70 @@ function createMockClient(): TaskApiClient & {
         },
       };
     },
+
+    // Dependency mocks
+    async setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task> {
+      calls.push({ method: "setDependencies", args: [taskId, dependsOnIds] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_dep",
+        feishuChatId: "oc_dep",
+        feishuUserId: "ou_dep",
+        commandText: "Dependency task",
+        status: "pending",
+        dependsOn: dependsOnIds.length > 0 ? dependsOnIds : undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }> {
+      calls.push({ method: "getDependencies", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        dependencies: [
+          { id: "task_dep_001", status: "done", commandText: "Prerequisite task" },
+        ],
+        dependentIds: [],
+        blocked: false,
+      };
+    },
+
+    async removeDependency(taskId: string, depId: string): Promise<Task> {
+      calls.push({ method: "removeDependency", args: [taskId, depId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_dep",
+        feishuChatId: "oc_dep",
+        feishuUserId: "ou_dep",
+        commandText: "Dependency task",
+        status: "pending",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]> {
+      calls.push({ method: "listReadyTasks", args: [limit, deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_ready_001",
+          source: "feishu",
+          feishuMessageId: "om_ready",
+          feishuChatId: "oc_ready",
+          feishuUserId: "ou_ready",
+          commandText: "Ready task",
+          status: "pending",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -509,8 +573,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 17 tools", () => {
-      expect(mockServer.registrations).toHaveLength(28);
+    it("registers all 32 tools", () => {
+      expect(mockServer.registrations).toHaveLength(32);
     });
 
     it("registers list_tasks with correct description", () => {

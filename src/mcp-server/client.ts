@@ -47,6 +47,11 @@ export interface TaskApiClient {
   updateScheduledTask(scheduledId: string, updates: Record<string, unknown>): Promise<ScheduledTask>;
   deleteScheduledTask(scheduledId: string): Promise<void>;
   runScheduledTask(scheduledId: string): Promise<{ task: Task; scheduledTask: ScheduledTask }>;
+  // Task dependency methods
+  setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task>;
+  getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }>;
+  removeDependency(taskId: string, depId: string): Promise<Task>;
+  listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
 }
 
 export function createTaskApiClient(
@@ -597,6 +602,61 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { task: Task; scheduledTask: ScheduledTask };
       return { task: data.task, scheduledTask: data.scheduledTask };
+    },
+
+    // ── Task Dependencies ──────────────────────────────────────────────
+
+    async setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ dependsOn: dependsOnIds }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to set dependencies: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get dependencies: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean };
+      return data;
+    },
+
+    async removeDependency(taskId: string, depId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies/${depId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to remove dependency: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async listReadyTasks(limit?: number, filterDeviceId?: string): Promise<Task[]> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const effectiveDeviceId = filterDeviceId ?? deviceId;
+      if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
+
+      const url = `${serverBaseUrl}/api/tasks/ready${params.toString() ? `?${params.toString()}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list ready tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { tasks: Task[] };
+      return data.tasks;
     },
   };
 }

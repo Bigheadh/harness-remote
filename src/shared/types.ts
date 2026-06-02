@@ -33,6 +33,8 @@ export interface Task {
   tags?: string[];
   attachments?: Attachment[];
   assignedDeviceId?: string;
+  /** Task IDs that must complete before this task is ready for processing */
+  dependsOn?: string[];
   dueDate?: string;
   reminderAt?: string;
   createdAt: string;
@@ -67,7 +69,8 @@ export type AuditAction =
   | "feishu.reply_failed"
   | "cleanup.processed_events"
   | "task.comment_added"
-  | "task.comment_deleted";
+  | "task.comment_deleted"
+  | "task.dependencies_set";
 
 export interface AuditLogSearchOptions {
   action?: string;
