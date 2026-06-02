@@ -75,7 +75,9 @@ export type AuditAction =
   | "api_key.created"
   | "api_key.rotated"
   | "api_key.revoked"
-  | "task.forwarded";
+  | "task.forwarded"
+  | "task.note_added"
+  | "task.note_deleted";
 
 export interface AuditLogSearchOptions {
   action?: string;
@@ -93,6 +95,15 @@ export interface TaskComment {
   taskId: string;
   author: string;
   authorType: AuditLogEntry["actorType"];
+  body: string;
+  createdAt: string;
+}
+
+/** An internal note on a task — NOT shared back to the Feishu requester */
+export interface TaskNote {
+  id: number;
+  taskId: string;
+  author: string;
   body: string;
   createdAt: string;
 }

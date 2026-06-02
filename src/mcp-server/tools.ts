@@ -2069,4 +2069,92 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Task Notes (internal annotations) ──────────────────────────
+
+  // list_task_notes tool
+  server.registerTool(
+    "list_task_notes",
+    {
+      description:
+        "List internal notes on a task. Notes are private annotations that are NOT shared back to the Feishu requester — they're for operator use only. Returns notes in chronological order (oldest first).",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to list notes for"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const notes = await client.listNotes(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                notes,
+                count: notes.length,
+                message: notes.length === 0
+                  ? "No internal notes on this task"
+                  : `${notes.length} internal note(s)`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // add_task_note tool
+  server.registerTool(
+    "add_task_note",
+    {
+      description:
+        "Add an internal note to a task. Notes are private annotations visible only to operators — they are NOT sent to the Feishu requester. Use notes for tracking context, decisions, or observations that shouldn't be shared externally.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to add a note to"),
+        body: z.string().describe("The note text (internal, not shared with requester)"),
+      },
+    },
+    async (args) => {
+      const { taskId, body } = args;
+
+      try {
+        const note = await client.addNote(taskId, body);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                note,
+                message: `Internal note added (id: ${note.id}). This note is NOT visible to the Feishu requester.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

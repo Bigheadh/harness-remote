@@ -1885,6 +1885,127 @@ export function registerTaskRoutes(
     return reply.send(slaStatus);
   });
 
+  // ── Task Notes (internal annotations, not shared to requester) ──
+
+  // GET /api/tasks/:id/notes - list notes for a task (requires tasks.read)
+  server.get<{
+    Params: { id: string };
+  }>("/api/tasks/:id/notes", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+    const notes = await store.listNotes(id);
+    return reply.send({ notes, count: notes.length });
+  });
+
+  // POST /api/tasks/:id/notes - add a note to a task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { body: string };
+  }>("/api/tasks/:id/notes", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { body?: string };
+
+    if (typeof body?.body !== "string" || body.body.trim() === "") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request body must include 'body' (non-empty string)",
+        },
+      });
+    }
+
+    try {
+      const author = authCtx.user?.username ?? "system";
+      const note = await store.addNote(id, author, body.body);
+      log.info({ taskId: id, noteId: note.id }, "Note added to task");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.note_added",
+          taskId: id,
+          actor: author,
+          actorType: "api",
+          details: { noteId: note.id, body: body.body },
+        });
+      }
+      return reply.send({ note });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // DELETE /api/tasks/:id/notes/:noteId - delete a note (requires tasks.write)
+  server.delete<{
+    Params: { id: string; noteId: string };
+  }>("/api/tasks/:id/notes/:noteId", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id, noteId } = req.params;
+    const parsedNoteId = Number(noteId);
+
+    if (isNaN(parsedNoteId) || parsedNoteId <= 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "noteId must be a positive integer" },
+      });
+    }
+
+    const deleted = await store.deleteNote(parsedNoteId, id);
+    if (!deleted) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Note not found: ${noteId}` },
+      });
+    }
+
+    log.info({ taskId: id, noteId: parsedNoteId }, "Note deleted from task");
+    if (auditStore) {
+      await auditStore.log({
+        action: "task.note_deleted",
+        taskId: id,
+        actor: authCtx.user?.username ?? "system",
+        actorType: "api",
+        details: { noteId: parsedNoteId },
+      });
+    }
+    return reply.send({ ok: true });
+  });
+
   // Error handler
   server.setErrorHandler((error, _req, reply) => {
     if (error instanceof AppError) {

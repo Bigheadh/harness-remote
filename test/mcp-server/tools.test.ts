@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus, TaskComment, ScheduledTask, ScheduleFrequency } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -750,6 +750,32 @@ function createMockClient(): TaskApiClient & {
         updatedAt: "2026-06-01T12:05:00.000Z",
       };
     },
+
+    async listNotes(taskId: string): Promise<TaskNote[]> {
+      calls.push({ method: "listNotes", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: 1,
+          taskId,
+          author: "test-user",
+          body: "Internal note: needs follow-up",
+          createdAt: "2026-06-02T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async addNote(taskId: string, body: string): Promise<TaskNote> {
+      calls.push({ method: "addNote", args: [taskId, body] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: 99,
+        taskId,
+        author: "mcp-user",
+        body,
+        createdAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
   };
   return mock;
 }
@@ -805,8 +831,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 48 tools", () => {
-      expect(mockServer.registrations).toHaveLength(48);
+    it("registers all 50 tools", () => {
+      expect(mockServer.registrations).toHaveLength(50);
     });
 
     it("registers list_tasks with correct description", () => {

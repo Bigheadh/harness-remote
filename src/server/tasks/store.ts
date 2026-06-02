@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
-import type { TaskComment, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
+import type { TaskComment, TaskNote, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaBreachType, SlaStatus, SlaSummary } from "../../shared/types.js";
 
 /** Full export payload for backup/restore across instances */
@@ -113,6 +113,10 @@ export interface TaskStore {
   unpinTask(taskId: string): Promise<Task>;
   // Task forwarding methods
   forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task>;
+  // Task notes methods (internal annotations, not shared to requester)
+  addNote(taskId: string, author: string, body: string): Promise<TaskNote>;
+  listNotes(taskId: string): Promise<TaskNote[]>;
+  deleteNote(noteId: number, taskId: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -424,6 +428,11 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_sla_breach_log_task_id\n      ON sla_breach_log(task_id)\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_sla_breach_log_policy_id\n      ON sla_breach_log(policy_id)\n  `);
+
+  // Task notes table (internal annotations, not shared to requester)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS task_notes (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      task_id TEXT NOT NULL,\n      author TEXT NOT NULL,\n      body TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_notes_task_id\n      ON task_notes(task_id)\n  `);
 
   // Prepare statements
   const insertTask = db.prepare(`
@@ -2001,6 +2010,51 @@ export function createTaskStore(storagePath: string): TaskStore {
         overdueCount,
         computedAt: now.toISOString(),
       };
+    },
+
+    // ── Task Notes (internal annotations) ──────────────────────────
+
+    async addNote(taskId: string, author: string, body: string): Promise<TaskNote> {
+      // Verify task exists
+      const task = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!task) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      const result = db.prepare(
+        `INSERT INTO task_notes (task_id, author, body, created_at) VALUES (?, ?, ?, ?)`,
+      ).run(taskId, author, body, now);
+
+      const noteId = Number(result.lastInsertRowid);
+      const row = db.prepare(`SELECT * FROM task_notes WHERE id = ?`).get(noteId) as Record<string, unknown>;
+      return {
+        id: row["id"] as number,
+        taskId: row["task_id"] as string,
+        author: row["author"] as string,
+        body: row["body"] as string,
+        createdAt: row["created_at"] as string,
+      };
+    },
+
+    async listNotes(taskId: string): Promise<TaskNote[]> {
+      const rows = db.prepare(
+        `SELECT * FROM task_notes WHERE task_id = ? ORDER BY created_at ASC`,
+      ).all(taskId) as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        id: row["id"] as number,
+        taskId: row["task_id"] as string,
+        author: row["author"] as string,
+        body: row["body"] as string,
+        createdAt: row["created_at"] as string,
+      }));
+    },
+
+    async deleteNote(noteId: number, taskId: string): Promise<boolean> {
+      const result = db.prepare(
+        `DELETE FROM task_notes WHERE id = ? AND task_id = ?`,
+      ).run(noteId, taskId);
+      return Number(result.changes) > 0;
     },
   };
 }

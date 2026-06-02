@@ -1,5 +1,5 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
-import type { TaskComment, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
+import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 
 export interface TaskApiClient {
@@ -75,6 +75,9 @@ export interface TaskApiClient {
   unpinTask(taskId: string): Promise<Task>;
   // Task forwarding
   forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task>;
+  // Task notes (internal annotations)
+  listNotes(taskId: string): Promise<TaskNote[]>;
+  addNote(taskId: string, body: string): Promise<TaskNote>;
 }
 
 export function createTaskApiClient(
@@ -875,6 +878,32 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { task: Task };
       return data.task;
+    },
+
+    // ── Task Notes (internal annotations) ──────────────────────────
+
+    async listNotes(taskId: string): Promise<TaskNote[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list notes: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { notes: TaskNote[] };
+      return data.notes;
+    },
+
+    async addNote(taskId: string, noteBody: string): Promise<TaskNote> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ body: noteBody }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to add note: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { note: TaskNote };
+      return data.note;
     },
   };
 }

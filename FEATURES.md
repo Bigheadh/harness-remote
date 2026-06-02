@@ -154,7 +154,7 @@
 
 ## Phase 24: v7 Developer Experience & Integration
 - [x] Task forwarding — forward task to different device with message (POST /api/tasks/:id/forward)
-- [ ] Task notes — internal annotations not shared to requester (GET/POST /api/tasks/:id/notes)
+- [x] Task notes — internal annotations not shared to requester (GET/POST /api/tasks/:id/notes)
 - [ ] Task user search — find tasks by Feishu user ID (GET /api/tasks/user/:userId)
 - [ ] Feishu card message format — rich card notifications instead of plain text
 - [ ] API response compression (gzip/deflate via @fastify/compress)
