@@ -15,6 +15,7 @@ export interface TaskStore {
     details?: string,
   ): Promise<Task>;
   getTaskMessageId(id: string): Promise<string | undefined>;
+  resetStaleTasks(timeoutMs?: number): Promise<number>;
   isEventProcessed(eventId: string): Promise<boolean>;
   markEventProcessed(eventId: string): Promise<void>;
 }
@@ -232,6 +233,18 @@ export function createTaskStore(storagePath: string): TaskStore {
         | Record<string, unknown>
         | undefined;
       return row ? (row["feishu_message_id"] as string) : undefined;
+    },
+
+    async resetStaleTasks(timeoutMs: number = 30 * 60 * 1000): Promise<number> {
+      // Reset tasks that have been in 'running' or 'picked' status for too long
+      const cutoff = new Date(Date.now() - timeoutMs).toISOString();
+      const result = db.prepare(`
+        UPDATE tasks
+        SET status = 'pending', updated_at = ?
+        WHERE status IN ('running', 'picked')
+        AND updated_at < ?
+      `).run(new Date().toISOString(), cutoff);
+      return Number(result.changes);
     },
 
     async isEventProcessed(eventId: string): Promise<boolean> {

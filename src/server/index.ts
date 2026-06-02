@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { loadServerConfig } from "./config.js";
 import { createTaskStore } from "./tasks/store.js";
 import { registerTaskRoutes } from "./tasks/routes.js";

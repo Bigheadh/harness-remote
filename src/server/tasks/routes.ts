@@ -139,6 +139,16 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/reset-stale - reset stale tasks back to pending
+  server.post("/api/tasks/reset-stale", async (req, reply) => {
+    const body = req.body as { timeoutMs?: number } | undefined;
+    const timeoutMs = body?.timeoutMs ?? 30 * 60 * 1000; // Default 30 minutes
+
+    const resetCount = await store.resetStaleTasks(timeoutMs);
+    log.info({ resetCount, timeoutMs }, "Stale tasks reset");
+    return reply.send({ ok: true, resetCount });
+  });
+
   // POST /api/tasks/:id/reply - reply to Feishu message
   server.post<{
     Params: { id: string };
