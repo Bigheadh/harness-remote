@@ -6,6 +6,7 @@ import type {
   WebhookSubscription,
   WebhookEvent,
   WebhookDelivery,
+  PendingRetry,
 } from "../../shared/types.js";
 
 export interface WebhookStore {
@@ -18,6 +19,11 @@ export interface WebhookStore {
   getSubscriptionsForEvent(event: WebhookEvent): Promise<WebhookSubscription[]>;
   logDelivery(delivery: Omit<WebhookDelivery, "id" | "timestamp">): Promise<void>;
   getDeliveries(webhookId?: string, limit?: number): Promise<WebhookDelivery[]>;
+  // Pending retry queue (for exponential backoff across restarts)
+  enqueuePendingRetry(retry: Omit<PendingRetry, "id" | "createdAt">): Promise<void>;
+  getDuePendingRetries(limit?: number): Promise<PendingRetry[]>;
+  removePendingRetry(id: number): Promise<void>;
+  getPendingRetryCount(): Promise<number>;
 }
 
 function generateSecret(): string {
@@ -53,6 +59,7 @@ export function createWebhookStore(storagePath: string): WebhookStore {
       success INTEGER NOT NULL DEFAULT 0,
       error TEXT,
       duration_ms INTEGER NOT NULL DEFAULT 0,
+      retry_count INTEGER NOT NULL DEFAULT 1,
       timestamp TEXT NOT NULL,
       FOREIGN KEY (webhook_id) REFERENCES webhook_subscriptions(id) ON DELETE CASCADE
     )
@@ -65,6 +72,28 @@ export function createWebhookStore(storagePath: string): WebhookStore {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_timestamp
       ON webhook_deliveries(timestamp)
+  `);
+
+  // Pending retries table for exponential backoff retry queue
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS webhook_pending_retries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      webhook_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      url TEXT NOT NULL,
+      body TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 1,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      next_retry_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      last_error TEXT,
+      FOREIGN KEY (webhook_id) REFERENCES webhook_subscriptions(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_pending_retries_next_retry
+      ON webhook_pending_retries(next_retry_at)
   `);
 
   const insertSub = db.prepare(`
@@ -87,8 +116,8 @@ export function createWebhookStore(storagePath: string): WebhookStore {
   `);
 
   const insertDelivery = db.prepare(`
-    INSERT INTO webhook_deliveries (webhook_id, event, url, status_code, success, error, duration_ms, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO webhook_deliveries (webhook_id, event, url, status_code, success, error, duration_ms, retry_count, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectDeliveries = db.prepare(`
@@ -97,6 +126,17 @@ export function createWebhookStore(storagePath: string): WebhookStore {
     ORDER BY id DESC
     LIMIT ?
   `);
+
+  // Pending retry statements
+  const insertPendingRetry = db.prepare(`
+    INSERT INTO webhook_pending_retries (webhook_id, event, url, body, signature, attempt, max_attempts, next_retry_at, created_at, last_error)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const selectPendingRetriesDue = db.prepare(`
+    SELECT * FROM webhook_pending_retries WHERE next_retry_at <= ? ORDER BY next_retry_at ASC LIMIT ?
+  `);
+  const deletePendingRetry = db.prepare(`DELETE FROM webhook_pending_retries WHERE id = ?`);
+  const countPendingRetries = db.prepare(`SELECT COUNT(*) as cnt FROM webhook_pending_retries`);
 
   function rowToSub(row: Record<string, unknown>): WebhookSubscription {
     const eventsRaw = row["events"] as string;
@@ -124,6 +164,23 @@ export function createWebhookStore(storagePath: string): WebhookStore {
       error: (row["error"] as string) ?? undefined,
       durationMs: Number(row["duration_ms"]),
       timestamp: row["timestamp"] as string,
+      retryCount: row["retry_count"] != null ? Number(row["retry_count"]) : 1,
+    };
+  }
+
+  function rowToPendingRetry(row: Record<string, unknown>): PendingRetry {
+    return {
+      id: Number(row["id"]),
+      webhookId: row["webhook_id"] as string,
+      event: row["event"] as WebhookEvent,
+      url: row["url"] as string,
+      body: row["body"] as string,
+      signature: row["signature"] as string,
+      attempt: Number(row["attempt"]),
+      maxAttempts: Number(row["max_attempts"]),
+      nextRetryAt: row["next_retry_at"] as string,
+      createdAt: row["created_at"] as string,
+      lastError: (row["last_error"] as string) ?? undefined,
     };
   }
 
@@ -212,6 +269,7 @@ export function createWebhookStore(storagePath: string): WebhookStore {
         delivery.success ? 1 : 0,
         delivery.error ?? null,
         delivery.durationMs,
+        delivery.retryCount ?? 1,
         now,
       );
     },
@@ -222,6 +280,38 @@ export function createWebhookStore(storagePath: string): WebhookStore {
         Record<string, unknown>
       >;
       return rows.map(rowToDelivery);
+    },
+
+    async enqueuePendingRetry(retry) {
+      const now = new Date().toISOString();
+      insertPendingRetry.run(
+        retry.webhookId,
+        retry.event,
+        retry.url,
+        retry.body,
+        retry.signature,
+        retry.attempt,
+        retry.maxAttempts,
+        retry.nextRetryAt,
+        now,
+        retry.lastError ?? null,
+      );
+    },
+
+    async getDuePendingRetries(limit) {
+      const now = new Date().toISOString();
+      const effectiveLimit = limit ?? 10;
+      const rows = selectPendingRetriesDue.all(now, effectiveLimit) as Array<Record<string, unknown>>;
+      return rows.map(rowToPendingRetry);
+    },
+
+    async removePendingRetry(id) {
+      deletePendingRetry.run(id);
+    },
+
+    async getPendingRetryCount() {
+      const row = countPendingRetries.get() as Record<string, unknown>;
+      return Number(row["cnt"]);
     },
   };
 }

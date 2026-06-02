@@ -150,4 +150,4 @@
 - [x] Task retry/requeue — reset failed/done tasks back to pending (POST /api/tasks/:id/retry)
 - [x] Task cloning — duplicate a task with same command text and fresh status
 - [x] Task pinning — pin important tasks to top of listing
-- [ ] Webhook delivery retry with exponential backoff
+- [x] Webhook delivery retry with exponential backoff

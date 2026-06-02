@@ -17,6 +17,7 @@ import { createApiKeyStore } from "./auth/apikeys/store.js";
 import { registerApiKeyRoutes } from "./auth/apikeys/routes.js";
 import { createWebhookStore } from "./webhooks/store.js";
 import { registerWebhookRoutes } from "./webhooks/routes.js";
+import { startRetryWorker } from "./webhooks/dispatcher.js";
 import { RateLimiter } from "./ratelimit/limiter.js";
 import { registerRateLimitHook } from "./ratelimit/middleware.js";
 import { registerScheduledTaskRoutes } from "./scheduled/routes.js";
@@ -125,10 +126,14 @@ export async function startServer(): Promise<void> {
   // Start the task scheduler (checks every 60 seconds for due scheduled tasks)
   const stopScheduler = startScheduler(store, 60_000);
 
+  // Start the webhook retry worker (checks every 10 seconds for due retries)
+  const stopRetryWorker = startRetryWorker(webhookStore);
+
   // Graceful shutdown
   const shutdown = async () => {
     log.info({}, "Shutting down...");
     stopScheduler();
+    stopRetryWorker();
     await server.close();
     process.exit(0);
   };

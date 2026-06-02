@@ -144,6 +144,23 @@ export interface WebhookDelivery {
   error?: string;
   durationMs: number;
   timestamp: string;
+  /** Number of delivery attempts made so far (including this one) */
+  retryCount: number;
+}
+
+/** Pending retry entry — stored in DB so retries survive server restarts */
+export interface PendingRetry {
+  id: number;
+  webhookId: string;
+  event: WebhookEvent;
+  url: string;
+  body: string;
+  signature: string;
+  attempt: number;
+  maxAttempts: number;
+  nextRetryAt: string;
+  createdAt: string;
+  lastError?: string;
 }
 
 /** RBAC role for API users */
