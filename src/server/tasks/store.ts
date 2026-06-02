@@ -11,6 +11,15 @@ export interface SearchOptions {
   limit?: number;
 }
 
+export interface TaskCounts {
+  total: number;
+  pending: number;
+  picked: number;
+  running: number;
+  done: number;
+  failed: number;
+}
+
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
   listTasks(status?: TaskStatus, limit?: number): Promise<Task[]>;
@@ -29,6 +38,7 @@ export interface TaskStore {
   isEventProcessed(eventId: string): Promise<boolean>;
   markEventProcessed(eventId: string): Promise<void>;
   healthCheck(): Promise<boolean>;
+  countTasksByStatus(): Promise<TaskCounts>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -352,6 +362,20 @@ export function createTaskStore(storagePath: string): TaskStore {
       } catch {
         return false;
       }
+    },
+
+    async countTasksByStatus(): Promise<TaskCounts> {
+      const rows = db.prepare(`
+        SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status
+      `).all() as Array<Record<string, unknown>>;
+      const counts: TaskCounts = { total: 0, pending: 0, picked: 0, running: 0, done: 0, failed: 0 };
+      for (const row of rows) {
+        const status = row["status"] as TaskStatus;
+        const cnt = Number(row["cnt"]);
+        counts[status] = cnt;
+        counts.total += cnt;
+      }
+      return counts;
     },
   };
 }

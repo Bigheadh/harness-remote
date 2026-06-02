@@ -6,6 +6,7 @@ import { createTaskStore } from "./tasks/store.js";
 import { registerTaskRoutes } from "./tasks/routes.js";
 import { registerFeishuRoutes } from "./feishu/events.js";
 import { createFeishuReplyClient } from "./feishu/client.js";
+import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -50,6 +51,7 @@ export async function startServer(): Promise<void> {
   const feishuClient = createFeishuReplyClient(config.feishu);
   registerTaskRoutes(server, store, config.personalToken, feishuClient);
   registerFeishuRoutes(server, store, config.feishu);
+  registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl);
 
   // Start listening
   try {
