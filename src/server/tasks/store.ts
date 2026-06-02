@@ -53,6 +53,9 @@ export interface TaskStore {
   addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
   listComments(taskId: string): Promise<TaskComment[]>;
   deleteComment(commentId: number, taskId: string): Promise<boolean>;
+  bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
+  bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
+  bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -681,6 +684,80 @@ export function createTaskStore(storagePath: string): TaskStore {
         DELETE FROM task_comments WHERE id = ? AND task_id = ?
       `).run(commentId, taskId);
       return Number(result.changes) > 0;
+    },
+
+    async bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          const currentStatus = row["status"] as TaskStatus;
+          if (!isValidTransition(currentStatus, status)) {
+            errors.push(`Invalid transition for ${id}: ${currentStatus} -> ${status}`);
+            continue;
+          }
+          Number(updateTaskStatusStmt.run(status, now, id));
+          updated++;
+        } catch (e) {
+          errors.push(`Error updating ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
+    },
+
+    async bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          Number(assignTaskStmt.run(deviceId, now, id));
+          updated++;
+        } catch (e) {
+          errors.push(`Error assigning ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
+    },
+
+    async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
+      const errors: string[] = [];
+      let deleted = 0;
+
+      if (ids.length === 0) {
+        return { deleted: 0, errors: [] };
+      }
+
+      // Process in batches of 50 to avoid SQL variable limit
+      const batchSize = 50;
+      for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        const placeholders = batch.map(() => "?").join(",");
+        try {
+          // First delete associated comments
+          db.prepare(`DELETE FROM task_comments WHERE task_id IN (${placeholders})`).run(...batch);
+          // Then delete the tasks
+          const result = db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...batch);
+          deleted += Number(result.changes);
+        } catch (e) {
+          errors.push(`Error deleting batch: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      return { deleted, errors };
     },
   };
 }

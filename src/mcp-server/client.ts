@@ -31,6 +31,9 @@ export interface TaskApiClient {
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
+  bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
+  bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
+  bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
 }
 
 export function createTaskApiClient(
@@ -383,6 +386,69 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { comment: TaskComment };
       return data.comment;
+    },
+
+    async bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/status`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids, status }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk update status: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { updated: number; errors: string[] };
+      return { updated: data.updated, errors: data.errors };
+    },
+
+    async bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/assign`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids, deviceId }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk assign: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { updated: number; errors: string[] };
+      return { updated: data.updated, errors: data.errors };
+    },
+
+    async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/delete`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk delete: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { deleted: number; errors: string[] };
+      return { deleted: data.deleted, errors: data.errors };
     },
   };
 }

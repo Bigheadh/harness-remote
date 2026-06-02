@@ -147,6 +147,128 @@ export function registerTaskRoutes(
     return reply.send({ tasks, count: tasks.length });
   });
 
+  // POST /api/tasks/bulk/status - bulk status update (requires tasks.status)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/status", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.status");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; status?: TaskStatus };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+    if (!body?.status) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Missing 'status' in request body" },
+      });
+    }
+
+    const validStatuses: TaskStatus[] = ["pending", "picked", "running", "done", "failed"];
+    if (!validStatuses.includes(body.status)) {
+      return reply.code(400).send({
+        error: { code: "invalid_status", message: `Invalid status: ${body.status}` },
+      });
+    }
+
+    const result = await store.bulkUpdateStatus(body.ids, body.status);
+    log.info({ count: result.updated, errors: result.errors.length }, "Bulk status update completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, status: body.status, ids: body.ids, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
+  // POST /api/tasks/bulk/assign - bulk assign tasks (requires tasks.assign)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/assign", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.assign");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; deviceId?: string };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+    if (typeof body?.deviceId !== "string" || body.deviceId.trim() === "") {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'deviceId' (non-empty string)" },
+      });
+    }
+
+    const result = await store.bulkAssign(body.ids, body.deviceId.trim());
+    log.info({ count: result.updated, deviceId: body.deviceId, errors: result.errors.length }, "Bulk assign completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.assigned",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, deviceId: body.deviceId.trim(), ids: body.ids, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
+  // POST /api/tasks/bulk/delete - bulk delete tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/delete", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[] };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+
+    const result = await store.bulkDelete(body.ids);
+    log.info({ count: result.deleted, errors: result.errors.length }, "Bulk delete completed");
+
+    if (auditStore && result.deleted > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, action: "delete", count: result.deleted, ids: body.ids, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
   // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };

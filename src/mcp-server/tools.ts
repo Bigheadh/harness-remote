@@ -728,4 +728,145 @@ export function registerMcpTools(
       }
     },
   );
+
+  // bulk_update_status tool
+  server.registerTool(
+    "bulk_update_status",
+    {
+      description:
+        "Update the status of multiple tasks at once. Each task's status transition is validated individually — invalid transitions are skipped and reported in errors. Returns the count of successfully updated tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to update"),
+        status: z
+          .enum(["pending", "picked", "running", "done", "failed"])
+          .describe("The target status to set on all specified tasks"),
+      },
+    },
+    async (args) => {
+      const { ids, status } = args;
+
+      try {
+        const result = await client.bulkUpdateStatus(ids, status);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: `Updated ${result.updated} of ${ids.length} tasks to '${status}'${result.errors.length > 0 ? ` (${result.errors.length} errors)` : ""}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // bulk_assign_tasks tool
+  server.registerTool(
+    "bulk_assign_tasks",
+    {
+      description:
+        "Assign multiple tasks to a device at once. All specified tasks will be assigned to the given device. Returns the count of successfully assigned tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to assign"),
+        deviceId: z
+          .string()
+          .describe("The device ID to assign all tasks to"),
+      },
+    },
+    async (args) => {
+      const { ids, deviceId } = args;
+
+      try {
+        const result = await client.bulkAssign(ids, deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: `Assigned ${result.updated} of ${ids.length} tasks to device '${deviceId}'${result.errors.length > 0 ? ` (${result.errors.length} errors)` : ""}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // bulk_delete_tasks tool
+  server.registerTool(
+    "bulk_delete_tasks",
+    {
+      description:
+        "Delete multiple tasks at once. This also deletes associated comments. Returns the count of successfully deleted tasks and any errors. WARNING: This operation is irreversible.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to delete"),
+      },
+    },
+    async (args) => {
+      const { ids } = args;
+
+      try {
+        const result = await client.bulkDelete(ids);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: `Deleted ${result.deleted} of ${ids.length} tasks${result.errors.length > 0 ? ` (${result.errors.length} errors)` : ""}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

@@ -243,6 +243,36 @@ function createMockClient(): TaskApiClient & {
         createdAt: "2026-06-02T12:00:00.000Z",
       };
     },
+
+    async registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }> {
+      calls.push({ method: "registerDevice", args: [name, capabilities] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { id: "dev_001", token: "tok_test" };
+    },
+
+    async queryAuditLog(options: { action?: string; taskId?: string; actor?: string; actorType?: string; from?: string; to?: string; limit?: number }): Promise<import("../../src/shared/types.js").AuditLogEntry[]> {
+      calls.push({ method: "queryAuditLog", args: [options] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [];
+    },
+
+    async bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkUpdateStatus", args: [ids, status] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
+    async bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkAssign", args: [ids, deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
+    async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
+      calls.push({ method: "bulkDelete", args: [ids] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { deleted: ids.length, errors: [] };
+    },
   };
   return mock;
 }
@@ -298,8 +328,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 14 tools", () => {
-      expect(mockServer.registrations).toHaveLength(14);
+    it("registers all 17 tools", () => {
+      expect(mockServer.registrations).toHaveLength(17);
     });
 
     it("registers list_tasks with correct description", () => {
