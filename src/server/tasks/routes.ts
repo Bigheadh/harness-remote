@@ -4,6 +4,7 @@ import type { TaskStatus } from "../../shared/types.js";
 import type { TaskPriority } from "../../shared/types.js";
 import type { AuditLogEntry } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
+import { buildTaskResultCard, buildCustomCard } from "../feishu/card-builder.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
@@ -732,6 +733,15 @@ export function registerTaskRoutes(
       // Broadcast SSE event for result report
       broadcastTaskResultReported(task, body.success, body.summary);
       recordTaskCompleted(body.success ? "done" : "failed");
+
+      // Send rich card reply to Feishu if client is available
+      if (feishuClient && task.feishuMessageId) {
+        const card = buildTaskResultCard(task, body.success, body.summary, body.details);
+        feishuClient.sendCardMessage({ messageId: task.feishuMessageId, card }).catch((err) => {
+          log.warn({ taskId: id, err: err instanceof Error ? err.message : String(err) }, "Failed to send task result card to Feishu");
+        });
+      }
+
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -1315,9 +1325,10 @@ export function registerTaskRoutes(
   });
 
   // POST /api/tasks/:id/reply - reply to Feishu message (requires tasks.reply)
+  // Supports optional format: "card" to send as interactive card with title
   server.post<{
     Params: { id: string };
-    Body: { message: string };
+    Body: { message: string; format?: string; title?: string };
   }>("/api/tasks/:id/reply", async (req, reply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
     try {
@@ -1330,7 +1341,7 @@ export function registerTaskRoutes(
     }
 
     const { id } = req.params;
-    const body = req.body as { message?: string };
+    const body = req.body as { message?: string; format?: string; title?: string };
 
     if (typeof body?.message !== "string" || body.message.trim() === "") {
       return reply.code(400).send({
@@ -1358,14 +1369,22 @@ export function registerTaskRoutes(
         });
       }
 
-      await feishuClient.replyToMessage({ messageId, text: body.message });
-      log.info({ taskId: id }, "Reply sent to Feishu");
+      if (body.format === "card") {
+        // Send as interactive card
+        const card = buildCustomCard(body.title ?? "📢 Reply", body.message);
+        await feishuClient.sendCardMessage({ messageId, card });
+      } else {
+        // Default: send as plain text
+        await feishuClient.replyToMessage({ messageId, text: body.message });
+      }
+      log.info({ taskId: id, format: body.format ?? "text" }, "Reply sent to Feishu");
       if (auditStore) {
         await auditStore.log({
           action: "feishu.reply_sent",
           taskId: id,
           actor: authCtx.user?.username ?? "api",
           actorType: "api",
+          details: { format: body.format ?? "text" },
         });
       }
       return reply.send({ ok: true });

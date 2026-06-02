@@ -94,7 +94,7 @@ export async function startServer(): Promise<void> {
   // Register routes — pass userStore for RBAC support
   const feishuClient = createFeishuReplyClient(config.feishu);
   registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore, webhookStore, apiKeyStore);
-  registerFeishuRoutes(server, store, config.feishu, auditStore, webhookStore);
+  registerFeishuRoutes(server, store, config.feishu, auditStore, webhookStore, feishuClient);
   registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl, userStore, apiKeyStore);
   registerDeviceRoutes(server, deviceStore, config.personalToken, userStore, apiKeyStore);
   registerAuditRoutes(server, auditStore, config.personalToken, userStore, apiKeyStore);

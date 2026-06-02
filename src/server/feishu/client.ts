@@ -1,10 +1,19 @@
+import type { FeishuCard } from "./card-builder.js";
+import { serializeCard } from "./card-builder.js";
+
 export interface FeishuReplyInput {
   messageId: string;
   text: string;
 }
 
+export interface FeishuSendCardInput {
+  messageId: string;
+  card: FeishuCard;
+}
+
 export interface FeishuReplyClient {
   replyToMessage(input: FeishuReplyInput): Promise<void>;
+  sendCardMessage(input: FeishuSendCardInput): Promise<void>;
 }
 
 interface FeishuReplyConfig {
@@ -81,6 +90,34 @@ export function createFeishuReplyClient(config: FeishuReplyConfig): FeishuReplyC
 
       if (data.code !== 0) {
         throw new Error(`Failed to reply to Feishu message: ${data.msg}`);
+      }
+    },
+
+    async sendCardMessage(input: FeishuSendCardInput): Promise<void> {
+      const token = await getTenantAccessToken(config);
+
+      const response = await fetch(
+        `https://open.feishu.cn/open-apis/im/v1/messages/${input.messageId}/reply`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            content: serializeCard(input.card),
+            msg_type: "interactive",
+          }),
+        },
+      );
+
+      const data = (await response.json()) as {
+        code: number;
+        msg: string;
+      };
+
+      if (data.code !== 0) {
+        throw new Error(`Failed to send Feishu card message: ${data.msg}`);
       }
     },
   };

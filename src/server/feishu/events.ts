@@ -3,6 +3,8 @@ import type { Task, TaskPriority, Attachment, FeishuFileType } from "../../share
 import type { TaskStore } from "../tasks/store.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
+import type { FeishuReplyClient } from "./client.js";
+import { buildTaskCreatedCard } from "./card-builder.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
 import { broadcastTaskCreated } from "../sse/broadcaster.js";
@@ -275,6 +277,7 @@ export function registerFeishuRoutes(
   feishuConfig: FeishuConfig,
   auditStore?: AuditLogStore,
   webhookStore?: WebhookStore,
+  feishuClient?: FeishuReplyClient,
 ): void {
   server.post("/feishu/events", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as Record<string, unknown>;
@@ -373,6 +376,14 @@ export function registerFeishuRoutes(
     // Dispatch webhook for task creation
     if (webhookStore) {
       dispatchWebhook(webhookStore, "task.created", task, { chatType: eventContext.chatType }).catch(() => {});
+    }
+
+    // Send rich card confirmation to the original chat
+    if (feishuClient) {
+      const card = buildTaskCreatedCard(task);
+      feishuClient.sendCardMessage({ messageId: eventContext.messageId, card }).catch((err) => {
+        log.warn({ taskId: task.id, err: err instanceof Error ? err.message : String(err) }, "Failed to send task creation card");
+      });
     }
 
     return reply.code(201).send({ ok: true, taskId: task.id });
