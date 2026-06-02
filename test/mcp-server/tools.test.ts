@@ -273,6 +273,80 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { deleted: ids.length, errors: [] };
     },
+
+    async listTemplates(): Promise<import("../../src/shared/types.js").TaskTemplate[]> {
+      calls.push({ method: "listTemplates", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "tpl_001",
+          name: "Deploy Template",
+          description: "Standard deployment task",
+          commandText: "Deploy to production",
+          priority: "high",
+          tags: ["deploy"],
+          createdBy: "test-user",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getTemplate(templateId: string): Promise<import("../../src/shared/types.js").TaskTemplate> {
+      calls.push({ method: "getTemplate", args: [templateId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: templateId,
+        name: "Deploy Template",
+        description: "Standard deployment task",
+        commandText: "Deploy to production",
+        priority: "high",
+        tags: ["deploy"],
+        createdBy: "test-user",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<import("../../src/shared/types.js").TaskTemplate> {
+      calls.push({ method: "createTemplate", args: [template] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "tpl_new_001",
+        name: template.name,
+        description: template.description,
+        commandText: template.commandText,
+        priority: (template.priority as "low" | "normal" | "high" | "urgent") ?? "normal",
+        tags: template.tags,
+        assignedDeviceId: template.assignedDeviceId,
+        dueDateOffsetMs: template.dueDateOffsetMs,
+        reminderOffsetMs: template.reminderOffsetMs,
+        createdBy: "test-user",
+        createdAt: "2026-06-02T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<import("../../src/shared/types.js").TaskTemplate> {
+      calls.push({ method: "updateTemplate", args: [templateId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: templateId,
+        name: (updates.name as string) ?? "Deploy Template",
+        description: (updates.description as string) ?? "Standard deployment task",
+        commandText: (updates.commandText as string) ?? "Deploy to production",
+        priority: (updates.priority as "low" | "normal" | "high" | "urgent") ?? "high",
+        tags: (updates.tags as string[]) ?? ["deploy"],
+        createdBy: "test-user",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
+
+    async deleteTemplate(templateId: string): Promise<void> {
+      calls.push({ method: "deleteTemplate", args: [templateId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
   };
   return mock;
 }
@@ -329,7 +403,7 @@ describe("MCP tools", () => {
 
   describe("tool registration", () => {
     it("registers all 17 tools", () => {
-      expect(mockServer.registrations).toHaveLength(17);
+      expect(mockServer.registrations).toHaveLength(22);
     });
 
     it("registers list_tasks with correct description", () => {

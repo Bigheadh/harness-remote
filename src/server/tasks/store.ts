@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
-import type { TaskComment, AuditLogEntry } from "../../shared/types.js";
+import type { TaskComment, AuditLogEntry, TaskTemplate } from "../../shared/types.js";
 
 export interface SearchOptions {
   q?: string;
@@ -56,6 +56,12 @@ export interface TaskStore {
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
+  // Task template methods
+  createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
+  listTemplates(): Promise<TaskTemplate[]>;
+  getTemplate(id: string): Promise<TaskTemplate | undefined>;
+  updateTemplate(id: string, updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>): Promise<TaskTemplate>;
+  deleteTemplate(id: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -111,6 +117,23 @@ function rowToTask(row: Record<string, unknown>): Task {
     updatedAt: row["updated_at"] as string,
     resultSummary: (row["result_summary"] as string) ?? undefined,
     resultDetails: (row["result_details"] as string) ?? undefined,
+  };
+}
+
+function rowToTemplate(row: Record<string, unknown>): TaskTemplate {
+  return {
+    id: row["id"] as string,
+    name: row["name"] as string,
+    description: (row["description"] as string) ?? undefined,
+    commandText: row["command_text"] as string,
+    priority: (row["priority"] as TaskPriority) ?? "normal",
+    tags: parseTags(row["tags"]),
+    assignedDeviceId: (row["assigned_device_id"] as string) ?? undefined,
+    dueDateOffsetMs: row["due_date_offset_ms"] != null ? Number(row["due_date_offset_ms"]) : undefined,
+    reminderOffsetMs: row["reminder_offset_ms"] != null ? Number(row["reminder_offset_ms"]) : undefined,
+    createdBy: row["created_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
   };
 }
 
@@ -212,7 +235,28 @@ export function createTaskStore(storagePath: string): TaskStore {
     CREATE INDEX IF NOT EXISTS idx_task_comments_task_id
       ON task_comments(task_id)
   `);
+  // Task templates table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      command_text TEXT NOT NULL,
+      priority TEXT DEFAULT 'normal',
+      tags TEXT,
+      assigned_device_id TEXT,
+      due_date_offset_ms INTEGER,
+      reminder_offset_ms INTEGER,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
 
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_task_templates_name
+      ON task_templates(name)
+  `);
 
   // Prepare statements
   const insertTask = db.prepare(`
@@ -758,6 +802,94 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       return { deleted, errors };
+    },
+
+    // ── Task Templates ──────────────────────────────────────────────
+
+    async createTemplate(
+      template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">,
+    ): Promise<TaskTemplate> {
+      const id = `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      const tagsJson =
+        template.tags && template.tags.length > 0
+          ? JSON.stringify(template.tags)
+          : null;
+
+      db.prepare(`
+        INSERT INTO task_templates (id, name, description, command_text, priority, tags, assigned_device_id, due_date_offset_ms, reminder_offset_ms, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        template.name,
+        template.description ?? null,
+        template.commandText,
+        template.priority ?? "normal",
+        tagsJson,
+        template.assignedDeviceId ?? null,
+        template.dueDateOffsetMs ?? null,
+        template.reminderOffsetMs ?? null,
+        template.createdBy,
+        now,
+        now,
+      );
+
+      const row = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToTemplate(row);
+    },
+
+    async listTemplates(): Promise<TaskTemplate[]> {
+      const rows = db.prepare(`SELECT * FROM task_templates ORDER BY created_at DESC`).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToTemplate);
+    },
+
+    async getTemplate(id: string): Promise<TaskTemplate | undefined> {
+      const row = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      return row ? rowToTemplate(row) : undefined;
+    },
+
+    async updateTemplate(
+      id: string,
+      updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>,
+    ): Promise<TaskTemplate> {
+      const existing = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      if (!existing) {
+        throw new Error(`Template not found: ${id}`);
+      }
+
+      const now = new Date().toISOString();
+      const setClauses: string[] = [];
+      const params: (string | number | null)[] = [];
+
+      if (updates.name !== undefined) { setClauses.push("name = ?"); params.push(updates.name); }
+      if (updates.description !== undefined) { setClauses.push("description = ?"); params.push(updates.description ?? null); }
+      if (updates.commandText !== undefined) { setClauses.push("command_text = ?"); params.push(updates.commandText); }
+      if (updates.priority !== undefined) { setClauses.push("priority = ?"); params.push(updates.priority); }
+      if (updates.tags !== undefined) {
+        setClauses.push("tags = ?");
+        params.push(updates.tags && updates.tags.length > 0 ? JSON.stringify(updates.tags) : null);
+      }
+      if (updates.assignedDeviceId !== undefined) { setClauses.push("assigned_device_id = ?"); params.push(updates.assignedDeviceId ?? null); }
+      if (updates.dueDateOffsetMs !== undefined) { setClauses.push("due_date_offset_ms = ?"); params.push(updates.dueDateOffsetMs ?? null); }
+      if (updates.reminderOffsetMs !== undefined) { setClauses.push("reminder_offset_ms = ?"); params.push(updates.reminderOffsetMs ?? null); }
+
+      if (setClauses.length === 0) {
+        return rowToTemplate(existing);
+      }
+
+      setClauses.push("updated_at = ?");
+      params.push(now);
+      params.push(id);
+
+      db.prepare(`UPDATE task_templates SET ${setClauses.join(", ")} WHERE id = ?`).run(...params);
+
+      const row = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToTemplate(row);
+    },
+
+    async deleteTemplate(id: string): Promise<boolean> {
+      const result = db.prepare(`DELETE FROM task_templates WHERE id = ?`).run(id);
+      return Number(result.changes) > 0;
     },
   };
 }

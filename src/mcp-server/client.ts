@@ -1,5 +1,5 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
-import type { TaskComment } from "../shared/types.js";
+import type { TaskComment, TaskTemplate } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
@@ -34,6 +34,12 @@ export interface TaskApiClient {
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
+  // Template methods
+  listTemplates(): Promise<TaskTemplate[]>;
+  getTemplate(templateId: string): Promise<TaskTemplate>;
+  createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate>;
+  updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate>;
+  deleteTemplate(templateId: string): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -449,6 +455,67 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { deleted: number; errors: string[] };
       return { deleted: data.deleted, errors: data.errors };
+    },
+
+    // ── Task Templates ──────────────────────────────────────────────
+
+    async listTemplates(): Promise<TaskTemplate[]> {
+      const response = await fetch(`${serverBaseUrl}/api/templates`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list templates: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { templates: TaskTemplate[] };
+      return data.templates;
+    },
+
+    async getTemplate(templateId: string): Promise<TaskTemplate> {
+      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get template: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { template: TaskTemplate };
+      return data.template;
+    },
+
+    async createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate> {
+      const response = await fetch(`${serverBaseUrl}/api/templates`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(template),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create template: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { template: TaskTemplate };
+      return data.template;
+    },
+
+    async updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate> {
+      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update template: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { template: TaskTemplate };
+      return data.template;
+    },
+
+    async deleteTemplate(templateId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete template: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
   };
 }

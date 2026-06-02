@@ -152,3 +152,21 @@ export interface User {
   createdAt: string;
   updatedAt: string;
 }
+
+/** A reusable task definition — templates let users quickly create common tasks */
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  commandText: string;
+  priority?: TaskPriority;
+  tags?: string[];
+  assignedDeviceId?: string;
+  /** Milliseconds offset from creation time for the due date (e.g., 86400000 = +1 day) */
+  dueDateOffsetMs?: number;
+  /** Milliseconds offset from creation time for the reminder (e.g., 3600000 = +1 hour) */
+  reminderOffsetMs?: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}

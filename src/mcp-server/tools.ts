@@ -869,4 +869,217 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Task Template Tools ──────────────────────────────────────────
+
+  // list_templates tool
+  server.registerTool(
+    "list_templates",
+    {
+      description:
+        "List all saved task templates. Templates are reusable task definitions that can be used to quickly create common tasks.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const templates = await client.listTemplates();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ templates, count: templates.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_template tool
+  server.registerTool(
+    "get_template",
+    {
+      description: "Get details of a specific task template by ID.",
+      inputSchema: {
+        templateId: z.string().describe("The template ID to retrieve"),
+      },
+    },
+    async (args) => {
+      try {
+        const template = await client.getTemplate(args.templateId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ template }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_template tool
+  server.registerTool(
+    "create_template",
+    {
+      description:
+        "Create a new task template. Templates define reusable task configurations with command text, priority, tags, and optional due date/reminder offsets.",
+      inputSchema: {
+        name: z.string().describe("A human-readable name for the template"),
+        description: z.string().optional().describe("Optional description of what this template is for"),
+        commandText: z.string().describe("The default command text for tasks created from this template"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Default priority. Default: normal"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Default tags to apply when creating tasks from this template"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("Default device to assign tasks to"),
+        dueDateOffsetMs: z
+          .number()
+          .int()
+          .optional()
+          .describe("Milliseconds offset from creation for the due date (e.g., 86400000 = +1 day)"),
+        reminderOffsetMs: z
+          .number()
+          .int()
+          .optional()
+          .describe("Milliseconds offset from creation for the reminder (e.g., 3600000 = +1 hour)"),
+      },
+    },
+    async (args) => {
+      try {
+        const template = await client.createTemplate(args);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                template,
+                message: `Template '${template.name}' created (id: ${template.id})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_template tool
+  server.registerTool(
+    "update_template",
+    {
+      description: "Update an existing task template. Only specified fields will be changed.",
+      inputSchema: {
+        templateId: z.string().describe("The template ID to update"),
+        name: z.string().optional().describe("New name"),
+        description: z.string().optional().describe("New description (pass null to clear)"),
+        commandText: z.string().optional().describe("New command text"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("New default priority"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("New default tags"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("New default device ID (pass null to clear)"),
+        dueDateOffsetMs: z
+          .number()
+          .int()
+          .optional()
+          .describe("New due date offset in ms (pass null to clear)"),
+        reminderOffsetMs: z
+          .number()
+          .int()
+          .optional()
+          .describe("New reminder offset in ms (pass null to clear)"),
+      },
+    },
+    async (args) => {
+      const { templateId, ...updates } = args;
+      // Filter out undefined values so we only send specified fields
+      const filteredUpdates: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          filteredUpdates[key] = value;
+        }
+      }
+
+      try {
+        const template = await client.updateTemplate(templateId, filteredUpdates);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ template, message: `Template '${template.name}' updated` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_template tool
+  server.registerTool(
+    "delete_template",
+    {
+      description: "Delete a task template. This operation is irreversible.",
+      inputSchema: {
+        templateId: z.string().describe("The template ID to delete"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteTemplate(args.templateId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: true, message: `Template ${args.templateId} deleted` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

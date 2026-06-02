@@ -134,7 +134,7 @@
 - [x] Rate limiting per user/device (API abuse prevention)
 
 ## Phase 21: v4 Enterprise Features
-- [ ] Task templates (reusable task definitions for common operations)
+- [x] Task templates (reusable task definitions for common operations)
 - [ ] Scheduled/recurring tasks (cron-like scheduling for periodic task creation)
 - [ ] Task dependencies (prerequisite chains: task B waits for task A)
 - [ ] API key rotation with grace period (auto-expire old tokens after rotation)
