@@ -1,9 +1,29 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { Task } from "../../shared/types.js";
+import type { Task, TaskPriority } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger({ level: "info" });
+
+/** Parse priority from message text. Looks for #priority:urgent, #priority:high, etc. */
+function parsePriority(text: string): TaskPriority {
+  const match = text.match(/#priority:(urgent|high|normal|low)/i);
+  if (match) {
+    return match[1].toLowerCase() as TaskPriority;
+  }
+  // Also support shorthand: !urgent, !high
+  if (text.includes("!urgent")) return "urgent";
+  if (text.includes("!high")) return "high";
+  return "normal";
+}
+
+/** Strip priority markers from text */
+function stripPriorityMarkers(text: string): string {
+  return text
+    .replace(/#priority:(urgent|high|normal|low)/gi, "")
+    .replace(/[!](urgent|high)/g, "")
+    .trim();
+}
 
 export interface FeishuEventContext {
   eventId: string;
@@ -119,6 +139,8 @@ export function parseFeishuEvent(payload: unknown): FeishuEventContext | null {
 export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
   const now = new Date().toISOString();
   const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const priority = parsePriority(event.text);
+  const cleanText = stripPriorityMarkers(event.text);
 
   return {
     id: taskId,
@@ -126,8 +148,9 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
     feishuMessageId: event.messageId,
     feishuChatId: event.chatId,
     feishuUserId: event.userId,
-    commandText: event.text,
+    commandText: cleanText,
     status: "pending",
+    priority,
     createdAt: now,
     updatedAt: now,
   };
@@ -197,6 +220,7 @@ export function registerFeishuRoutes(
         taskId: task.id,
         userId: eventContext.userId,
         chatType: eventContext.chatType,
+        priority: task.priority,
       },
       "Task created from Feishu event",
     );

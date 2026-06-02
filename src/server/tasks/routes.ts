@@ -1,13 +1,18 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { TaskStore } from "./store.js";
 import type { TaskStatus } from "../../shared/types.js";
+import type { FeishuReplyClient } from "../feishu/client.js";
 import { requireBearerToken } from "../../shared/http.js";
 import { AppError } from "../../shared/errors.js";
+import { createLogger } from "../../shared/logger.js";
+
+const log = createLogger({ level: "info" });
 
 export function registerTaskRoutes(
   server: FastifyInstance,
   store: TaskStore,
   personalToken: string,
+  feishuClient?: FeishuReplyClient,
 ): void {
   // Health endpoint
   server.get("/health", async (_req, reply) => {
@@ -131,6 +136,52 @@ export function registerTaskRoutes(
         });
       }
       throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/reply - reply to Feishu message
+  server.post<{
+    Params: { id: string };
+    Body: { message: string };
+  }>("/api/tasks/:id/reply", async (req, reply) => {
+    const { id } = req.params;
+    const body = req.body as { message?: string };
+
+    if (typeof body?.message !== "string" || body.message.trim() === "") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request body must include 'message' (non-empty string)",
+        },
+      });
+    }
+
+    if (!feishuClient) {
+      return reply.code(503).send({
+        error: {
+          code: "not_configured",
+          message: "Feishu reply client is not configured",
+        },
+      });
+    }
+
+    try {
+      const messageId = await store.getTaskMessageId(id);
+      if (!messageId) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+
+      await feishuClient.replyToMessage({ messageId, text: body.message });
+      log.info({ taskId: id }, "Reply sent to Feishu");
+      return reply.send({ ok: true });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ taskId: id, err: message }, "Failed to reply to Feishu");
+      return reply.code(502).send({
+        error: { code: "feishu_reply_failed", message },
+      });
     }
   });
 

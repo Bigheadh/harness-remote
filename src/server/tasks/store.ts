@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Task, TaskStatus } from "../../shared/types.js";
+import type { Task, TaskStatus, TaskPriority } from "../../shared/types.js";
 
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
@@ -14,6 +14,7 @@ export interface TaskStore {
     summary: string,
     details?: string,
   ): Promise<Task>;
+  getTaskMessageId(id: string): Promise<string | undefined>;
   isEventProcessed(eventId: string): Promise<boolean>;
   markEventProcessed(eventId: string): Promise<void>;
 }
@@ -39,6 +40,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     feishuUserId: row["feishu_user_id"] as string,
     commandText: row["command_text"] as string,
     status: row["status"] as TaskStatus,
+    priority: (row["priority"] as TaskPriority) ?? "normal",
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
     resultSummary: (row["result_summary"] as string) ?? undefined,
@@ -62,12 +64,20 @@ export function createTaskStore(storagePath: string): TaskStore {
       feishu_user_id TEXT NOT NULL,
       command_text TEXT NOT NULL,
       status TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'normal',
       result_summary TEXT,
       result_details TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
   `);
+
+  // Add priority column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'`);
+  } catch {
+    // Column already exists, ignore
+  }
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
@@ -83,8 +93,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -96,7 +106,14 @@ export function createTaskStore(storagePath: string): TaskStore {
   const selectTasks = db.prepare(`
     SELECT * FROM tasks
     WHERE status = COALESCE(?, status)
-    ORDER BY created_at DESC
+    ORDER BY
+      CASE priority
+        WHEN 'urgent' THEN 0
+        WHEN 'high' THEN 1
+        WHEN 'normal' THEN 2
+        WHEN 'low' THEN 3
+      END,
+      created_at DESC
     LIMIT ?
   `);
 
@@ -120,6 +137,7 @@ export function createTaskStore(storagePath: string): TaskStore {
     async createTask(task: Task): Promise<Task> {
       const now = new Date().toISOString();
       const status = task.status ?? "pending";
+      const priority = task.priority ?? "normal";
 
       // Check for duplicate feishu_message_id
       const existing = selectTaskByMessageId.get(task.feishuMessageId) as
@@ -139,6 +157,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.feishuUserId,
         task.commandText,
         status,
+        priority,
         task.createdAt ?? now,
         task.updatedAt ?? now,
       );
@@ -206,6 +225,13 @@ export function createTaskStore(storagePath: string): TaskStore {
 
       const updated = selectTaskById.get(id) as Record<string, unknown>;
       return rowToTask(updated);
+    },
+
+    async getTaskMessageId(id: string): Promise<string | undefined> {
+      const row = selectTaskById.get(id) as
+        | Record<string, unknown>
+        | undefined;
+      return row ? (row["feishu_message_id"] as string) : undefined;
     },
 
     async isEventProcessed(eventId: string): Promise<boolean> {

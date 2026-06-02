@@ -1,4 +1,8 @@
-import { readFileSync } from "node:fs";
+import {
+  validateRequired,
+  validateUrl,
+  parseJsonConfig,
+} from "../shared/config-utils.js";
 
 export interface ServerConfig {
   port: number;
@@ -14,53 +18,9 @@ export interface ServerConfig {
   };
 }
 
-function validateRequired(
-  value: unknown,
-  fieldName: string,
-): asserts value is string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Missing or empty required config field: ${fieldName}`);
-  }
-}
-
-function validateUrl(value: string, fieldName: string): void {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      throw new Error(
-        `Config field ${fieldName} must use https or http protocol, got: ${url.protocol}`,
-      );
-    }
-  } catch (e) {
-    if (e instanceof Error && e.message.includes("protocol")) {
-      throw e;
-    }
-    throw new Error(`Config field ${fieldName} is not a valid URL: ${value}`);
-  }
-}
-
 export function loadServerConfig(configPath?: string): ServerConfig {
   const filePath = configPath ?? "config/server.json";
-
-  let raw: string;
-  try {
-    raw = readFileSync(filePath, "utf-8");
-  } catch (e) {
-    throw new Error(`Failed to read config file: ${filePath}`);
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`Invalid JSON in config file: ${filePath}`);
-  }
-
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("Config file must contain a JSON object");
-  }
-
-  const obj = parsed as Record<string, unknown>;
+  const obj = parseJsonConfig(filePath);
 
   // Validate port
   if (typeof obj["port"] !== "number" || obj["port"] < 1 || obj["port"] > 65535) {

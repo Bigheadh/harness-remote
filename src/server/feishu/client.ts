@@ -3,6 +3,10 @@ export interface FeishuReplyInput {
   text: string;
 }
 
+export interface FeishuReplyClient {
+  replyToMessage(input: FeishuReplyInput): Promise<void>;
+}
+
 interface FeishuReplyConfig {
   appId: string;
   appSecret: string;
@@ -48,7 +52,7 @@ async function getTenantAccessToken(
   return cachedTenantToken;
 }
 
-export function createFeishuReplyClient(config: FeishuReplyConfig) {
+export function createFeishuReplyClient(config: FeishuReplyConfig): FeishuReplyClient {
   return {
     async replyToMessage(input: FeishuReplyInput): Promise<void> {
       const token = await getTenantAccessToken(config);

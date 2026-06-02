@@ -108,14 +108,11 @@ export function createTaskApiClient(
 
     async replyFeishu(taskId: string, message: string): Promise<void> {
       const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/result`,
+        `${serverBaseUrl}/api/tasks/${taskId}/reply`,
         {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            success: true,
-            summary: message,
-          }),
+          body: JSON.stringify({ message }),
         },
       );
 
