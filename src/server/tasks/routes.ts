@@ -1588,6 +1588,102 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/lock - lock a task for exclusive processing (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { deviceId?: string; ttlMs?: number };
+  }>("/api/tasks/:id/lock", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { deviceId?: string; ttlMs?: number };
+
+    // Determine the device ID — from body, auth context, or fallback to "api"
+    const deviceId = body?.deviceId ?? authCtx.user?.username ?? "api";
+    const ttlMs = body?.ttlMs ?? 300000; // Default 5 minutes
+
+    try {
+      const lock = await store.lockTask(id, deviceId, ttlMs);
+      log.info({ taskId: id, deviceId, expiresAt: lock.expiresAt }, "Task locked");
+      return reply.send({ lock });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (e instanceof Error && e.message.includes("locked by")) {
+        return reply.code(409).send({
+          error: { code: "locked", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // DELETE /api/tasks/:id/lock - unlock a task (requires tasks.write)
+  server.delete<{
+    Params: { id: string };
+    Body: { deviceId?: string };
+  }>("/api/tasks/:id/lock", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { deviceId?: string };
+    const deviceId = body?.deviceId ?? authCtx.user?.username ?? "api";
+
+    try {
+      const unlocked = await store.unlockTask(id, deviceId);
+      if (!unlocked) {
+        return reply.send({ ok: true, message: "No lock found for this task" });
+      }
+      log.info({ taskId: id, deviceId }, "Task unlocked");
+      return reply.send({ ok: true });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("locked by")) {
+        return reply.code(403).send({
+          error: { code: "lock_mismatch", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // GET /api/tasks/:id/lock - check if a task is locked (requires tasks.read)
+  server.get<{
+    Params: { id: string };
+  }>("/api/tasks/:id/lock", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const lock = await store.getTaskLock(id);
+    return reply.send({ locked: !!lock, lock: lock ?? null });
+  });
+
   // GET /api/tasks/:id/comments - list comments for a task (requires tasks.read)
   server.get<{
     Params: { id: string };

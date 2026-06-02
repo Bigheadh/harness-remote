@@ -121,6 +121,11 @@ export interface TaskStore {
   listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
   // Task dependency graph — full recursive tree traversal
   getDependencyGraph(taskId: string): Promise<import("../../shared/types.js").DependencyGraph>;
+  // Task lock methods (TTL-based locks to prevent concurrent processing)
+  lockTask(taskId: string, deviceId: string, ttlMs?: number): Promise<import("../../shared/types.js").TaskLock>;
+  unlockTask(taskId: string, deviceId: string): Promise<boolean>;
+  getTaskLock(taskId: string): Promise<import("../../shared/types.js").TaskLock | undefined>;
+  cleanupExpiredLocks(): Promise<number>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -438,6 +443,9 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_notes_task_id\n      ON task_notes(task_id)\n  `);
 
+
+  // Task locks table (TTL-based locks to prevent concurrent processing)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS task_locks (\n      task_id TEXT PRIMARY KEY,\n      locked_by TEXT NOT NULL,\n      locked_at TEXT NOT NULL,\n      expires_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
   // Prepare statements
   const insertTask = db.prepare(`
     INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at)
@@ -1512,6 +1520,93 @@ export function createTaskStore(storagePath: string): TaskStore {
         totalNodes,
         edges,
       };
+    },
+
+    // ── Task Locks ───────────────────────────────────────────────
+
+    async lockTask(taskId: string, deviceId: string, ttlMs: number = 300000): Promise<import("../../shared/types.js").TaskLock> {
+      // Verify task exists
+      const taskRow = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+
+      // Check if already locked by someone else
+      const existing = db.prepare(
+        `SELECT locked_by, expires_at FROM task_locks WHERE task_id = ?`
+      ).get(taskId) as Record<string, unknown> | undefined;
+
+      if (existing) {
+        const expiresAtExisting = existing["expires_at"] as string;
+        if (new Date(expiresAtExisting) > new Date(now)) {
+          // Lock is still active
+          if (existing["locked_by"] !== deviceId) {
+            throw new Error(`Task ${taskId} is locked by device ${existing["locked_by"]}`);
+          }
+          // Same device — refresh the lock
+          db.prepare(
+            `UPDATE task_locks SET locked_at = ?, expires_at = ? WHERE task_id = ?`
+          ).run(now, expiresAt, taskId);
+        } else {
+          // Lock expired — replace it
+          db.prepare(
+            `UPDATE task_locks SET locked_by = ?, locked_at = ?, expires_at = ? WHERE task_id = ?`
+          ).run(deviceId, now, expiresAt, taskId);
+        }
+      } else {
+        // No lock — create one
+        db.prepare(
+          `INSERT INTO task_locks (task_id, locked_by, locked_at, expires_at) VALUES (?, ?, ?, ?)`
+        ).run(taskId, deviceId, now, expiresAt);
+      }
+
+      return { taskId, lockedBy: deviceId, lockedAt: now, expiresAt };
+    },
+
+    async unlockTask(taskId: string, deviceId: string): Promise<boolean> {
+      const existing = db.prepare(
+        `SELECT locked_by FROM task_locks WHERE task_id = ?`
+      ).get(taskId) as Record<string, unknown> | undefined;
+
+      if (!existing) return false;
+      if (existing["locked_by"] !== deviceId) {
+        throw new Error(`Task ${taskId} is locked by device ${existing["locked_by"]}, not ${deviceId}`);
+      }
+
+      const result = db.prepare(`DELETE FROM task_locks WHERE task_id = ? AND locked_by = ?`).run(taskId, deviceId);
+      return Number(result.changes) > 0;
+    },
+
+    async getTaskLock(taskId: string): Promise<import("../../shared/types.js").TaskLock | undefined> {
+      const row = db.prepare(
+        `SELECT task_id, locked_by, locked_at, expires_at FROM task_locks WHERE task_id = ?`
+      ).get(taskId) as Record<string, unknown> | undefined;
+
+      if (!row) return undefined;
+
+      // Check if expired
+      if (new Date(row["expires_at"] as string) <= new Date()) {
+        db.prepare(`DELETE FROM task_locks WHERE task_id = ?`).run(taskId);
+        return undefined;
+      }
+
+      return {
+        taskId: row["task_id"] as string,
+        lockedBy: row["locked_by"] as string,
+        lockedAt: row["locked_at"] as string,
+        expiresAt: row["expires_at"] as string,
+      };
+    },
+
+    async cleanupExpiredLocks(): Promise<number> {
+      const now = new Date().toISOString();
+      const result = db.prepare(
+        `DELETE FROM task_locks WHERE expires_at <= ?`
+      ).run(now);
+      return Number(result.changes);
     },
 
     // ── Export/Import ────────────────────────────────────────────

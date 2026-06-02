@@ -54,6 +54,10 @@ export interface TaskApiClient {
   removeDependency(taskId: string, depId: string): Promise<Task>;
   listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
   getDependencyGraph(taskId: string): Promise<import("../shared/types.js").DependencyGraph>;
+  // Task lock methods
+  lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../shared/types.js").TaskLock>;
+  unlockTask(taskId: string, deviceId?: string): Promise<void>;
+  getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }>;
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
@@ -696,6 +700,44 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { graph: import("../shared/types.js").DependencyGraph };
       return data.graph;
+    },
+
+    // ── Task Locks ──────────────────────────────────────────────
+
+    async lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../shared/types.js").TaskLock> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ deviceId, ttlMs }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to lock task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { lock: import("../shared/types.js").TaskLock };
+      return data.lock;
+    },
+
+    async unlockTask(taskId: string, deviceId?: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify({ deviceId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to unlock task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get task lock: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { locked: boolean; lock: import("../shared/types.js").TaskLock | null };
+      return data;
     },
 
     // ── Export/Import ──────────────────────────────────────────────

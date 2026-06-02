@@ -1549,6 +1549,128 @@ export function registerMcpTools(
     },
   );
 
+  // ── Task Lock Tools ──────────────────────────────────────────
+
+  // lock_task tool
+  server.registerTool(
+    "lock_task",
+    {
+      description:
+        "Lock a task for exclusive processing by a specific device. Prevents other devices from picking up the same task. The lock has a configurable TTL (default 5 minutes) and automatically expires if not refreshed. Returns 409 if already locked by another device.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to lock"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Device ID to lock for. If not provided, uses the configured deviceId."),
+        ttlMs: z
+          .number()
+          .int()
+          .min(30000)
+          .max(3600000)
+          .optional()
+          .describe("Lock TTL in milliseconds. Min: 30s, Max: 1hr, Default: 300000 (5 min)"),
+      },
+    },
+    async (args) => {
+      try {
+        const lock = await client.lockTask(args.taskId, args.deviceId, args.ttlMs);
+        const ttlSec = Math.round((new Date(lock.expiresAt).getTime() - Date.now()) / 1000);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                lock,
+                message: `Task ${args.taskId} locked by ${lock.lockedBy} for ${ttlSec}s (expires ${lock.expiresAt})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // unlock_task tool
+  server.registerTool(
+    "unlock_task",
+    {
+      description:
+        "Release a task lock. Only the device that locked the task can unlock it. Useful when a device finishes processing and wants to release the lock, or when a task needs to be made available to other devices again.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to unlock"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Device ID that owns the lock. If not provided, uses the configured deviceId."),
+      },
+    },
+    async (args) => {
+      try {
+        await client.unlockTask(args.taskId, args.deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ok: true,
+                message: `Task ${args.taskId} unlocked`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // check_task_lock tool
+  server.registerTool(
+    "check_task_lock",
+    {
+      description:
+        "Check if a task is currently locked. Returns the lock details (who locked it, when, when it expires) or indicates the task is not locked.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to check lock status for"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.getTaskLock(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: result.locked
+                  ? `Task ${args.taskId} is locked by ${result.lock!.lockedBy} until ${result.lock!.expiresAt}`
+                  : `Task ${args.taskId} is not locked`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // ── Export/Import Tools ──────────────────────────────────────────
 
   // export_tasks tool

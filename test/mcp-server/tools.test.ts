@@ -535,6 +535,29 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../../src/shared/types.js").TaskLock> {
+      calls.push({ method: "lockTask", args: [taskId, deviceId, ttlMs] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      const now = new Date().toISOString();
+      return {
+        taskId,
+        lockedBy: deviceId ?? "test_device",
+        lockedAt: now,
+        expiresAt: new Date(Date.now() + (ttlMs ?? 300000)).toISOString(),
+      };
+    },
+
+    async unlockTask(taskId: string, deviceId?: string): Promise<void> {
+      calls.push({ method: "unlockTask", args: [taskId, deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../../src/shared/types.js").TaskLock | null }> {
+      calls.push({ method: "getTaskLock", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { locked: false, lock: null };
+    },
+
     // Export/Import mocks
     async exportTasks(): Promise<Record<string, unknown>> {
       calls.push({ method: "exportTasks", args: [] });
@@ -866,8 +889,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 52 tools", () => {
-      expect(mockServer.registrations).toHaveLength(52);
+    it("registers all 55 tools", () => {
+      expect(mockServer.registrations).toHaveLength(55);
     });
 
     it("registers list_tasks with correct description", () => {

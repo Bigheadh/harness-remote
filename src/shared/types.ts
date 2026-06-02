@@ -2,6 +2,14 @@ export type TaskStatus = "pending" | "picked" | "running" | "done" | "failed";
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
+/** A lock on a task preventing concurrent processing */
+export interface TaskLock {
+  taskId: string;
+  lockedBy: string;
+  lockedAt: string;
+  expiresAt: string;
+}
+
 export type FeishuFileType = "text" | "image" | "file" | "audio" | "media" | "sticker" | "post" | "interactive";
 
 export interface Attachment {
