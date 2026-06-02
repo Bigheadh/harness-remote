@@ -5,6 +5,7 @@ import type { AuditLogEntry } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
+import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
@@ -21,6 +22,7 @@ export function registerTaskRoutes(
   auditStore?: AuditLogStore,
   userStore?: UserStore,
   webhookStore?: WebhookStore,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   // Health endpoint with DB connectivity check (no auth required)
   server.get("/health", async (_req, reply) => {
@@ -35,7 +37,7 @@ export function registerTaskRoutes(
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/")) {
       try {
-        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         // Attach auth context for downstream handlers
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {

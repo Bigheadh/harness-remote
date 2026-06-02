@@ -13,6 +13,8 @@ import { createAuditLogStore } from "./audit/store.js";
 import { registerAuditRoutes } from "./audit/routes.js";
 import { createUserStore } from "./auth/store.js";
 import { registerUserRoutes } from "./auth/routes.js";
+import { createApiKeyStore } from "./auth/apikeys/store.js";
+import { registerApiKeyRoutes } from "./auth/apikeys/routes.js";
 import { createWebhookStore } from "./webhooks/store.js";
 import { registerWebhookRoutes } from "./webhooks/routes.js";
 import { RateLimiter } from "./ratelimit/limiter.js";
@@ -52,6 +54,10 @@ export async function startServer(): Promise<void> {
   const webhookStoragePath = config.storagePath.replace(/\.sqlite$/, ".webhooks.sqlite");
   const webhookStore = createWebhookStore(webhookStoragePath);
 
+  // API key store (uses separate SQLite file in same directory)
+  const apiKeyStoragePath = config.storagePath.replace(/\.sqlite$/, ".apikeys.sqlite");
+  const apiKeyStore = createApiKeyStore(apiKeyStoragePath);
+
   const server = Fastify({
     logger: false, // We use our own redacting logger
   });
@@ -77,13 +83,14 @@ export async function startServer(): Promise<void> {
 
   // Register routes — pass userStore for RBAC support
   const feishuClient = createFeishuReplyClient(config.feishu);
-  registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore, webhookStore);
+  registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore, webhookStore, apiKeyStore);
   registerFeishuRoutes(server, store, config.feishu, auditStore, webhookStore);
-  registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl, userStore);
-  registerDeviceRoutes(server, deviceStore, config.personalToken, userStore);
-  registerAuditRoutes(server, auditStore, config.personalToken, userStore);
-  registerUserRoutes(server, userStore, config.personalToken);
-  registerWebhookRoutes(server, webhookStore, config.personalToken, userStore);
+  registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl, userStore, apiKeyStore);
+  registerDeviceRoutes(server, deviceStore, config.personalToken, userStore, apiKeyStore);
+  registerAuditRoutes(server, auditStore, config.personalToken, userStore, apiKeyStore);
+  registerUserRoutes(server, userStore, config.personalToken, apiKeyStore);
+  registerApiKeyRoutes(server, apiKeyStore, config.personalToken, userStore, auditStore);
+  registerWebhookRoutes(server, webhookStore, config.personalToken, userStore, apiKeyStore);
   registerScheduledTaskRoutes(server, store, config.personalToken, auditStore);
 
   // Rate limiting — registered AFTER routes (so auth hook runs first)

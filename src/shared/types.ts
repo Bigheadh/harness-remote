@@ -70,7 +70,10 @@ export type AuditAction =
   | "cleanup.processed_events"
   | "task.comment_added"
   | "task.comment_deleted"
-  | "task.dependencies_set";
+  | "task.dependencies_set"
+  | "api_key.created"
+  | "api_key.rotated"
+  | "api_key.revoked";
 
 export interface AuditLogSearchOptions {
   action?: string;

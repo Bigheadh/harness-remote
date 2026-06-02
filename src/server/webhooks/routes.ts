@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { WebhookStore } from "./store.js";
 import type { WebhookEvent } from "../../shared/types.js";
 import type { UserStore } from "../auth/store.js";
+import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
@@ -21,12 +22,13 @@ export function registerWebhookRoutes(
   webhookStore: WebhookStore,
   personalToken: string,
   userStore?: UserStore,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   // Auth hook for /api/webhooks routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/webhooks")) {
       try {
-        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {
         if (e instanceof AppError) {

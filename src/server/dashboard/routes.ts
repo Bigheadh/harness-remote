@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { TaskStore } from "../tasks/store.js";
 import type { UserStore } from "../auth/store.js";
+import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { renderDashboardHTML } from "./templates/dashboard.js";
@@ -20,6 +21,7 @@ export function registerDashboardRoutes(
   personalToken: string,
   publicBaseUrl: string,
   userStore?: UserStore,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   server.get("/dashboard", async (req: FastifyRequest, reply: FastifyReply) => {
     // Authenticate: try header first, then query param
@@ -28,7 +30,7 @@ export function registerDashboardRoutes(
     const authHeader = req.headers["authorization"];
     if (authHeader) {
       try {
-        authCtx = await authenticate(authHeader, personalToken, userStore);
+        authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
       } catch {
         // Fall through to query param check
       }
@@ -38,7 +40,7 @@ export function registerDashboardRoutes(
       const queryToken = (req.query as Record<string, string | undefined>)?.token;
       if (queryToken) {
         try {
-          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore);
+          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
         } catch {
           // Invalid token
         }
@@ -77,7 +79,7 @@ export function registerDashboardRoutes(
     const authHeader = req.headers["authorization"];
     if (authHeader) {
       try {
-        authCtx = await authenticate(authHeader, personalToken, userStore);
+        authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
       } catch {
         // Fall through
       }
@@ -86,7 +88,7 @@ export function registerDashboardRoutes(
       const queryToken = (req.query as Record<string, string | undefined>)?.token;
       if (queryToken) {
         try {
-          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore);
+          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
         } catch {
           // Invalid
         }

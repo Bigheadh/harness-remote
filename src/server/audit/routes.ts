@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { AuditLogStore } from "./store.js";
 import type { AuditAction, AuditLogEntry } from "../../shared/types.js";
 import type { UserStore } from "../auth/store.js";
+import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 
@@ -10,12 +11,13 @@ export function registerAuditRoutes(
   auditStore: AuditLogStore,
   personalToken: string,
   userStore?: UserStore,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   // Auth hook for /api/audit routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/audit")) {
       try {
-        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore);
+        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {
         if (e instanceof AppError) {

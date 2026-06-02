@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { UserStore } from "./store.js";
+import type { ApiKeyStore } from "./apikeys/store.js";
 import type { UserRole } from "../../shared/types.js";
 import { authenticate, authorize } from "./middleware.js";
 import { VALID_ROLES } from "./roles.js";
@@ -12,12 +13,13 @@ export function registerUserRoutes(
   server: FastifyInstance,
   store: UserStore,
   personalToken: string,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   // Auth hook for /api/users routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.url.startsWith("/api/users")) return;
     try {
-      const authCtx = await authenticate(req.headers["authorization"], personalToken, store);
+      const authCtx = await authenticate(req.headers["authorization"], personalToken, store, apiKeyStore);
       authorize(authCtx, "users.read");
       // Attach auth context to request for downstream handlers
       (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
