@@ -130,5 +130,5 @@
 - [x] Task due dates and reminders (deadline tracking with overdue alerts)
 - [x] Task comments/activity timeline (comment thread on each task)
 - [x] Batch task operations (bulk status update, bulk assign, bulk delete)
-- [ ] Webhook notifications (external URL callback on task events)
+- [x] Webhook notifications (external URL callback on task events)
 - [ ] Rate limiting per user/device (API abuse prevention)

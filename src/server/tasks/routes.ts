@@ -5,9 +5,11 @@ import type { AuditLogEntry } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
+import type { WebhookStore } from "../webhooks/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
+import { dispatchWebhook } from "../webhooks/dispatcher.js";
 
 const log = createLogger({ level: "info" });
 
@@ -18,6 +20,7 @@ export function registerTaskRoutes(
   feishuClient?: FeishuReplyClient,
   auditStore?: AuditLogStore,
   userStore?: UserStore,
+  webhookStore?: WebhookStore,
 ): void {
   // Health endpoint with DB connectivity check (no auth required)
   server.get("/health", async (_req, reply) => {
@@ -191,6 +194,17 @@ export function registerTaskRoutes(
       });
     }
 
+    // Dispatch webhooks for each successfully updated task
+    if (webhookStore && result.updated > 0) {
+      for (const taskId of body.ids) {
+        if (result.errors.includes(taskId)) continue;
+        const task = await store.getTask(taskId);
+        if (task) {
+          dispatchWebhook(webhookStore, "task.status_changed", task, { bulk: true, status: body.status }).catch(() => {});
+        }
+      }
+    }
+
     return reply.send({ ok: true, ...result });
   });
 
@@ -325,6 +339,9 @@ export function registerTaskRoutes(
     }
 
     try {
+      // Get task before update to capture previous status
+      const prevTask = await store.getTask(id);
+      const previousStatus = prevTask?.status;
       const task = await store.updateTaskStatus(id, status);
       if (auditStore) {
         await auditStore.log({
@@ -332,8 +349,12 @@ export function registerTaskRoutes(
           taskId: id,
           actor: authCtx.user?.username ?? "api",
           actorType: "api",
-          details: { from: task.status, to: status },
+          details: { from: previousStatus, to: status },
         });
+      }
+      // Dispatch webhook for status change
+      if (webhookStore) {
+        dispatchWebhook(webhookStore, "task.status_changed", task, { previousStatus }).catch(() => {});
       }
       return reply.send({ task });
     } catch (e) {
@@ -398,6 +419,10 @@ export function registerTaskRoutes(
           details: { success: body.success, summary: body.summary },
         });
       }
+      // Dispatch webhook for result report
+      if (webhookStore) {
+        dispatchWebhook(webhookStore, "task.result_reported", task, { success: body.success, summary: body.summary }).catch(() => {});
+      }
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -447,6 +472,10 @@ export function registerTaskRoutes(
           actorType: "api",
           details: { deviceId: body.deviceId.trim() },
         });
+      }
+      // Dispatch webhook for assignment
+      if (webhookStore) {
+        dispatchWebhook(webhookStore, "task.assigned", task, { deviceId: body.deviceId.trim() }).catch(() => {});
       }
       return reply.send({ task });
     } catch (e) {

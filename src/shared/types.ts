@@ -96,6 +96,49 @@ export interface ApiErrorBody {
   };
 }
 
+/** Webhook event types that can trigger notifications */
+export type WebhookEvent =
+  | "task.created"
+  | "task.status_changed"
+  | "task.result_reported"
+  | "task.assigned"
+  | "task.deleted";
+
+/** A webhook subscription that receives HTTP callbacks on task events */
+export interface WebhookSubscription {
+  id: string;
+  url: string;
+  events: WebhookEvent[];
+  secret: string;
+  enabled: boolean;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Payload sent to webhook endpoints */
+export interface WebhookPayload {
+  event: WebhookEvent;
+  taskId: string;
+  task: Task;
+  timestamp: string;
+  /** Additional context about the event (e.g., previous status for status_changed) */
+  meta?: Record<string, unknown>;
+}
+
+/** Delivery log entry for webhook deliveries */
+export interface WebhookDelivery {
+  id: number;
+  webhookId: string;
+  event: WebhookEvent;
+  url: string;
+  statusCode: number | null;
+  success: boolean;
+  error?: string;
+  durationMs: number;
+  timestamp: string;
+}
+
 /** RBAC role for API users */
 export type UserRole = "admin" | "operator" | "viewer";
 

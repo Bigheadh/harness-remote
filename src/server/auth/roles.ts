@@ -25,7 +25,9 @@ export type Permission =
   | "users.write"
   | "users.delete"
   | "dashboard.read"
-  | "health.read";
+  | "health.read"
+  | "webhooks.read"
+  | "webhooks.write";
 
 /** Default role → permission mapping */
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
@@ -49,6 +51,8 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "users.delete",
     "dashboard.read",
     "health.read",
+    "webhooks.read",
+    "webhooks.write",
   ],
   operator: [
     "tasks.read",
@@ -65,6 +69,8 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "audit.read",
     "dashboard.read",
     "health.read",
+    "webhooks.read",
+    "webhooks.write",
   ],
   viewer: [
     "tasks.read",
@@ -73,6 +79,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "audit.read",
     "dashboard.read",
     "health.read",
+    "webhooks.read",
   ],
 };
 
@@ -116,4 +123,6 @@ export const ALL_PERMISSIONS: Permission[] = [
   "users.delete",
   "dashboard.read",
   "health.read",
+  "webhooks.read",
+  "webhooks.write",
 ];

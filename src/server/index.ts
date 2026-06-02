@@ -13,6 +13,8 @@ import { createAuditLogStore } from "./audit/store.js";
 import { registerAuditRoutes } from "./audit/routes.js";
 import { createUserStore } from "./auth/store.js";
 import { registerUserRoutes } from "./auth/routes.js";
+import { createWebhookStore } from "./webhooks/store.js";
+import { registerWebhookRoutes } from "./webhooks/routes.js";
 import { createLogger } from "../shared/logger.js";
 
 const configPath = process.argv.includes("--config")
@@ -42,6 +44,10 @@ export async function startServer(): Promise<void> {
   const userStoragePath = config.storagePath.replace(/\.sqlite$/, ".users.sqlite");
   const userStore = createUserStore(userStoragePath);
 
+  // Webhook store (uses separate SQLite file in same directory)
+  const webhookStoragePath = config.storagePath.replace(/\.sqlite$/, ".webhooks.sqlite");
+  const webhookStore = createWebhookStore(webhookStoragePath);
+
   const server = Fastify({
     logger: false, // We use our own redacting logger
   });
@@ -67,12 +73,13 @@ export async function startServer(): Promise<void> {
 
   // Register routes — pass userStore for RBAC support
   const feishuClient = createFeishuReplyClient(config.feishu);
-  registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore);
-  registerFeishuRoutes(server, store, config.feishu, auditStore);
+  registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore, webhookStore);
+  registerFeishuRoutes(server, store, config.feishu, auditStore, webhookStore);
   registerDashboardRoutes(server, store, config.personalToken, config.publicBaseUrl, userStore);
   registerDeviceRoutes(server, deviceStore, config.personalToken, userStore);
   registerAuditRoutes(server, auditStore, config.personalToken, userStore);
   registerUserRoutes(server, userStore, config.personalToken);
+  registerWebhookRoutes(server, webhookStore, config.personalToken, userStore);
 
   // Start listening
   try {

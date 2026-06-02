@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { Task, TaskPriority, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import type { AuditLogStore } from "../audit/store.js";
+import type { WebhookStore } from "../webhooks/store.js";
 import { createLogger } from "../../shared/logger.js";
+import { dispatchWebhook } from "../webhooks/dispatcher.js";
 
 const log = createLogger({ level: "info" });
 
@@ -270,6 +272,7 @@ export function registerFeishuRoutes(
   store: TaskStore,
   feishuConfig: FeishuConfig,
   auditStore?: AuditLogStore,
+  webhookStore?: WebhookStore,
 ): void {
   server.post("/feishu/events", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as Record<string, unknown>;
@@ -359,6 +362,11 @@ export function registerFeishuRoutes(
         actorType: "feishu",
         details: { chatType: eventContext.chatType, priority: task.priority },
       });
+    }
+
+    // Dispatch webhook for task creation
+    if (webhookStore) {
+      dispatchWebhook(webhookStore, "task.created", task, { chatType: eventContext.chatType }).catch(() => {});
     }
 
     return reply.code(201).send({ ok: true, taskId: task.id });

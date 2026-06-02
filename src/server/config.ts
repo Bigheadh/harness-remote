@@ -16,6 +16,8 @@ export interface ServerConfig {
     encryptKey: string;
     allowedUserIds: string[];
   };
+  /** Optional webhook delivery timeout in ms (default: 10000) */
+  webhookTimeoutMs?: number;
 }
 
 export function loadServerConfig(configPath?: string): ServerConfig {
