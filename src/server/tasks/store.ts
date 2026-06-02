@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
+import type { TaskComment, AuditLogEntry } from "../../shared/types.js";
 
 export interface SearchOptions {
   q?: string;
@@ -49,6 +50,9 @@ export interface TaskStore {
   setTaskDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
+  addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
+  listComments(taskId: string): Promise<TaskComment[]>;
+  deleteComment(commentId: number, taskId: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -188,6 +192,24 @@ export function createTaskStore(storagePath: string): TaskStore {
       processed_at TEXT NOT NULL
     )
   `);
+  // Task comments table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      author TEXT NOT NULL,
+      author_type TEXT NOT NULL DEFAULT 'api',
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_task_comments_task_id
+      ON task_comments(task_id)
+  `);
+
 
   // Prepare statements
   const insertTask = db.prepare(`
@@ -611,6 +633,54 @@ export function createTaskStore(storagePath: string): TaskStore {
         ORDER BY due_date ASC
       `).all(now) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
+    },
+
+    async addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment> {
+      // Verify task exists
+      const taskRow = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      const result = db.prepare(`
+        INSERT INTO task_comments (task_id, author, author_type, body, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(taskId, author, authorType, body, now);
+
+      const commentId = Number(result.lastInsertRowid);
+      return {
+        id: commentId,
+        taskId,
+        author,
+        authorType,
+        body,
+        createdAt: now,
+      };
+    },
+
+    async listComments(taskId: string): Promise<TaskComment[]> {
+      const rows = db.prepare(`
+        SELECT * FROM task_comments
+        WHERE task_id = ?
+        ORDER BY created_at ASC
+      `).all(taskId) as Array<Record<string, unknown>>;
+
+      return rows.map((row) => ({
+        id: row["id"] as number,
+        taskId: row["task_id"] as string,
+        author: row["author"] as string,
+        authorType: row["author_type"] as AuditLogEntry["actorType"],
+        body: row["body"] as string,
+        createdAt: row["created_at"] as string,
+      }));
+    },
+
+    async deleteComment(commentId: number, taskId: string): Promise<boolean> {
+      const result = db.prepare(`
+        DELETE FROM task_comments WHERE id = ? AND task_id = ?
+      `).run(commentId, taskId);
+      return Number(result.changes) > 0;
     },
   };
 }

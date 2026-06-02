@@ -1,4 +1,5 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
+import type { TaskComment } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
@@ -28,6 +29,8 @@ export interface TaskApiClient {
   setDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
+  listComments(taskId: string): Promise<TaskComment[]>;
+  addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
 }
 
 export function createTaskApiClient(
@@ -342,6 +345,44 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    async listComments(taskId: string): Promise<TaskComment[]> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/comments`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list comments: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { comments: TaskComment[] };
+      return data.comments;
+    },
+
+    async addComment(taskId: string, _author: string, commentBody: string): Promise<TaskComment> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/comments`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ body: commentBody }),
+        },
+      );
+
+      if (!response.ok) {
+        const errBody = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to add comment: ${response.status} ${errBody.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { comment: TaskComment };
+      return data.comment;
     },
   };
 }

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { TaskStore } from "./store.js";
 import type { TaskStatus } from "../../shared/types.js";
+import type { AuditLogEntry } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
@@ -710,6 +711,126 @@ export function registerTaskRoutes(
         error: { code: "feishu_reply_failed", message },
       });
     }
+  });
+
+  // GET /api/tasks/:id/comments - list comments for a task (requires tasks.read)
+  server.get<{
+    Params: { id: string };
+  }>("/api/tasks/:id/comments", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+    const comments = await store.listComments(id);
+    return reply.send({ comments, count: comments.length });
+  });
+
+  // POST /api/tasks/:id/comments - add a comment to a task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { body: string };
+  }>("/api/tasks/:id/comments", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { body?: string };
+
+    if (typeof body?.body !== "string" || body.body.trim() === "") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "Request body must include 'body' (non-empty string)",
+        },
+      });
+    }
+
+    try {
+      const authorType: AuditLogEntry["actorType"] = authCtx.user?.username ? "api" : "system";
+      const author = authCtx.user?.username ?? "system";
+      const comment = await store.addComment(id, author, authorType, body.body);
+      log.info({ taskId: id, commentId: comment.id }, "Comment added to task");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.comment_added",
+          taskId: id,
+          actor: author,
+          actorType: authorType,
+          details: { commentId: comment.id, body: body.body },
+        });
+      }
+      return reply.send({ comment });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // DELETE /api/tasks/:id/comments/:commentId - delete a comment (requires tasks.write)
+  server.delete<{
+    Params: { id: string; commentId: string };
+  }>("/api/tasks/:id/comments/:commentId", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id, commentId } = req.params;
+    const parsedCommentId = Number(commentId);
+
+    if (isNaN(parsedCommentId) || parsedCommentId <= 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "commentId must be a positive integer" },
+      });
+    }
+
+    const deleted = await store.deleteComment(parsedCommentId, id);
+    if (!deleted) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Comment not found: ${commentId}` },
+      });
+    }
+
+    log.info({ taskId: id, commentId: parsedCommentId }, "Comment deleted from task");
+    if (auditStore) {
+      await auditStore.log({
+        action: "task.comment_deleted",
+        taskId: id,
+        actor: authCtx.user?.username ?? "system",
+        actorType: "api",
+        details: { commentId: parsedCommentId },
+      });
+    }
+    return reply.send({ ok: true });
   });
 
   // Error handler

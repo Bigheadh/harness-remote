@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskComment } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -215,6 +215,34 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    async listComments(taskId: string): Promise<TaskComment[]> {
+      calls.push({ method: "listComments", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: 1,
+          taskId,
+          author: "test-user",
+          authorType: "api",
+          body: "Test comment",
+          createdAt: "2026-06-02T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async addComment(taskId: string, author: string, body: string): Promise<TaskComment> {
+      calls.push({ method: "addComment", args: [taskId, author, body] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: 42,
+        taskId,
+        author,
+        authorType: "api",
+        body,
+        createdAt: "2026-06-02T12:00:00.000Z",
+      };
+    },
   };
   return mock;
 }
@@ -270,8 +298,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 12 tools", () => {
-      expect(mockServer.registrations).toHaveLength(12);
+    it("registers all 14 tools", () => {
+      expect(mockServer.registrations).toHaveLength(14);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -624,6 +652,66 @@ describe("MCP tools", () => {
       mock.failWith = "Server error";
       const tool = mockServer.registrations.find((r) => r.name === "manage_task_tags")!;
       const result = await tool.handler({ action: "list" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
+    });
+  });
+
+  describe("comment tools", () => {
+    it("registers add_task_comment tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_comment");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("comment");
+    });
+
+    it("registers list_task_comments tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_comments");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("comment");
+    });
+
+    it("adds a comment to a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_comment")!;
+      const result = await tool.handler({ taskId: "task_001", body: "This is a test comment" });
+
+      expect(mock.calls[0].method).toBe("addComment");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[2]).toBe("This is a test comment");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.comment).toBeDefined();
+      expect(parsed.comment.id).toBe(42);
+      expect(parsed.message).toContain("Comment added");
+    });
+
+    it("returns error when add_comment fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_comment")!;
+      const result = await tool.handler({ taskId: "task_nonexistent", body: "test" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Task not found");
+    });
+
+    it("lists comments for a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_comments")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(mock.calls[0].method).toBe("listComments");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.comments).toHaveLength(1);
+      expect(parsed.comments[0].body).toBe("Test comment");
+      expect(parsed.count).toBe(1);
+    });
+
+    it("returns error when list_comments fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_comments")!;
+      const result = await tool.handler({ taskId: "task_001" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);

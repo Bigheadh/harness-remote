@@ -128,7 +128,7 @@
 ## Phase 20: v3 Advanced Features
 - [x] Task tags/labels system (categorize and filter tasks by custom tags)
 - [x] Task due dates and reminders (deadline tracking with overdue alerts)
-- [ ] Task comments/activity timeline (comment thread on each task)
+- [x] Task comments/activity timeline (comment thread on each task)
 - [ ] Batch task operations (bulk status update, bulk assign, bulk delete)
 - [ ] Webhook notifications (external URL callback on task events)
 - [ ] Rate limiting per user/device (API abuse prevention)

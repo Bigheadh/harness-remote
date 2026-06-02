@@ -65,7 +65,9 @@ export type AuditAction =
   | "event.non_allowed_user"
   | "feishu.reply_sent"
   | "feishu.reply_failed"
-  | "cleanup.processed_events";
+  | "cleanup.processed_events"
+  | "task.comment_added"
+  | "task.comment_deleted";
 
 export interface AuditLogSearchOptions {
   action?: string;
@@ -75,6 +77,16 @@ export interface AuditLogSearchOptions {
   from?: string;
   to?: string;
   limit?: number;
+}
+
+/** A comment on a task */
+export interface TaskComment {
+  id: number;
+  taskId: string;
+  author: string;
+  authorType: AuditLogEntry["actorType"];
+  body: string;
+  createdAt: string;
 }
 
 export interface ApiErrorBody {

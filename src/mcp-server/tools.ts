@@ -645,4 +645,87 @@ export function registerMcpTools(
       }
     },
   );
+
+  // add_task_comment tool
+  server.registerTool(
+    "add_task_comment",
+    {
+      description:
+        "Add a comment to a task. Comments are used for activity tracking, notes, and discussion on a task. Each comment includes the author and timestamp.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to add a comment to"),
+        body: z.string().describe("The comment text"),
+      },
+    },
+    async (args) => {
+      const { taskId, body } = args;
+
+      try {
+        const comment = await client.addComment(taskId, "mcp-user", body);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                comment,
+                message: `Comment added (id: ${comment.id})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_task_comments tool
+  server.registerTool(
+    "list_task_comments",
+    {
+      description:
+        "List all comments on a task. Returns comments in chronological order (oldest first). Use this to review the activity timeline and discussion on a task.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to list comments for"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const comments = await client.listComments(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                comments,
+                count: comments.length,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }
