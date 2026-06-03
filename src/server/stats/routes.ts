@@ -4,14 +4,25 @@ import type { TimeSeriesInterval, TimeSeriesMetric } from "../../shared/types.js
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
+import { TtlCache } from "../../shared/cache.js";
 
 const log = createLogger({ level: "info" });
+
+/** Default TTL for summary cache: 60 seconds */
+const SUMMARY_CACHE_TTL_MS = 60_000;
+/** Default TTL for timeseries cache: 30 seconds (more query variants) */
+const TIMESERIES_CACHE_TTL_MS = 30_000;
 
 export function registerStatsRoutes(
   server: FastifyInstance,
   store: TaskStore,
   personalToken: string,
 ): void {
+  /** Cache keyed by a static string for summary (no params) */
+  const summaryCache = new TtlCache<unknown>({ defaultTtlMs: SUMMARY_CACHE_TTL_MS, maxEntries: 10 });
+  /** Cache keyed by `${from}|${to}|${interval}|${metric}` for timeseries */
+  const timeseriesCache = new TtlCache<unknown>({ defaultTtlMs: TIMESERIES_CACHE_TTL_MS, maxEntries: 50 });
+
   // GET /api/stats/summary — comprehensive task statistics
   server.get("/api/stats/summary", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
@@ -25,7 +36,17 @@ export function registerStatsRoutes(
     }
 
     try {
+      // Check cache first
+      const cached = summaryCache.get("summary");
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const stats = await store.getTaskStats();
+
+      // Cache the result
+      summaryCache.set("summary", stats);
+
       return reply.send(stats);
     } catch (err) {
       log.error({ err }, "Failed to compute task stats");
@@ -87,8 +108,21 @@ export function registerStatsRoutes(
       });
     }
 
+    // Build cache key from query params
+    const cacheKey = `${effectiveFrom}|${effectiveTo}|${effectiveInterval}|${effectiveMetric}`;
+
     try {
+      // Check cache first
+      const cached = timeseriesCache.get(cacheKey);
+      if (cached) {
+        return reply.send(cached);
+      }
+
       const result = await store.getTaskTimeSeries(effectiveFrom, effectiveTo, effectiveInterval, effectiveMetric);
+
+      // Cache the result
+      timeseriesCache.set(cacheKey, result);
+
       return reply.send(result);
     } catch (err) {
       log.error({ err }, "Failed to compute time-series data");
