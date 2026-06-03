@@ -3,6 +3,7 @@ import type { TaskStore } from "./store.js";
 import type { TaskStatus } from "../../shared/types.js";
 import type { TaskPriority } from "../../shared/types.js";
 import type { AuditLogEntry } from "../../shared/types.js";
+import type { ActivityFeedItem } from "../../shared/types.js";
 import type { Subtask } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
 import { buildTaskResultCard, buildCustomCard } from "../feishu/card-builder.js";
@@ -24,6 +25,70 @@ import {
 } from "../sse/broadcaster.js";
 
 const log = createLogger({ level: "info" });
+
+/** Format an audit log entry into a human-readable summary for the activity feed */
+function formatAuditSummary(entry: AuditLogEntry): string {
+  const details = entry.details as Record<string, unknown> | undefined;
+  switch (entry.action) {
+    case "task.created":
+      if (details?.action === "clone") return `Task cloned from ${details.sourceTaskId}`;
+      if (details?.action === "import") return `Tasks imported (${details.imported} items)`;
+      return "Task created";
+    case "task.status_changed":
+      if (details?.action === "pin") return "Task pinned";
+      if (details?.action === "unpin") return "Task unpinned";
+      if (details?.action === "retry") return "Task retried (reset to pending)";
+      if (details?.bulk) return `Bulk status changed to ${details.status} (${details.count} tasks)`;
+      return `Status changed: ${details?.from} → ${details?.to}`;
+    case "task.result_reported":
+      return `Result reported: ${details?.success ? "success" : "failure"} — ${details?.summary}`;
+    case "task.assigned":
+      if (details?.bulk) return `Bulk assigned to ${details.deviceId} (${details.count} tasks)`;
+      return `Assigned to device: ${details?.deviceId}`;
+    case "task.unassigned":
+      return "Task unassigned";
+    case "task.forwarded":
+      return `Task forwarded to device: ${details?.targetDeviceId}`;
+    case "task.comment_added":
+      return "Comment added";
+    case "task.comment_deleted":
+      return "Comment deleted";
+    case "task.note_added":
+      return "Note added";
+    case "task.note_deleted":
+      return "Note deleted";
+    case "task.tags_added":
+      return `Tags added: ${JSON.stringify(details?.tags)}`;
+    case "task.tags_removed":
+      return `Tags removed: ${JSON.stringify(details?.tag)}`;
+    case "task.dependencies_set":
+      return `Dependencies updated (${details?.dependsOnIds ? (details.dependsOnIds as string[]).length : 0} prereqs)`;
+    case "task.subtask_created":
+      return `Subtask created: ${details?.title}`;
+    case "task.subtask_status_changed":
+      return `Subtask status changed: ${details?.status}`;
+    case "task.subtask_result_reported":
+      return `Subtask result reported: ${details?.success ? "success" : "failure"}`;
+    case "task.subtask_deleted":
+      return "Subtask deleted";
+    case "task.reset_stale":
+      return `Stale tasks reset (${details?.count} tasks)`;
+    case "cleanup.processed_events":
+      return `Processed events cleaned up (${details?.deleted} events)`;
+    case "feishu.reply_sent":
+      return "Feishu reply sent";
+    case "feishu.reply_failed":
+      return "Feishu reply failed";
+    case "api_key.created":
+      return "API key created";
+    case "api_key.rotated":
+      return "API key rotated";
+    case "api_key.revoked":
+      return "API key revoked";
+    default:
+      return entry.action;
+  }
+}
 
 export function registerTaskRoutes(
   server: FastifyInstance,
@@ -2420,6 +2485,59 @@ export function registerTaskRoutes(
       });
     }
     return reply.send({ ok: true });
+  });
+
+  // GET /api/tasks/:id/activity - combined chronological activity feed (requires tasks.read)
+  server.get<{
+    Params: { id: string };
+  }>("/api/tasks/:id/activity", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const { limit } = req.query as { limit?: number };
+
+    // Verify task exists
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+
+    const effectiveLimit = Math.min(limit ?? 50, 200);
+
+    // 1. Get task-owned activity (creation, comments, notes, subtasks)
+    const storeItems = await store.getActivityFeed(id, effectiveLimit * 2);
+
+    // 2. Get audit log entries for this task (status changes, result reports, assignments, etc.)
+    let auditItems: ActivityFeedItem[] = [];
+    if (auditStore) {
+      const auditEntries = await auditStore.query({ taskId: id, limit: effectiveLimit * 2 });
+      auditItems = auditEntries.map((entry) => ({
+        type: entry.action,
+        timestamp: entry.timestamp,
+        actor: entry.actor,
+        actorType: entry.actorType,
+        summary: formatAuditSummary(entry),
+        details: entry.details,
+      }));
+    }
+
+    // 3. Merge and sort by timestamp ascending
+    const allItems = [...storeItems, ...auditItems];
+    allItems.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    // 4. Apply limit
+    const items = allItems.slice(0, effectiveLimit);
+    return reply.send({ items, count: items.length });
   });
 
   // Error handler

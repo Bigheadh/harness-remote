@@ -355,6 +355,22 @@ export interface SlaSummary {
   }>;
 }
 
+/** A single item in a task's activity feed — chronological timeline of all events */
+export interface ActivityFeedItem {
+  /** Event type: 'task.created', 'task.status_changed', 'task.result_reported', 'comment.added', 'note.added', 'subtask.created', etc. */
+  type: string;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Who performed the action */
+  actor?: string;
+  /** Actor type: 'feishu', 'device', 'api', 'system' */
+  actorType?: string;
+  /** Human-readable description of the event */
+  summary: string;
+  /** Additional context about the event */
+  details?: Record<string, unknown>;
+}
+
 /** Comprehensive task statistics and analytics */
 export interface TaskStats {
   /** Total task count */

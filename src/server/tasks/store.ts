@@ -133,6 +133,8 @@ export interface TaskStore {
   updateSubtaskStatus(parentTaskId: string, subtaskId: string, status: TaskStatus): Promise<import("../../shared/types.js").Subtask>;
   saveSubtaskResult(parentTaskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../../shared/types.js").Subtask>;
   deleteSubtask(parentTaskId: string, subtaskId: string): Promise<boolean>;
+  // Task activity feed — combined chronological timeline of all task events
+  getActivityFeed(taskId: string, limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -2338,6 +2340,89 @@ export function createTaskStore(storagePath: string): TaskStore {
         `SELECT * FROM tasks WHERE feishu_user_id = ? ORDER BY created_at DESC LIMIT ?`,
       ).all(userId, effectiveLimit) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
+    },
+
+    // ── Activity Feed ──────────────────────────────────────────────
+
+    async getActivityFeed(taskId: string, limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]> {
+      // Verify task exists
+      const task = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!task) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const effectiveLimit = Math.min(limit ?? 50, 200);
+      const items: import("../../shared/types.js").ActivityFeedItem[] = [];
+
+      // 1. Task creation event
+      items.push({
+        type: "task.created",
+        timestamp: task["created_at"] as string,
+        actor: task["feishu_user_id"] as string,
+        actorType: "feishu",
+        summary: `Task created: ${(task["command_text"] as string).slice(0, 100)}`,
+        details: { commandText: task["command_text"] as string },
+      });
+
+      // 2. Comments
+      const commentRows = db.prepare(
+        `SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC`,
+      ).all(taskId) as Array<Record<string, unknown>>;
+      for (const row of commentRows) {
+        items.push({
+          type: "comment.added",
+          timestamp: row["created_at"] as string,
+          actor: row["author"] as string,
+          actorType: row["author_type"] as string,
+          summary: `Comment by ${row["author"]}: ${(row["body"] as string).slice(0, 100)}`,
+          details: { commentId: row["id"], body: row["body"] as string },
+        });
+      }
+
+      // 3. Notes (internal annotations)
+      const noteRows = db.prepare(
+        `SELECT * FROM task_notes WHERE task_id = ? ORDER BY created_at ASC`,
+      ).all(taskId) as Array<Record<string, unknown>>;
+      for (const row of noteRows) {
+        items.push({
+          type: "note.added",
+          timestamp: row["created_at"] as string,
+          actor: row["author"] as string,
+          actorType: "api",
+          summary: `Note by ${row["author"]}: ${(row["body"] as string).slice(0, 100)}`,
+          details: { noteId: row["id"], body: row["body"] as string },
+        });
+      }
+
+      // 4. Subtask events
+      const subtaskRows = db.prepare(
+        `SELECT * FROM task_subtasks WHERE parent_task_id = ? ORDER BY created_at ASC`,
+      ).all(taskId) as Array<Record<string, unknown>>;
+      for (const row of subtaskRows) {
+        items.push({
+          type: "subtask.created",
+          timestamp: row["created_at"] as string,
+          actor: "system",
+          actorType: "system",
+          summary: `Subtask created: ${row["title"]}`,
+          details: { subtaskId: row["id"], title: row["title"] as string, status: row["status"] as string },
+        });
+        // If the subtask has a result, add that as a separate event
+        if (row["result_summary"]) {
+          items.push({
+            type: "subtask.result_reported",
+            timestamp: row["updated_at"] as string,
+            actor: "system",
+            actorType: "system",
+            summary: `Subtask "${row["title"]}" completed: ${(row["result_summary"] as string).slice(0, 100)}`,
+            details: { subtaskId: row["id"], title: row["title"] as string, status: row["status"] as string },
+          });
+        }
+      }
+
+      // Sort by timestamp ascending and apply limit
+      items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      return items.slice(0, effectiveLimit);
     },
   };
 }
