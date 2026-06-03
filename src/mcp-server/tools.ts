@@ -2579,4 +2579,53 @@ export function registerMcpTools(
       }
     },
   );
+
+  // download_attachment tool
+  server.registerTool(
+    "download_attachment",
+    {
+      description:
+        "Download a file attachment from a task. Returns the file as base64-encoded data along with its filename and MIME type. The task must have attachments (check via get_task). Use the index from the task's attachments array.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID that owns the attachment"),
+        attachmentIndex: z
+          .number()
+          .int()
+          .min(0)
+          .describe("Zero-based index of the attachment in the task's attachments array"),
+      },
+    },
+    async (args) => {
+      const { taskId, attachmentIndex } = args;
+
+      try {
+        const result = await client.downloadAttachment(taskId, attachmentIndex);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                fileName: result.fileName,
+                contentType: result.contentType,
+                sizeBytes: Math.ceil(result.base64Data.length * 3 / 4),
+                base64Data: result.base64Data,
+                message: `Downloaded "${result.fileName}" (${result.contentType}). Decode the base64Data to get the raw file bytes.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

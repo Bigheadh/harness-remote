@@ -164,5 +164,5 @@
 - [x] Task lock mechanism — TTL-based locks to prevent concurrent processing (POST /api/tasks/:id/lock, DELETE /api/tasks/:id/lock)
 - [x] Task subtasks — break tasks into independently trackable child tasks (POST /api/tasks/:id/subtasks, GET /api/tasks/:id/subtasks)
 - [x] Activity feed — combined chronological timeline of all task events (GET /api/tasks/:id/activity)
-- [ ] Task attachment download — API to download task attachment files (GET /api/tasks/:id/attachments/:attachmentIndex)
+- [x] Task attachment download — API to download task attachment files (GET /api/tasks/:id/attachments/:attachmentIndex)
 - [ ] Enhanced dashboard API — time-series analytics for charts (GET /api/stats/timeseries)

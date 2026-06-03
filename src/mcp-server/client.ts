@@ -92,6 +92,8 @@ export interface TaskApiClient {
   updateSubtaskStatus(taskId: string, subtaskId: string, status: TaskStatus): Promise<import("../shared/types.js").Subtask>;
   reportSubtaskResult(taskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../shared/types.js").Subtask>;
   deleteSubtask(taskId: string, subtaskId: string): Promise<void>;
+  // Task attachment download
+  downloadAttachment(taskId: string, attachmentIndex: number): Promise<{ fileName: string; contentType: string; base64Data: string }>;
 }
 
 export function createTaskApiClient(
@@ -1057,6 +1059,34 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    async downloadAttachment(taskId: string, attachmentIndex: number): Promise<{ fileName: string; contentType: string; base64Data: string }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/attachments/${attachmentIndex}`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to download attachment: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+      const contentDisposition = response.headers.get("content-disposition") ?? "";
+      const arrayBuffer = await response.arrayBuffer();
+      const base64Data = Buffer.from(arrayBuffer).toString("base64");
+
+      // Extract filename from Content-Disposition header
+      let fileName = `attachment_${attachmentIndex}`;
+      const match = contentDisposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i);
+      if (match) {
+        fileName = decodeURIComponent(match[1].replace(/"/g, ""));
+      }
+
+      return { fileName, contentType, base64Data };
     },
   };
 }

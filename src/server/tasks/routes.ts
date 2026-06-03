@@ -2534,10 +2534,83 @@ export function registerTaskRoutes(
     // 3. Merge and sort by timestamp ascending
     const allItems = [...storeItems, ...auditItems];
     allItems.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
     // 4. Apply limit
     const items = allItems.slice(0, effectiveLimit);
     return reply.send({ items, count: items.length });
+  });
+  // GET /api/tasks/:id/attachments/:attachmentIndex - download a task attachment file (requires tasks.read)
+  server.get<{
+    Params: { id: string; attachmentIndex: string };
+  }>("/api/tasks/:id/attachments/:attachmentIndex", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    if (!feishuClient) {
+      return reply.code(503).send({
+        error: { code: "not_configured", message: "Feishu client not configured — cannot download files" },
+      });
+    }
+
+    const { id, attachmentIndex } = req.params;
+    const index = Number(attachmentIndex);
+
+    if (isNaN(index) || index < 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "attachmentIndex must be a non-negative integer" },
+      });
+    }
+
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+
+    if (!task.attachments || index >= task.attachments.length) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Attachment index ${index} out of range (task has ${task.attachments?.length ?? 0} attachments)` },
+      });
+    }
+
+    const attachment = task.attachments[index];
+    // Map FeishuFileType to the resource type parameter expected by the Feishu download API
+    const feishuTypeMap: Record<string, string> = {
+      file: "file",
+      image: "image",
+      audio: "audio",
+      media: "media",
+    };
+    const resourceType = feishuTypeMap[attachment.feishuFileType] ?? "file";
+
+    try {
+      const { buffer, contentType, fileName } = await feishuClient.downloadFile(
+        task.feishuMessageId,
+        attachment.fileKey,
+        resourceType,
+      );
+
+      log.info({ taskId: id, attachmentIndex: index, fileName, size: buffer.length }, "Attachment downloaded");
+
+      return reply
+        .header("Content-Type", contentType)
+        .header("Content-Disposition", `attachment; filename="${encodeURIComponent(fileName)}"`)
+        .header("Content-Length", buffer.length)
+        .send(buffer);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.error({ taskId: id, attachmentIndex: index, error: message }, "Failed to download attachment from Feishu");
+      return reply.code(502).send({
+        error: { code: "upstream_error", message: `Failed to download file from Feishu: ${message}` },
+      });
+    }
   });
 
   // Error handler

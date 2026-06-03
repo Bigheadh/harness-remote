@@ -14,6 +14,7 @@ export interface FeishuSendCardInput {
 export interface FeishuReplyClient {
   replyToMessage(input: FeishuReplyInput): Promise<void>;
   sendCardMessage(input: FeishuSendCardInput): Promise<void>;
+  downloadFile(messageId: string, fileKey: string, type: string): Promise<{ buffer: Buffer; contentType: string; fileName: string }>;
 }
 
 interface FeishuReplyConfig {
@@ -119,6 +120,44 @@ export function createFeishuReplyClient(config: FeishuReplyConfig): FeishuReplyC
       if (data.code !== 0) {
         throw new Error(`Failed to send Feishu card message: ${data.msg}`);
       }
+    },
+
+    async downloadFile(
+      messageId: string,
+      fileKey: string,
+      type: string,
+    ): Promise<{ buffer: Buffer; contentType: string; fileName: string }> {
+      const token = await getTenantAccessToken(config);
+
+      const response = await fetch(
+        `https://open.feishu.cn/open-apis/im/v1/messages/${messageId}/resources/${fileKey}?type=${encodeURIComponent(type)}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const errBody = (await response.text()) as string;
+        throw new Error(
+          `Failed to download Feishu file: ${response.status} ${errBody.slice(0, 200)}`,
+        );
+      }
+
+      const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+      const contentDisposition = response.headers.get("content-disposition") ?? "";
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      // Extract filename from Content-Disposition header if present
+      let fileName = fileKey;
+      const match = contentDisposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/i);
+      if (match) {
+        fileName = decodeURIComponent(match[1].replace(/"/g, ""));
+      }
+
+      return { buffer, contentType, fileName };
     },
   };
 }

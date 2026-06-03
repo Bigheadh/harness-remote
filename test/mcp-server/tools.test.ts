@@ -915,6 +915,16 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "deleteSubtask", args: [taskId, subtaskId] });
       if (mock.failWith) throw new Error(mock.failWith);
     },
+
+    async downloadAttachment(taskId: string, attachmentIndex: number): Promise<{ fileName: string; contentType: string; base64Data: string }> {
+      calls.push({ method: "downloadAttachment", args: [taskId, attachmentIndex] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        fileName: "test-file.txt",
+        contentType: "text/plain",
+        base64Data: Buffer.from("Hello, World!").toString("base64"),
+      };
+    },
   };
   return mock;
 }
@@ -970,8 +980,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 60 tools", () => {
-      expect(mockServer.registrations).toHaveLength(60);
+    it("registers all 61 tools", () => {
+      expect(mockServer.registrations).toHaveLength(61);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1417,6 +1427,37 @@ describe("MCP tools", () => {
       mock.failWith = "Server error";
       const tool = mockServer.registrations.find((r) => r.name === "list_user_tasks")!;
       const result = await tool.handler({ userId: "ou_abc123" });
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
+    });
+
+    it("registers download_attachment with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "download_attachment");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Download");
+      expect(tool!.description).toContain("attachment");
+    });
+
+    it("downloads an attachment", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "download_attachment")!;
+      const result = await tool.handler({ taskId: "task_001", attachmentIndex: 0 });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("downloadAttachment");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe(0);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.fileName).toBe("test-file.txt");
+      expect(parsed.contentType).toBe("text/plain");
+      expect(parsed.base64Data).toBeDefined();
+    });
+
+    it("returns error when download_attachment fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "download_attachment")!;
+      const result = await tool.handler({ taskId: "task_001", attachmentIndex: 0 });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
