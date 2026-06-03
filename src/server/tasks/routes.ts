@@ -581,6 +581,71 @@ export function registerTaskRoutes(
     }
   });
 
+  // GET /api/tasks/export.csv - export all tasks as CSV (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get("/api/tasks/export.csv", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    try {
+      const tasks = await store.getAllTasks();
+
+      // CSV header
+      const headers = [
+        "id", "source", "feishuMessageId", "feishuChatId", "feishuUserId",
+        "commandText", "status", "priority", "assignedDeviceId",
+        "dueDate", "reminderAt", "pinned", "createdAt", "updatedAt",
+        "resultSummary", "resultDetails", "tags",
+      ];
+
+      function csvEscape(val: unknown): string {
+        if (val === null || val === undefined) return "";
+        const str = String(val);
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }
+
+      const rows = tasks.map(t => [
+        csvEscape(t.id),
+        csvEscape(t.source),
+        csvEscape(t.feishuMessageId),
+        csvEscape(t.feishuChatId),
+        csvEscape(t.feishuUserId),
+        csvEscape(t.commandText),
+        csvEscape(t.status),
+        csvEscape(t.priority),
+        csvEscape(t.assignedDeviceId),
+        csvEscape(t.dueDate),
+        csvEscape(t.reminderAt),
+        csvEscape(t.pinned ? "true" : "false"),
+        csvEscape(t.createdAt),
+        csvEscape(t.updatedAt),
+        csvEscape(t.resultSummary),
+        csvEscape(t.resultDetails),
+        csvEscape(t.tags?.join("; ") ?? ""),
+      ].join(","));
+
+      const csv = [headers.join(","), ...rows].join("\n");
+
+      log.info({ taskCount: tasks.length }, "Tasks exported as CSV");
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="tasks-${new Date().toISOString().slice(0, 10)}.csv"`)
+        .send(csv);
+    } catch (e) {
+      throw e;
+    }
+  });
+
   // POST /api/tasks/import - import tasks from JSON payload (requires tasks.write)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.post("/api/tasks/import", async (req: FastifyRequest, reply: FastifyReply) => {

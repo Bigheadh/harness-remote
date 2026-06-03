@@ -110,6 +110,8 @@ export interface TaskStore {
     interval: import("../../shared/types.js").TimeSeriesInterval,
     metric: import("../../shared/types.js").TimeSeriesMetric,
   ): Promise<import("../../shared/types.js").TimeSeriesResult>;
+  // Return all tasks without limit (for CSV export, archive, etc.)
+  getAllTasks(): Promise<Task[]>;
   // Task retry/requeue methods
   retryTask(taskId: string): Promise<Task>;
   // Task cloning methods
@@ -2432,6 +2434,11 @@ export function createTaskStore(storagePath: string): TaskStore {
         to,
         data,
       };
+    },
+
+    async getAllTasks(): Promise<Task[]> {
+      const rows = db.prepare(`SELECT * FROM tasks ORDER BY created_at DESC`).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
 
     // ── Task Notes (internal annotations) ──────────────────────────

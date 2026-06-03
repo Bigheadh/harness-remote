@@ -166,3 +166,10 @@
 - [x] Activity feed — combined chronological timeline of all task events (GET /api/tasks/:id/activity)
 - [x] Task attachment download — API to download task attachment files (GET /api/tasks/:id/attachments/:attachmentIndex)
 - [x] Enhanced dashboard API — time-series analytics for charts (GET /api/stats/timeseries)
+
+## Phase 26: v9 Advanced Analytics & Data Management
+- [x] Task CSV export — export task list as CSV for reporting (GET /api/tasks/export.csv)
+- [ ] Task archive — soft-delete completed tasks to keep active view clean (POST /api/tasks/:id/archive, POST /api/tasks/:id/unarchive)
+- [ ] Dashboard data caching — TTL-based cache for /api/stats/summary and /api/stats/timeseries
+- [ ] Task priority auto-escalation — automatically escalate overdue tasks priority
+- [ ] API usage analytics — track request counts, response times, error rates per user/device
