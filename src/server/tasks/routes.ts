@@ -6,7 +6,7 @@ import type { AuditLogEntry } from "../../shared/types.js";
 import type { ActivityFeedItem } from "../../shared/types.js";
 import type { Subtask } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
-import { buildTaskResultCard, buildCustomCard } from "../feishu/card-builder.js";
+import { buildTaskResultCard, buildTaskStatusCard, buildCustomCard, STATUS_LABELS, STATUS_COLORS } from "../feishu/card-builder.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
@@ -101,6 +101,7 @@ export function registerTaskRoutes(
   userStore?: UserStore,
   webhookStore?: WebhookStore,
   apiKeyStore?: ApiKeyStore,
+  notifyOnStatusChange?: string[],
 ): void {
   // Health endpoint with DB connectivity check (no auth required)
   server.get("/health", async (_req, reply) => {
@@ -451,6 +452,25 @@ export function registerTaskRoutes(
         const task = await store.getTask(taskId);
         if (task) {
           dispatchWebhook(webhookStore, "task.status_changed", task, { bulk: true, status: body.status }).catch(() => {});
+        }
+      }
+    }
+
+    // Send proactive Feishu notifications for configured status transitions
+    if (feishuClient && notifyOnStatusChange?.includes(body.status) && result.updated > 0) {
+      for (const taskId of body.ids) {
+        if (result.errors.includes(taskId)) continue;
+        const task = await store.getTask(taskId);
+        if (task?.feishuMessageId) {
+          // For bulk updates, we don't know the previous status, so use a simpler card
+          const card = buildCustomCard(
+            `🔄 Task Status Updated`,
+            `**Status:** ${STATUS_LABELS[body.status]}\n**Command:** ${task.commandText}\n\n_Bulk status update applied._`,
+            STATUS_COLORS[body.status],
+          );
+          feishuClient.sendCardMessage({ messageId: task.feishuMessageId, card }).catch((err) => {
+            log.warn({ taskId, status: body.status, err: err instanceof Error ? err.message : String(err) }, "Failed to send bulk status change notification to Feishu");
+          });
         }
       }
     }
@@ -849,6 +869,13 @@ export function registerTaskRoutes(
       broadcastTaskStatusChanged(task, previousStatus ?? "");
       if (previousStatus) {
         recordTaskStatusChange(previousStatus, status);
+      }
+      // Send proactive Feishu notification for configured status transitions
+      if (feishuClient && task.feishuMessageId && notifyOnStatusChange?.includes(status)) {
+        const card = buildTaskStatusCard(task, previousStatus ?? status);
+        feishuClient.sendCardMessage({ messageId: task.feishuMessageId, card }).catch((err) => {
+          log.warn({ taskId: id, status, err: err instanceof Error ? err.message : String(err) }, "Failed to send status change notification to Feishu");
+        });
       }
       return reply.send({ task });
     } catch (e) {

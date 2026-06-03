@@ -15,6 +15,9 @@ export interface ServerConfig {
     verificationToken: string;
     encryptKey: string;
     allowedUserIds: string[];
+    /** Status transitions that trigger a proactive Feishu card notification.
+     *  Default: ["running", "failed"]. Set to [] to disable. */
+    notifyOnStatusChange?: string[];
   };
   /** Optional webhook delivery timeout in ms (default: 10000) */
   webhookTimeoutMs?: number;
@@ -75,6 +78,15 @@ export function loadServerConfig(configPath?: string): ServerConfig {
   }
   const allowedUserIds = feishu["allowedUserIds"] as string[];
 
+  // Parse optional notifyOnStatusChange (array of status strings)
+  const validStatuses = ["pending", "picked", "running", "done", "failed"];
+  let notifyOnStatusChange: string[] | undefined;
+  if (Array.isArray(feishu["notifyOnStatusChange"])) {
+    notifyOnStatusChange = (feishu["notifyOnStatusChange"] as string[]).filter(
+      (s) => validStatuses.includes(s),
+    );
+  }
+
   // Parse optional rate limit config
   let rateLimit: ServerConfig["rateLimit"];
   if (obj["rateLimit"] && typeof obj["rateLimit"] === "object") {
@@ -102,6 +114,7 @@ export function loadServerConfig(configPath?: string): ServerConfig {
       verificationToken: feishu["verificationToken"] as string,
       encryptKey,
       allowedUserIds,
+      ...(notifyOnStatusChange ? { notifyOnStatusChange } : {}),
     },
     ...(rateLimit ? { rateLimit } : {}),
   };

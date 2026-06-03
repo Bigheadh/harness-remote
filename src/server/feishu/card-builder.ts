@@ -30,7 +30,7 @@ type CardTemplate =
   | "wathet";
 
 /** Priority display labels and their card color mappings */
-const PRIORITY_LABELS: Record<TaskPriority, string> = {
+export const PRIORITY_LABELS: Record<TaskPriority, string> = {
   urgent: "🔴 Urgent",
   high: "🟠 High",
   normal: "🔵 Normal",
@@ -38,7 +38,7 @@ const PRIORITY_LABELS: Record<TaskPriority, string> = {
 };
 
 /** Status display labels */
-const STATUS_LABELS: Record<TaskStatus, string> = {
+export const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: "⏳ Pending",
   picked: "👆 Picked",
   running: "⚡ Running",
@@ -47,7 +47,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 };
 
 /** Status-to-card-header-color mapping */
-const STATUS_COLORS: Record<TaskStatus, CardTemplate> = {
+export const STATUS_COLORS: Record<TaskStatus, CardTemplate> = {
   pending: "blue",
   picked: "wathet",
   running: "orange",

@@ -8,6 +8,7 @@
     "appSecret": "xxx",
     "verificationToken": "xxx",
     "encryptKey": "xxx",
-    "allowedUserIds": ["ou_xxx"]
+    "allowedUserIds": ["ou_xxx"],
+    "notifyOnStatusChange": ["running", "failed"]
   }
 }

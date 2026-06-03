@@ -173,3 +173,9 @@
 - [x] Dashboard data caching — TTL-based cache for /api/stats/summary and /api/stats/timeseries
 - [x] Task priority auto-escalation — automatically escalate overdue tasks priority
 - [x] API usage analytics — track request counts, response times, error rates per user/device
+
+## Phase 27: v10 Feishu Proactive Status Notifications
+- [x] Config option feishu.notifyOnStatusChange (array of status strings to trigger notifications)
+- [x] Feishu card notification on single task status update (running, failed)
+- [x] Feishu card notification on bulk status update
+- [x] Exported STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS from card-builder
