@@ -2794,4 +2794,49 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_api_usage tool
+  server.registerTool(
+    "get_api_usage",
+    {
+      description:
+        "Get API usage analytics — request counts, response times, and error rates per user/device. Shows who is calling the API, how frequently, and how fast. Useful for monitoring usage patterns and identifying bottlenecks.",
+      inputSchema: {
+        from: z
+          .string()
+          .optional()
+          .describe("ISO 8601 start time to filter data (e.g., '2026-06-01T00:00:00Z')"),
+        to: z
+          .string()
+          .optional()
+          .describe("ISO 8601 end time to filter data (e.g., '2026-06-03T23:59:59Z')"),
+      },
+    },
+    async (args) => {
+      const { from, to } = args;
+
+      try {
+        const result = await client.getApiUsageStats(from, to);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

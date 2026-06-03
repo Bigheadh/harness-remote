@@ -172,4 +172,4 @@
 - [x] Task archive — soft-delete completed tasks to keep active view clean (POST /api/tasks/:id/archive, POST /api/tasks/:id/unarchive)
 - [x] Dashboard data caching — TTL-based cache for /api/stats/summary and /api/stats/timeseries
 - [x] Task priority auto-escalation — automatically escalate overdue tasks priority
-- [ ] API usage analytics — track request counts, response times, error rates per user/device
+- [x] API usage analytics — track request counts, response times, error rates per user/device

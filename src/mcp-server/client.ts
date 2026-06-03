@@ -100,6 +100,8 @@ export interface TaskApiClient {
   listArchivedTasks(limit?: number): Promise<Task[]>;
   // Priority auto-escalation
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
+  // API usage analytics
+  getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>>;
 }
 
 export function createTaskApiClient(
@@ -1154,6 +1156,22 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { escalated: number; tasks: Task[] };
       return { escalated: data.escalated, tasks: data.tasks };
+    },
+
+    async getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>> {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/usage/stats${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get API usage stats: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
     },
   };
 }

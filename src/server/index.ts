@@ -26,6 +26,9 @@ import { registerStatsRoutes } from "./stats/routes.js";
 import { registerSseRoutes } from "./sse/routes.js";
 import { registerMetricsRoutes } from "./metrics/routes.js";
 import { recordHttpRequest } from "./metrics/collector.js";
+import { createApiUsageStore } from "./apiusage/store.js";
+import { registerUsageTrackingHook } from "./apiusage/middleware.js";
+import { registerUsageRoutes } from "./apiusage/routes.js";
 import compress from "@fastify/compress";
 import { createLogger } from "../shared/logger.js";
 
@@ -63,6 +66,10 @@ export async function startServer(): Promise<void> {
   // API key store (uses separate SQLite file in same directory)
   const apiKeyStoragePath = config.storagePath.replace(/\.sqlite$/, ".apikeys.sqlite");
   const apiKeyStore = createApiKeyStore(apiKeyStoragePath);
+
+  // API usage analytics store (uses separate SQLite file in same directory)
+  const usageStoragePath = config.storagePath.replace(/\.sqlite$/, ".usage.sqlite");
+  const usageStore = createApiUsageStore(usageStoragePath);
 
   const server = Fastify({
     logger: false, // We use our own redacting logger
@@ -112,6 +119,10 @@ export async function startServer(): Promise<void> {
   registerStatsRoutes(server, store, config.personalToken);
   registerSseRoutes(server, config.personalToken);
   registerMetricsRoutes(server, store);
+  registerUsageRoutes(server, usageStore, config.personalToken, userStore, apiKeyStore);
+
+  // API usage tracking — registered AFTER routes (so auth hook runs first)
+  registerUsageTrackingHook(server, usageStore);
 
   // Rate limiting — registered AFTER routes (so auth hook runs first)
   const rateLimiter = new RateLimiter({

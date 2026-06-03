@@ -977,6 +977,42 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {
+      calls.push({ method: "escalateOverduePriorities", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { escalated: 0, tasks: [] };
+    },
+
+    async getApiUsageStats(): Promise<Record<string, unknown>> {
+      calls.push({ method: "getApiUsageStats", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        stats: {
+          totalRequests: 100,
+          from: "2026-06-01T00:00:00Z",
+          to: "2026-06-03T23:59:59Z",
+          callers: [
+            {
+              callerId: "user:admin",
+              totalRequests: 50,
+              errorRequests: 2,
+              errorRate: 4,
+              avgDurationMs: 45,
+              medianDurationMs: 40,
+              p95DurationMs: 120,
+              byStatus: { 200: 48, 401: 2 },
+              byMethod: { GET: 30, POST: 20 },
+              byPath: [{ path: "/api/tasks", count: 30, avgDurationMs: 45 }],
+              lastRequestAt: "2026-06-03T12:00:00Z",
+            },
+          ],
+          slowestEndpoints: [
+            { method: "GET", path: "/api/tasks/search", avgDurationMs: 200, count: 10 },
+          ],
+        },
+      };
+    },
   };
   return mock;
 }
@@ -1032,8 +1068,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 65 tools", () => {
-      expect(mockServer.registrations).toHaveLength(65);
+    it("registers all 66 tools", () => {
+      expect(mockServer.registrations).toHaveLength(66);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1514,6 +1550,66 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Server error");
+    });
+
+    it("registers get_api_usage with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("usage");
+      expect(tool!.description).toContain("analytics");
+    });
+
+    it("gets API usage stats", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("getApiUsageStats");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.stats).toBeDefined();
+      expect(parsed.stats.totalRequests).toBe(100);
+      expect(parsed.stats.callers).toHaveLength(1);
+      expect(parsed.stats.callers[0].callerId).toBe("user:admin");
+    });
+
+    it("passes time filters to get_api_usage", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage")!;
+      const result = await tool.handler({
+        from: "2026-06-01T00:00:00Z",
+        to: "2026-06-03T23:59:59Z",
+      });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("returns error when get_api_usage fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
+    });
+
+    it("registers escalate_overdue_priorities tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "escalate_overdue_priorities");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("escalate");
+    });
+
+    it("calls escalate_overdue_priorities", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "escalate_overdue_priorities")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("escalateOverduePriorities");
+      expect(result.isError).toBeFalsy();
     });
   });
 });

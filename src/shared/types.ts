@@ -404,6 +404,57 @@ export interface TimeSeriesResult {
   data: TimeSeriesDataPoint[];
 }
 
+/** A single raw API request record for usage analytics */
+export interface ApiUsageEntry {
+  id: number;
+  /** Caller identity: "user:<id>", "device:<id>", "token:<hash>", "ip:<addr>" */
+  callerId: string;
+  method: string;
+  /** Normalized path (IDs replaced with :id) */
+  path: string;
+  statusCode: number;
+  /** Request duration in milliseconds */
+  durationMs: number;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+}
+
+/** Aggregated API usage stats for a single caller */
+export interface ApiUsageCallerStats {
+  callerId: string;
+  totalRequests: number;
+  errorRequests: number;
+  /** Error rate as a percentage 0-100 */
+  errorRate: number;
+  /** Average response time in ms */
+  avgDurationMs: number;
+  /** Median response time in ms */
+  medianDurationMs: number;
+  /** P95 response time in ms */
+  p95DurationMs: number;
+  /** Breakdown by status code */
+  byStatus: Record<number, number>;
+  /** Breakdown by method */
+  byMethod: Record<string, number>;
+  /** Breakdown by path (top 10) */
+  byPath: Array<{ path: string; count: number; avgDurationMs: number }>;
+  /** Most recent request timestamp */
+  lastRequestAt: string;
+}
+
+/** API usage analytics summary */
+export interface ApiUsageStats {
+  /** Total tracked requests since server start */
+  totalRequests: number;
+  /** Time range of tracked data */
+  from: string;
+  to: string;
+  /** Per-caller breakdown */
+  callers: ApiUsageCallerStats[];
+  /** Top 10 slowest endpoints */
+  slowestEndpoints: Array<{ method: string; path: string; avgDurationMs: number; count: number }>;
+}
+
 export interface TaskStats {
   /** Total task count */
   total: number;
