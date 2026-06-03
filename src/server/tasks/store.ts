@@ -104,6 +104,12 @@ export interface TaskStore {
 
   // Analytics methods
   getTaskStats(): Promise<import("../../shared/types.js").TaskStats>;
+  getTaskTimeSeries(
+    from: string,
+    to: string,
+    interval: import("../../shared/types.js").TimeSeriesInterval,
+    metric: import("../../shared/types.js").TimeSeriesMetric,
+  ): Promise<import("../../shared/types.js").TimeSeriesResult>;
   // Task retry/requeue methods
   retryTask(taskId: string): Promise<Task>;
   // Task cloning methods
@@ -2284,6 +2290,147 @@ export function createTaskStore(storagePath: string): TaskStore {
         topTags,
         overdueCount,
         computedAt: now.toISOString(),
+      };
+    },
+
+    async getTaskTimeSeries(
+      from: string,
+      to: string,
+      interval: import("../../shared/types.js").TimeSeriesInterval,
+      metric: import("../../shared/types.js").TimeSeriesMetric,
+    ): Promise<import("../../shared/types.js").TimeSeriesResult> {
+      // Build date truncation format based on interval
+      const truncFmt = interval === "hour" ? "%Y-%m-%dT%H:00:00"
+        : interval === "week" ? "%Y-W%W"
+        : interval === "month" ? "%Y-%m"
+        : "%Y-%m-%d"; // day
+
+      // Generate all expected bucket timestamps for filling gaps
+      function* generateBuckets(start: Date, end: Date, iv: import("../../shared/types.js").TimeSeriesInterval): Generator<string> {
+        const d = new Date(start);
+        while (d <= end) {
+          if (iv === "hour") {
+            yield d.toISOString().slice(0, 13) + ":00:00";
+            d.setUTCHours(d.getUTCHours() + 1);
+          } else if (iv === "week") {
+            // Align to Monday
+            const day = d.getUTCDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            d.setUTCDate(d.getUTCDate() + diff);
+            const y = d.getUTCFullYear();
+            const weekNum = Math.ceil(((d.getTime() - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+            yield `${y}-W${String(weekNum).padStart(2, "0")}`;
+            d.setUTCDate(d.getUTCDate() + 7);
+          } else if (iv === "month") {
+            yield d.toISOString().slice(0, 7);
+            d.setUTCMonth(d.getUTCMonth() + 1);
+          } else {
+            yield d.toISOString().slice(0, 10);
+            d.setUTCDate(d.getUTCDate() + 1);
+          }
+        }
+      }
+
+      const buckets = new Map<string, number>();
+      for (const b of generateBuckets(new Date(from), new Date(to), interval)) {
+        buckets.set(b, 0);
+      }
+
+      if (metric === "created") {
+        const rows = db.prepare(`
+          SELECT strftime('${truncFmt}', created_at) as bucket, COUNT(*) as cnt
+          FROM tasks
+          WHERE created_at >= ? AND created_at < ?
+          GROUP BY bucket ORDER BY bucket
+        `).all(from, to) as Array<Record<string, unknown>>;
+        for (const row of rows) {
+          const key = row["bucket"] as string;
+          if (buckets.has(key)) buckets.set(key, Number(row["cnt"]));
+        }
+      } else if (metric === "completed") {
+        const rows = db.prepare(`
+          SELECT strftime('${truncFmt}', updated_at) as bucket, COUNT(*) as cnt
+          FROM tasks
+          WHERE status IN ('done', 'failed')
+            AND updated_at >= ? AND updated_at < ?
+          GROUP BY bucket ORDER BY bucket
+        `).all(from, to) as Array<Record<string, unknown>>;
+        for (const row of rows) {
+          const key = row["bucket"] as string;
+          if (buckets.has(key)) buckets.set(key, Number(row["cnt"]));
+        }
+      } else if (metric === "resolution_time") {
+        // Get resolution times grouped by bucket
+        const rows = db.prepare(`
+          SELECT
+            strftime('${truncFmt}', created_at) as bucket,
+            (julianday(updated_at) - julianday(created_at)) * 24 * 60 as minutes
+          FROM tasks
+          WHERE status IN ('done', 'failed')
+            AND created_at >= ? AND created_at < ?
+          ORDER BY bucket
+        `).all(from, to) as Array<Record<string, unknown>>;
+
+        // Group minutes by bucket
+        const bucketTimes = new Map<string, number[]>();
+        for (const row of rows) {
+          const key = row["bucket"] as string;
+          const mins = Number(row["minutes"]);
+          if (!bucketTimes.has(key)) bucketTimes.set(key, []);
+          bucketTimes.get(key)!.push(mins);
+        }
+
+        for (const [key] of buckets) {
+          const times = bucketTimes.get(key);
+          if (times && times.length > 0) {
+            const sorted = [...times].sort((a, b) => a - b);
+            const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+            const mid = Math.floor(sorted.length / 2);
+            const median = sorted.length % 2 !== 0
+              ? sorted[mid]
+              : (sorted[mid - 1] + sorted[mid]) / 2;
+            buckets.set(key, times.length);
+            // Store avg/median as separate values — we'll set them on the data point below
+          }
+        }
+
+        const data: import("../../shared/types.js").TimeSeriesDataPoint[] = [];
+        for (const [key, count] of buckets) {
+          const times = bucketTimes.get(key);
+          const dp: import("../../shared/types.js").TimeSeriesDataPoint = { timestamp: key, count };
+          if (times && times.length > 0) {
+            const sorted = [...times].sort((a, b) => a - b);
+            const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+            const mid = Math.floor(sorted.length / 2);
+            const median = sorted.length % 2 !== 0
+              ? sorted[mid]
+              : (sorted[mid - 1] + sorted[mid]) / 2;
+            dp.avgResolutionMinutes = Math.round(avg * 10) / 10;
+            dp.medianResolutionMinutes = Math.round(median * 10) / 10;
+          }
+          data.push(dp);
+        }
+
+        return {
+          interval,
+          metric,
+          from,
+          to,
+          data,
+        };
+      }
+
+      const data: import("../../shared/types.js").TimeSeriesDataPoint[] = [];
+      for (const [key, count] of buckets) {
+        data.push({ timestamp: key, count });
+      }
+
+      return {
+        interval,
+        metric,
+        from,
+        to,
+        data,
       };
     },
 

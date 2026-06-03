@@ -165,4 +165,4 @@
 - [x] Task subtasks — break tasks into independently trackable child tasks (POST /api/tasks/:id/subtasks, GET /api/tasks/:id/subtasks)
 - [x] Activity feed — combined chronological timeline of all task events (GET /api/tasks/:id/activity)
 - [x] Task attachment download — API to download task attachment files (GET /api/tasks/:id/attachments/:attachmentIndex)
-- [ ] Enhanced dashboard API — time-series analytics for charts (GET /api/stats/timeseries)
+- [x] Enhanced dashboard API — time-series analytics for charts (GET /api/stats/timeseries)

@@ -372,6 +372,35 @@ export interface ActivityFeedItem {
 }
 
 /** Comprehensive task statistics and analytics */
+export type TimeSeriesInterval = "hour" | "day" | "week" | "month";
+export type TimeSeriesMetric = "created" | "completed" | "resolution_time";
+
+export interface TimeSeriesDataPoint {
+  /** ISO-formatted timestamp for this bucket */
+  timestamp: string;
+  /** Count for count-based metrics, or null if no data in bucket */
+  count: number;
+  /** Average resolution time in minutes (only for resolution_time metric) */
+  avgResolutionMinutes?: number;
+  /** Median resolution time in minutes (only for resolution_time metric) */
+  medianResolutionMinutes?: number;
+  /** Count by status within this bucket (only for status breakdown, optional) */
+  byStatus?: Record<TaskStatus, number>;
+}
+
+export interface TimeSeriesResult {
+  /** The interval used */
+  interval: TimeSeriesInterval;
+  /** The metric queried */
+  metric: TimeSeriesMetric;
+  /** Requested from timestamp */
+  from: string;
+  /** Requested to timestamp */
+  to: string;
+  /** Array of data points, one per time bucket */
+  data: TimeSeriesDataPoint[];
+}
+
 export interface TaskStats {
   /** Total task count */
   total: number;
