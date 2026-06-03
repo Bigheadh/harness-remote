@@ -22,6 +22,85 @@ export function registerStatsRoutes(
   const summaryCache = new TtlCache<unknown>({ defaultTtlMs: SUMMARY_CACHE_TTL_MS, maxEntries: 10 });
   /** Cache keyed by `${from}|${to}|${interval}|${metric}` for timeseries */
   const timeseriesCache = new TtlCache<unknown>({ defaultTtlMs: TIMESERIES_CACHE_TTL_MS, maxEntries: 50 });
+  // GET /api/stats/processing — task processing time analytics
+  server.get("/api/stats/processing", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "dashboard.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    try {
+      const cached = summaryCache.get("processing");
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      // Query completed tasks with processing timestamps
+      const rows = await store.getAllTasks();
+      const completed = rows.filter(t => t.completedAt && (t.status === "done" || t.status === "failed"));
+
+      const durations: number[] = [];
+      const queueWaits: number[] = [];
+      const processingTimes: number[] = [];
+
+      for (const task of completed) {
+        if (task.completedAt && task.pickedAt) {
+          const wait = new Date(task.pickedAt).getTime() - new Date(task.createdAt).getTime();
+          queueWaits.push(wait);
+        }
+        if (task.completedAt && task.startedAt) {
+          const proc = new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime();
+          processingTimes.push(proc);
+        }
+        if (task.completedAt && task.createdAt) {
+          const total = new Date(task.completedAt).getTime() - new Date(task.createdAt).getTime();
+          durations.push(total);
+        }
+      }
+
+      const percentile = (arr: number[], p: number): number | null => {
+        if (arr.length === 0) return null;
+        const sorted = [...arr].sort((a, b) => a - b);
+        const idx = Math.ceil(sorted.length * p / 100) - 1;
+        return sorted[Math.max(0, idx)];
+      };
+
+      const avg = (arr: number[]): number | null => {
+        if (arr.length === 0) return null;
+        return Math.round(arr.reduce((s, v) => s + v, 0) / arr.length);
+      };
+
+      const result = {
+        totalCompleted: completed.length,
+        totalDurationMs: avg(durations),
+        avgDurationMs: avg(durations),
+        p50DurationMs: percentile(durations, 50),
+        p95DurationMs: percentile(durations, 95),
+        avgQueueWaitMs: avg(queueWaits),
+        avgProcessingMs: avg(processingTimes),
+        p50ProcessingMs: percentile(processingTimes, 50),
+        p95ProcessingMs: percentile(processingTimes, 95),
+        byStatus: {
+          done: completed.filter(t => t.status === "done").length,
+          failed: completed.filter(t => t.status === "failed").length,
+        },
+      };
+
+      summaryCache.set("processing", result);
+      return reply.send(result);
+    } catch (err) {
+      log.error({ err }, "Failed to compute processing stats");
+      return reply.code(500).send({
+        error: { code: "internal_error", message: "Failed to compute processing statistics" },
+      });
+    }
+  });
+
 
   // GET /api/stats/summary — comprehensive task statistics
   server.get("/api/stats/summary", async (req: FastifyRequest, reply: FastifyReply) => {

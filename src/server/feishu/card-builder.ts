@@ -180,6 +180,21 @@ export function buildTaskResultCard(
     });
   }
 
+  // Processing duration (if available)
+  if (task.startedAt && task.completedAt) {
+     const durationMs = new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime();
+     const durationMin = Math.round(durationMs / 60000);
+     const durationText = durationMin >= 60
+       ? `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
+       : durationMin >= 1
+         ? `${durationMin}m`
+         : `${Math.round(durationMs / 1000)}s`;
+     elements.push({
+       tag: "div",
+       text: { content: `**Duration:** ${durationText}`, tag: "lark_md" },
+     });
+  }
+
   // Separator
   elements.push({ tag: "hr" });
 

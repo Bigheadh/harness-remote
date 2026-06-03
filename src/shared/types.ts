@@ -52,6 +52,12 @@ export interface Task {
   archivedAt?: string;
   resultSummary?: string;
   resultDetails?: string;
+  /** ISO 8601 timestamp when the task was first picked (moved from pending) */
+  pickedAt?: string;
+  /** ISO 8601 timestamp when the task started running */
+  startedAt?: string;
+  /** ISO 8601 timestamp when the task reached a terminal state (done/failed) */
+  completedAt?: string;
 }
 
 /** A subtask — an independently trackable child task */

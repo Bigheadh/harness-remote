@@ -179,3 +179,8 @@
 - [x] Feishu card notification on single task status update (running, failed)
 - [x] Feishu card notification on bulk status update
 - [x] Exported STATUS_LABELS, STATUS_COLORS, PRIORITY_LABELS from card-builder
+
+## Phase 28: Task Processing Time Tracking
+- [x] Task pickedAt, startedAt, completedAt timestamps (auto-set on status transitions)
+- [x] GET /api/stats/processing endpoint (queue wait, processing time, p50/p95 analytics)
+- [x] Feishu card shows processing duration on task completion

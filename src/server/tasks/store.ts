@@ -206,6 +206,9 @@ function rowToTask(row: Record<string, unknown>): Task {
     archivedAt: (row["archived_at"] as string) ?? undefined,
     resultSummary: (row["result_summary"] as string) ?? undefined,
     resultDetails: (row["result_details"] as string) ?? undefined,
+    pickedAt: (row["picked_at"] as string) ?? undefined,
+    startedAt: (row["started_at"] as string) ?? undefined,
+    completedAt: (row["completed_at"] as string) ?? undefined,
   };
 }
 
@@ -384,6 +387,27 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add picked_at column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN picked_at TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Add started_at column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN started_at TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Add completed_at column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN completed_at TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -497,8 +521,8 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent\n      ON task_subtasks(parent_task_id)\n  `);
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at, picked_at, started_at, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -542,7 +566,7 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   const retryTaskStmt = db.prepare(`
     UPDATE tasks
-    SET status = 'pending', result_summary = NULL, result_details = NULL, updated_at = ?
+    SET status = 'pending', result_summary = NULL, result_details = NULL, picked_at = NULL, started_at = NULL, completed_at = NULL, updated_at = ?
     WHERE id = ?
   `);
 
@@ -600,6 +624,9 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.reminderAt ?? null,
         task.createdAt ?? now,
         task.updatedAt ?? now,
+        task.pickedAt ?? null,
+        task.startedAt ?? null,
+        task.completedAt ?? null,
       );
 
       const row = selectTaskById.get(id) as Record<string, unknown>;
@@ -689,7 +716,28 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       const now = new Date().toISOString();
-      Number(updateTaskStatusStmt.run(status, now, id));
+
+      // Set processing timestamps based on status transition
+      if (status === "picked" && !row["picked_at"]) {
+        db.prepare(`UPDATE tasks SET status = ?, updated_at = ?, picked_at = ? WHERE id = ?`).run(status, now, now, id);
+      } else if (status === "running") {
+        if (!row["picked_at"]) {
+          // Pending -> running (skipping picked)
+          db.prepare(`UPDATE tasks SET status = ?, updated_at = ?, picked_at = ?, started_at = ? WHERE id = ?`).run(status, now, now, now, id);
+        } else if (!row["started_at"]) {
+          // Picked -> running
+          db.prepare(`UPDATE tasks SET status = ?, updated_at = ?, started_at = ? WHERE id = ?`).run(status, now, now, id);
+        } else {
+          Number(updateTaskStatusStmt.run(status, now, id));
+        }
+      } else if (status === "done" || status === "failed") {
+        Number(updateTaskStatusStmt.run(status, now, id));
+        if (!row["completed_at"]) {
+          db.prepare(`UPDATE tasks SET completed_at = ? WHERE id = ?`).run(now, id);
+        }
+      } else {
+        Number(updateTaskStatusStmt.run(status, now, id));
+      }
 
       const updated = selectTaskById.get(id) as Record<string, unknown>;
       return rowToTask(updated);
@@ -714,6 +762,10 @@ export function createTaskStore(storagePath: string): TaskStore {
       Number(
         updateTaskResult.run(newStatus, summary, details ?? null, now, id),
       );
+      // Set completed_at if not already set
+      if (!row["completed_at"]) {
+        db.prepare(`UPDATE tasks SET completed_at = ? WHERE id = ?`).run(now, id);
+      }
 
       const updated = selectTaskById.get(id) as Record<string, unknown>;
       return rowToTask(updated);
@@ -772,6 +824,9 @@ export function createTaskStore(storagePath: string): TaskStore {
         (row["reminder_at"] as string) ?? null,
         now,
         now,
+        null, // picked_at
+        null, // started_at
+        null, // completed_at
       ));
 
       const cloned = selectTaskById.get(newId) as Record<string, unknown>;
@@ -1815,6 +1870,9 @@ export function createTaskStore(storagePath: string): TaskStore {
             task.reminderAt ?? null,
             task.createdAt,
             task.updatedAt,
+            task.pickedAt ?? null,
+            task.startedAt ?? null,
+            task.completedAt ?? null,
           );
 
           // Restore result fields if present
