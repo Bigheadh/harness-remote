@@ -98,6 +98,8 @@ export interface TaskApiClient {
   archiveTask(taskId: string): Promise<Task>;
   unarchiveTask(taskId: string): Promise<Task>;
   listArchivedTasks(limit?: number): Promise<Task[]>;
+  // Priority auto-escalation
+  escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
 }
 
 export function createTaskApiClient(
@@ -1137,6 +1139,21 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/escalate-priorities`,
+        { method: "POST", headers },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to escalate priorities: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { escalated: number; tasks: Task[] };
+      return { escalated: data.escalated, tasks: data.tasks };
     },
   };
 }

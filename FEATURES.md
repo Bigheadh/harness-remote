@@ -171,5 +171,5 @@
 - [x] Task CSV export — export task list as CSV for reporting (GET /api/tasks/export.csv)
 - [x] Task archive — soft-delete completed tasks to keep active view clean (POST /api/tasks/:id/archive, POST /api/tasks/:id/unarchive)
 - [x] Dashboard data caching — TTL-based cache for /api/stats/summary and /api/stats/timeseries
-- [ ] Task priority auto-escalation — automatically escalate overdue tasks priority
+- [x] Task priority auto-escalation — automatically escalate overdue tasks priority
 - [ ] API usage analytics — track request counts, response times, error rates per user/device

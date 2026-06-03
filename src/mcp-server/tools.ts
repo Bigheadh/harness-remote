@@ -2754,4 +2754,44 @@ export function registerMcpTools(
       }
     },
   );
+
+  // escalate_overdue_priorities tool
+  server.registerTool(
+    "escalate_overdue_priorities",
+    {
+      description:
+        "Automatically escalate priority of overdue tasks. Scans all tasks that have passed their due date and bumps their priority one level (low→normal, normal→high, high→urgent). Tasks already at 'urgent' are skipped. Returns the list of escalated tasks.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const result = await client.escalateOverduePriorities();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                escalated: result.escalated,
+                tasks: result.tasks,
+                message: result.escalated > 0
+                  ? `Escalated priority for ${result.escalated} overdue task(s)`
+                  : "No overdue tasks needed escalation",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

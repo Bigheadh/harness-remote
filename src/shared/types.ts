@@ -133,7 +133,8 @@ export type AuditAction =
   | "task.subtask_created"
   | "task.subtask_status_changed"
   | "task.subtask_result_reported"
-  | "task.subtask_deleted";
+  | "task.subtask_deleted"
+  | "task.priority_escalated";
 
 export interface AuditLogSearchOptions {
   action?: string;

@@ -71,6 +71,8 @@ function formatAuditSummary(entry: AuditLogEntry): string {
       return `Subtask result reported: ${details?.success ? "success" : "failure"}`;
     case "task.subtask_deleted":
       return "Subtask deleted";
+    case "task.priority_escalated":
+      return `Priority escalated for ${details?.count ?? 0} overdue task(s)`;
     case "task.reset_stale":
       return `Stale tasks reset (${details?.count} tasks)`;
     case "cleanup.processed_events":
@@ -732,6 +734,42 @@ export function registerTaskRoutes(
     const { limit } = req.query as { limit?: number };
     const tasks = await store.listArchivedTasks(limit);
     return reply.send({ tasks, count: tasks.length });
+  });
+
+  // POST /api/tasks/escalate-priorities - auto-escalate overdue tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/escalate-priorities", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const result = await store.escalateOverduePriorities();
+    log.info({ escalated: result.escalated }, "Priority escalation completed");
+
+    if (auditStore && result.escalated > 0) {
+      await auditStore.log({
+        action: "task.priority_escalated",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: {
+          count: result.escalated,
+          taskIds: result.tasks.map((t) => t.id),
+          escalations: result.tasks.map((t) => ({ taskId: t.id, newPriority: t.priority })),
+        },
+      });
+    }
+
+    return reply.send({
+      ok: true,
+      escalated: result.escalated,
+      tasks: result.tasks,
+    });
   });
 
   // GET /api/tasks/:id - get task detail (requires tasks.read)

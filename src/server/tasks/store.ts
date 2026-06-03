@@ -147,6 +147,8 @@ export interface TaskStore {
   archiveTask(taskId: string): Promise<import("../../shared/types.js").Task>;
   unarchiveTask(taskId: string): Promise<import("../../shared/types.js").Task>;
   listArchivedTasks(limit?: number): Promise<import("../../shared/types.js").Task[]>;
+  // Task priority auto-escalation
+  escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -2635,6 +2637,42 @@ export function createTaskStore(storagePath: string): TaskStore {
         LIMIT ?
       `).all(effectiveLimit) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
+    },
+
+    // ── Task Priority Auto-Escalation ──────────────────────────────
+
+    async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {
+      const now = new Date().toISOString();
+      // Find overdue tasks with active status (pending, picked, running)
+      const overdueRows = db.prepare(`
+        SELECT * FROM tasks
+        WHERE due_date IS NOT NULL
+        AND due_date < ?
+        AND status IN ('pending', 'picked', 'running')
+        AND archived_at IS NULL
+        ORDER BY due_date ASC
+      `).all(now) as Array<Record<string, unknown>>;
+
+      const PRIORITY_LADDER: TaskPriority[] = ["low", "normal", "high", "urgent"];
+      const escalatedTasks: Task[] = [];
+
+      for (const row of overdueRows) {
+        const currentPriority = (row["priority"] as TaskPriority) ?? "normal";
+        const currentIndex = PRIORITY_LADDER.indexOf(currentPriority);
+        // Already at max priority, skip
+        if (currentIndex < 0 || currentIndex >= PRIORITY_LADDER.length - 1) continue;
+        const nextPriority = PRIORITY_LADDER[currentIndex + 1];
+        if (nextPriority === currentPriority) continue;
+
+        db.prepare(`
+          UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?
+        `).run(nextPriority, now, row["id"] as string);
+
+        const updated = selectTaskById.get(row["id"] as string) as Record<string, unknown>;
+        escalatedTasks.push(rowToTask(updated));
+      }
+
+      return { escalated: escalatedTasks.length, tasks: escalatedTasks };
     },
   };
 }
