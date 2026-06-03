@@ -135,6 +135,94 @@ export function registerStatsRoutes(
     }
   });
 
+  // GET /api/stats/users — per-user task statistics (who creates tasks and how many)
+  server.get("/api/stats/users", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "dashboard.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    try {
+      const cached = summaryCache.get("users");
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      const allTasks = await store.getAllTasks();
+
+      // Group by feishuUserId
+      const userMap = new Map<string, {
+        userId: string;
+        total: number;
+        byStatus: Record<string, number>;
+        done: number;
+        failed: number;
+        avgResolutionMinutes: number | null;
+        lastTaskAt: string | null;
+      }>();
+
+      for (const task of allTasks) {
+        const uid = task.feishuUserId;
+        let entry = userMap.get(uid);
+        if (!entry) {
+          entry = {
+            userId: uid,
+            total: 0,
+            byStatus: { pending: 0, picked: 0, running: 0, done: 0, failed: 0 },
+            done: 0,
+            failed: 0,
+            avgResolutionMinutes: null,
+            lastTaskAt: null,
+          };
+          userMap.set(uid, entry);
+        }
+        entry.total++;
+        entry.byStatus[task.status] = (entry.byStatus[task.status] || 0) + 1;
+
+        if (task.status === "done") entry.done++;
+        if (task.status === "failed") entry.failed++;
+
+        if (!entry.lastTaskAt || task.createdAt > entry.lastTaskAt) {
+          entry.lastTaskAt = task.createdAt;
+        }
+      }
+
+      // Compute avg resolution time per user
+      for (const [, entry] of userMap) {
+        const completedTasks = allTasks.filter(
+          (t) => t.feishuUserId === entry.userId && t.completedAt && t.createdAt && (t.status === "done" || t.status === "failed")
+        );
+        if (completedTasks.length > 0) {
+          const totalMs = completedTasks.reduce((sum, t) => {
+            return sum + (new Date(t.completedAt!).getTime() - new Date(t.createdAt).getTime());
+          }, 0);
+          entry.avgResolutionMinutes = Math.round(totalMs / completedTasks.length / 60000);
+        }
+      }
+
+      const users = [...userMap.values()].sort((a, b) => b.total - a.total);
+
+      const result = {
+        totalUsers: users.length,
+        totalTasks: allTasks.length,
+        users,
+      };
+
+      summaryCache.set("users", result);
+      return reply.send(result);
+    } catch (err) {
+      log.error({ err }, "Failed to compute per-user stats");
+      return reply.code(500).send({
+        error: { code: "internal_error", message: "Failed to compute per-user statistics" },
+      });
+    }
+  });
+
   // GET /api/stats/timeseries — time-series analytics for charts
   // Query params: from (ISO), to (ISO), interval (hour|day|week|month), metric (created|completed|resolution_time)
   server.get("/api/stats/timeseries", async (req: FastifyRequest, reply: FastifyReply) => {

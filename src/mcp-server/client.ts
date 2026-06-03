@@ -29,6 +29,7 @@ export interface TaskApiClient {
   listAllTags(): Promise<string[]>;
   setDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setReminder(taskId: string, reminderAt: string | null): Promise<Task>;
+  setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
@@ -394,6 +395,27 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to set reminder: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async setTaskDescription(taskId: string, description: string | null): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/description`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ description }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set description: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 

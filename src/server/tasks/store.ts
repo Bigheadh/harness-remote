@@ -61,6 +61,7 @@ export interface TaskStore {
   listAllTags(): Promise<string[]>;
   setTaskDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task>;
+  setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
   listComments(taskId: string): Promise<TaskComment[]>;
@@ -206,6 +207,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     archivedAt: (row["archived_at"] as string) ?? undefined,
     resultSummary: (row["result_summary"] as string) ?? undefined,
     resultDetails: (row["result_details"] as string) ?? undefined,
+    description: (row["description"] as string) ?? undefined,
     pickedAt: (row["picked_at"] as string) ?? undefined,
     startedAt: (row["started_at"] as string) ?? undefined,
     completedAt: (row["completed_at"] as string) ?? undefined,
@@ -408,6 +410,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add description column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN description TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -521,8 +530,8 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent\n      ON task_subtasks(parent_task_id)\n  `);
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at, picked_at, started_at, completed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -622,6 +631,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.assignedDeviceId ?? null,
         task.dueDate ?? null,
         task.reminderAt ?? null,
+        task.description ?? null,
         task.createdAt ?? now,
         task.updatedAt ?? now,
         task.pickedAt ?? null,
@@ -822,6 +832,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         null, // cloned task starts unassigned
         (row["due_date"] as string) ?? null,
         (row["reminder_at"] as string) ?? null,
+        (row["description"] as string) ?? null,
         now,
         now,
         null, // picked_at
@@ -1080,6 +1091,25 @@ export function createTaskStore(storagePath: string): TaskStore {
       const now = new Date().toISOString();
       db.prepare(`UPDATE tasks SET reminder_at = ?, updated_at = ? WHERE id = ?`).run(
         reminderAt,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async setTaskDescription(taskId: string, description: string | null): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?`).run(
+        description,
         now,
         taskId,
       );
@@ -1868,6 +1898,7 @@ export function createTaskStore(storagePath: string): TaskStore {
             task.assignedDeviceId ?? null,
             task.dueDate ?? null,
             task.reminderAt ?? null,
+            task.description ?? null,
             task.createdAt,
             task.updatedAt,
             task.pickedAt ?? null,

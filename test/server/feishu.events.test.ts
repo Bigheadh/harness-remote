@@ -434,4 +434,59 @@ describe("createTaskFromFeishuEvent", () => {
     expect(task.tags).toEqual(["critical"]);
     expect(task.commandText).toBe("紧急修复");
   });
+
+  it("extracts description from #desc: marker", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_desc_1",
+      messageId: "msg_desc_1",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "部署API #priority:high #desc:部署新版本到staging环境，验证健康检查",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.description).toBe("部署新版本到staging环境，验证健康检查");
+    expect(task.commandText).toBe("部署API");
+    expect(task.priority).toBe("high");
+  });
+
+  it("strips description marker from commandText", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_desc_2",
+      messageId: "msg_desc_2",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "运行测试 #desc:执行完整的单元测试套件",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.commandText).toBe("运行测试");
+    expect(task.description).toBe("执行完整的单元测试套件");
+  });
+
+  it("sets description to undefined when no #desc: marker", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_desc_3",
+      messageId: "msg_desc_3",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "普通消息没有描述",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.description).toBeUndefined();
+    expect(task.commandText).toBe("普通消息没有描述");
+  });
 });

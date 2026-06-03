@@ -68,6 +68,20 @@ function stripDueDateMarkers(text: string): string {
   return text.replace(/#due:\S+/gi, "").replace(/\s+/g, " ").trim();
 }
 
+/** Extract description from #desc: marker (supports multi-word descriptions until next # marker or end of text) */
+function parseDescription(text: string): string | undefined {
+  const match = text.match(/#desc:(.+?)(?=\s+#\w+:|$)/i);
+  if (match && match[1].trim().length > 0) {
+    return match[1].trim();
+  }
+  return undefined;
+}
+
+/** Strip description marker from text */
+function stripDescriptionMarker(text: string): string {
+  return text.replace(/#desc:(.+?)(?=\s+#\w+:|$)/gi, "").replace(/\s+/g, " ").trim();
+}
+
 export interface FeishuEventContext {
   eventId: string;
   messageId: string;
@@ -250,9 +264,11 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
   const priority = parsePriority(event.text);
   const tags = parseTagsFromText(event.text);
   const dueDate = parseDueDate(event.text);
+  const description = parseDescription(event.text);
   let cleanText = stripPriorityMarkers(event.text);
   cleanText = stripTagMarkers(cleanText);
   cleanText = stripDueDateMarkers(cleanText);
+  cleanText = stripDescriptionMarker(cleanText);
 
   return {
     id: taskId,
@@ -266,6 +282,7 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
     tags: tags.length > 0 ? tags : undefined,
     attachments: event.attachments.length > 0 ? event.attachments : undefined,
     dueDate,
+    description,
     createdAt: now,
     updatedAt: now,
   };

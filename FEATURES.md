@@ -184,3 +184,8 @@
 - [x] Task pickedAt, startedAt, completedAt timestamps (auto-set on status transitions)
 - [x] GET /api/stats/processing endpoint (queue wait, processing time, p50/p95 analytics)
 - [x] Feishu card shows processing duration on task completion
+
+## Phase 29: Task Description & Enhanced Feishu Interaction
+- [x] Task description field (DB column, shared type, store, API, MCP tool, Feishu parsing)
+- [x] Enhanced Feishu cards — show priority badge, tags, due date on task cards
+- [x] Per-user task statistics endpoint (GET /api/stats/users)

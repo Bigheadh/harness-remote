@@ -515,6 +515,53 @@ export function registerMcpTools(
     },
   );
 
+  // set_task_description tool
+  server.registerTool(
+    "set_task_description",
+    {
+      description:
+        "Set or clear a structured description for a task. Use this to provide context beyond the raw command text — explain what the task is about, acceptance criteria, or relevant background. Pass null to clear.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set the description for"),
+        description: z
+          .string()
+          .nullable()
+          .describe("Structured task description (e.g., 'Deploy the new API to staging. Verify health endpoint returns 200.') or null to clear"),
+      },
+    },
+    async (args) => {
+      const { taskId, description } = args;
+
+      try {
+        const task = await client.setTaskDescription(taskId, description);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: description
+                  ? `Description set (${description.length} chars)`
+                  : "Description cleared",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // list_overdue_tasks tool
   server.registerTool(
     "list_overdue_tasks",

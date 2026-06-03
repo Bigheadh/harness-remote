@@ -1482,6 +1482,47 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/description - set or clear task description (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { description: string | null };
+  }>("/api/tasks/:id/description", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { description?: string | null };
+
+    if (body?.description !== null && body?.description !== undefined && typeof body.description !== "string") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "'description' must be a string or null to clear",
+        },
+      });
+    }
+
+    try {
+      const task = await store.setTaskDescription(id, body?.description ?? null);
+      log.info({ taskId: id, hasDescription: body?.description != null }, "Task description updated");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/reset-stale - reset stale tasks (requires tasks.reset_stale)
   server.post("/api/tasks/reset-stale", async (req, reply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;

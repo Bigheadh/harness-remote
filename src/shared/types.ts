@@ -56,6 +56,8 @@ export interface Task {
   pickedAt?: string;
   /** ISO 8601 timestamp when the task started running */
   startedAt?: string;
+  /** Structured description beyond the raw command text */
+  description?: string;
   /** ISO 8601 timestamp when the task reached a terminal state (done/failed) */
   completedAt?: string;
 }

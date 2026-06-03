@@ -250,6 +250,39 @@ export function buildTaskStatusCard(
     },
   });
 
+  // Tags (if any)
+  if (task.tags && task.tags.length > 0) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Tags:** ${task.tags.map((t) => `\`${t}\``).join(" ")}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
+  // Due date (if any)
+  if (task.dueDate) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Due Date:** ${task.dueDate}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
+  // Description (if any)
+  if (task.description) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Description:** ${task.description}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
   elements.push({ tag: "hr" });
 
   elements.push({

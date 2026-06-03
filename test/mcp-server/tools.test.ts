@@ -197,6 +197,23 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async setTaskDescription(taskId: string, description: string | null): Promise<Task> {
+      calls.push({ method: "setTaskDescription", args: [taskId, description] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_desc",
+        feishuChatId: "oc_desc",
+        feishuUserId: "ou_desc",
+        commandText: "描述任务",
+        status: "pending",
+        description: description ?? undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
     async listOverdueTasks(): Promise<Task[]> {
       calls.push({ method: "listOverdueTasks", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1068,8 +1085,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 66 tools", () => {
-      expect(mockServer.registrations).toHaveLength(66);
+    it("registers all 67 tools", () => {
+      expect(mockServer.registrations).toHaveLength(67);
     });
 
     it("registers list_tasks with correct description", () => {
