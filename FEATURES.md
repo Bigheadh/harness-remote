@@ -189,3 +189,11 @@
 - [x] Task description field (DB column, shared type, store, API, MCP tool, Feishu parsing)
 - [x] Enhanced Feishu cards — show priority badge, tags, due date on task cards
 - [x] Per-user task statistics endpoint (GET /api/stats/users)
+
+## Phase 30: Feishu Bot Interactive Commands
+- [x] Slash command parsing (/help, /list, /status, /cancel, /stats, /search, /overdue, /mine)
+- [x] Command detection in Feishu event handler (route commands before task creation)
+- [x] Feishu card responses for each command
+- [x] Partial task ID matching for /status and /cancel
+- [x] Audit logging for command events
+- [x] Task cancellation (set pending to failed with cancellation note)

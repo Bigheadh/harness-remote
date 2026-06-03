@@ -126,6 +126,7 @@ export type AuditAction =
   | "event.received"
   | "event.duplicate"
   | "event.non_allowed_user"
+  | "event.command"
   | "feishu.reply_sent"
   | "feishu.reply_failed"
   | "cleanup.processed_events"

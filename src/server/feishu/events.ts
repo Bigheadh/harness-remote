@@ -9,6 +9,7 @@ import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
 import { broadcastTaskCreated } from "../sse/broadcaster.js";
 import { recordTaskCreated, recordEventProcessed } from "../metrics/collector.js";
+import { isCommand, parseCommand, executeCommand } from "./commands.js";
 
 const log = createLogger({ level: "info" });
 
@@ -357,6 +358,29 @@ export function registerFeishuRoutes(
     if (eventContext.chatType === "group" && !eventContext.mentionedBot) {
       log.debug({ chatId: eventContext.chatId }, "Group message without bot mention ignored");
       return reply.send({ ok: true });
+    }
+
+    // Check if the text is a slash command
+    if (eventContext.text && isCommand(eventContext.text)) {
+      const cmd = parseCommand(eventContext.text);
+      if (cmd) {
+        log.info({ command: cmd.command, userId: eventContext.userId }, "Feishu command received");
+        if (auditStore) {
+          await auditStore.log({
+            action: "event.command",
+            actor: eventContext.userId,
+            actorType: "feishu",
+            details: { command: cmd.command, chatId: eventContext.chatId },
+          });
+        }
+        // Mark event as processed to prevent dedup issues on re-delivery
+        await store.markEventProcessed(eventContext.eventId);
+        // Execute command asynchronously — Feishu needs HTTP 200 fast
+        executeCommand(cmd, eventContext.userId, eventContext.chatId, eventContext.messageId, store, feishuClient).catch((err) => {
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, "Command execution failed");
+        });
+        return reply.send({ ok: true, command: cmd.command });
+      }
     }
 
     // Create task
