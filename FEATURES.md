@@ -197,3 +197,14 @@
 - [x] Partial task ID matching for /status and /cancel
 - [x] Audit logging for command events
 - [x] Task cancellation (set pending to failed with cancellation note)
+
+## Phase 31: Enhanced Dashboard
+- [x] Rich task list with tags, due dates, pinned status, device assignment columns
+- [x] Tag filter and enhanced search (searches description, tags, result summary)
+- [x] Detail panel with sections: basic info, tags, description, schedule, command, attachments, dependencies, result
+- [x] Subtasks section in detail panel (loaded async from /api/tasks/:id/subtasks)
+- [x] Comments section in detail panel (loaded async from /api/tasks/:id/comments)
+- [x] Activity timeline in detail panel (loaded async from /api/tasks/:id/activity)
+- [x] SSE real-time updates (auto-reconnect, replaces 30s polling)
+- [x] Processing timestamps display (pickedAt, startedAt, completedAt)
+- [x] Overdue due date highlighting
