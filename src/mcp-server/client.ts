@@ -94,6 +94,10 @@ export interface TaskApiClient {
   deleteSubtask(taskId: string, subtaskId: string): Promise<void>;
   // Task attachment download
   downloadAttachment(taskId: string, attachmentIndex: number): Promise<{ fileName: string; contentType: string; base64Data: string }>;
+  // Task archive (soft-delete)
+  archiveTask(taskId: string): Promise<Task>;
+  unarchiveTask(taskId: string): Promise<Task>;
+  listArchivedTasks(limit?: number): Promise<Task[]>;
 }
 
 export function createTaskApiClient(
@@ -1087,6 +1091,52 @@ export function createTaskApiClient(
       }
 
       return { fileName, contentType, base64Data };
+    },
+
+    async archiveTask(taskId: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/archive`,
+        { method: "POST", headers },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to archive task: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async unarchiveTask(taskId: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/unarchive`,
+        { method: "POST", headers },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to unarchive task: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async listArchivedTasks(limit?: number): Promise<Task[]> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/archived${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list archived tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { tasks: Task[] };
+      return data.tasks;
     },
   };
 }

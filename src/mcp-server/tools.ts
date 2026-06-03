@@ -2628,4 +2628,130 @@ export function registerMcpTools(
       }
     },
   );
+
+  // archive_task tool
+  server.registerTool(
+    "archive_task",
+    {
+      description:
+        "Archive (soft-delete) a completed task to remove it from the active view. The task is not permanently deleted — it can be restored with unarchive_task. Archived tasks are hidden from normal listings but can be viewed with list_archived_tasks.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to archive"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const task = await client.archiveTask(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task archived successfully. Use unarchive_task to restore it.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // unarchive_task tool
+  server.registerTool(
+    "unarchive_task",
+    {
+      description:
+        "Restore an archived task back to the active view. The task returns to its previous status and will appear in normal task listings again.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to unarchive (restore)"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const task = await client.unarchiveTask(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task restored from archive.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_archived_tasks tool
+  server.registerTool(
+    "list_archived_tasks",
+    {
+      description:
+        "List tasks that have been archived (soft-deleted). These tasks are hidden from normal listings. Use this to review archived tasks or find ones to restore.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum number of archived tasks to return. Default: 20, max: 100"),
+      },
+    },
+    async (args) => {
+      const { limit } = args;
+
+      try {
+        const tasks = await client.listArchivedTasks(limit);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ tasks, count: tasks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

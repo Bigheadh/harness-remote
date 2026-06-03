@@ -925,6 +925,58 @@ function createMockClient(): TaskApiClient & {
         base64Data: Buffer.from("Hello, World!").toString("base64"),
       };
     },
+
+    async archiveTask(taskId: string): Promise<Task> {
+      calls.push({ method: "archiveTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_archive",
+        feishuChatId: "oc_archive",
+        feishuUserId: "ou_archive",
+        commandText: "Archived task",
+        status: "done",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+        archivedAt: new Date().toISOString(),
+      };
+    },
+
+    async unarchiveTask(taskId: string): Promise<Task> {
+      calls.push({ method: "unarchiveTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_unarchive",
+        feishuChatId: "oc_unarchive",
+        feishuUserId: "ou_unarchive",
+        commandText: "Unarchived task",
+        status: "done",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async listArchivedTasks(limit?: number): Promise<Task[]> {
+      calls.push({ method: "listArchivedTasks", args: [limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_archived_001",
+          source: "feishu",
+          feishuMessageId: "om_archived",
+          feishuChatId: "oc_archived",
+          feishuUserId: "ou_archived",
+          commandText: "Archived task",
+          status: "done",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+          archivedAt: new Date().toISOString(),
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -980,8 +1032,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 61 tools", () => {
-      expect(mockServer.registrations).toHaveLength(61);
+    it("registers all 64 tools", () => {
+      expect(mockServer.registrations).toHaveLength(64);
     });
 
     it("registers list_tasks with correct description", () => {

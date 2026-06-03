@@ -143,6 +143,10 @@ export interface TaskStore {
   deleteSubtask(parentTaskId: string, subtaskId: string): Promise<boolean>;
   // Task activity feed — combined chronological timeline of all task events
   getActivityFeed(taskId: string, limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]>;
+  // Task archive (soft-delete)
+  archiveTask(taskId: string): Promise<import("../../shared/types.js").Task>;
+  unarchiveTask(taskId: string): Promise<import("../../shared/types.js").Task>;
+  listArchivedTasks(limit?: number): Promise<import("../../shared/types.js").Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -197,6 +201,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
     pinned: Number(row["pinned"]) === 1,
+    archivedAt: (row["archived_at"] as string) ?? undefined,
     resultSummary: (row["result_summary"] as string) ?? undefined,
     resultDetails: (row["result_details"] as string) ?? undefined,
   };
@@ -370,6 +375,13 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Add archived_at column if it doesn't exist (migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE tasks ADD COLUMN archived_at TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -497,6 +509,7 @@ export function createTaskStore(storagePath: string): TaskStore {
     SELECT * FROM tasks
     WHERE status = COALESCE(?, status)
     AND (assigned_device_id IS NULL OR assigned_device_id = COALESCE(?, assigned_device_id))
+    AND archived_at IS NULL
       ORDER BY
         pinned DESC,
         CASE priority
@@ -2577,6 +2590,51 @@ export function createTaskStore(storagePath: string): TaskStore {
       // Sort by timestamp ascending and apply limit
       items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
       return items.slice(0, effectiveLimit);
+    },
+
+    // ── Task Archive (soft-delete) ────────────────────────────────
+
+    async archiveTask(taskId: string): Promise<import("../../shared/types.js").Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      if (row["archived_at"]) {
+        throw new Error(`Task already archived: ${taskId}`);
+      }
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?`).run(now, now, taskId);
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async unarchiveTask(taskId: string): Promise<import("../../shared/types.js").Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+      if (!row["archived_at"]) {
+        throw new Error(`Task is not archived: ${taskId}`);
+      }
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET archived_at = NULL, updated_at = ? WHERE id = ?`).run(now, taskId);
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async listArchivedTasks(limit?: number): Promise<import("../../shared/types.js").Task[]> {
+      const effectiveLimit = limit ?? 20;
+      const rows = db.prepare(`
+        SELECT * FROM tasks
+        WHERE archived_at IS NOT NULL
+        ORDER BY archived_at DESC
+        LIMIT ?
+      `).all(effectiveLimit) as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
   };
 }

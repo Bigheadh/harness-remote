@@ -716,6 +716,24 @@ export function registerTaskRoutes(
     return reply.send({ tasks, count: tasks.length });
   });
 
+  // GET /api/tasks/archived - list archived (soft-deleted) tasks (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get("/api/tasks/archived", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { limit } = req.query as { limit?: number };
+    const tasks = await store.listArchivedTasks(limit);
+    return reply.send({ tasks, count: tasks.length });
+  });
+
   // GET /api/tasks/:id - get task detail (requires tasks.read)
   server.get<{
     Params: { id: string };
@@ -2675,6 +2693,94 @@ export function registerTaskRoutes(
       return reply.code(502).send({
         error: { code: "upstream_error", message: `Failed to download file from Feishu: ${message}` },
       });
+    }
+  });
+
+  // POST /api/tasks/:id/archive - soft-delete a task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/archive", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    try {
+      const task = await store.archiveTask(id);
+      log.info({ taskId: id }, "Task archived");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.status_changed",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "archive", archivedAt: task.archivedAt },
+        });
+      }
+      broadcastTaskUpdated(task);
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (e instanceof Error && e.message.includes("already archived")) {
+        return reply.code(409).send({
+          error: { code: "already_archived", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/unarchive - restore an archived task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/unarchive", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    try {
+      const task = await store.unarchiveTask(id);
+      log.info({ taskId: id }, "Task unarchived");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.status_changed",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "unarchive" },
+        });
+      }
+      broadcastTaskUpdated(task);
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (e instanceof Error && e.message.includes("not archived")) {
+        return reply.code(409).send({
+          error: { code: "not_archived", message: e.message },
+        });
+      }
+      throw e;
     }
   });
 

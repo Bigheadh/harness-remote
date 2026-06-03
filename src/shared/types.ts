@@ -48,6 +48,8 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   pinned?: boolean;
+  /** ISO 8601 timestamp when the task was archived (soft-deleted). null = not archived */
+  archivedAt?: string;
   resultSummary?: string;
   resultDetails?: string;
 }
