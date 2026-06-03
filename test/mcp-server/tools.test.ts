@@ -834,6 +834,87 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    // ── Task Subtasks ──────────────────────────────────────────
+
+    async listSubtasks(taskId: string): Promise<import("../../src/shared/types.js").Subtask[]> {
+      calls.push({ method: "listSubtasks", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "sub_001",
+          parentTaskId: taskId,
+          title: "Subtask 1",
+          commandText: "Do something specific",
+          status: "pending" as TaskStatus,
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getSubtask(taskId: string, subtaskId: string): Promise<import("../../src/shared/types.js").Subtask> {
+      calls.push({ method: "getSubtask", args: [taskId, subtaskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: subtaskId,
+        parentTaskId: taskId,
+        title: "Subtask Detail",
+        commandText: "Detailed subtask",
+        status: "pending" as TaskStatus,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createSubtask(taskId: string, title: string, commandText: string): Promise<import("../../src/shared/types.js").Subtask> {
+      calls.push({ method: "createSubtask", args: [taskId, title, commandText] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "sub_new_001",
+        parentTaskId: taskId,
+        title,
+        commandText,
+        status: "pending" as TaskStatus,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async updateSubtaskStatus(taskId: string, subtaskId: string, status: TaskStatus): Promise<import("../../src/shared/types.js").Subtask> {
+      calls.push({ method: "updateSubtaskStatus", args: [taskId, subtaskId, status] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: subtaskId,
+        parentTaskId: taskId,
+        title: "Updated Subtask",
+        commandText: "Updated",
+        status,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:01:00.000Z",
+      };
+    },
+
+    async reportSubtaskResult(taskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../../src/shared/types.js").Subtask> {
+      calls.push({ method: "reportSubtaskResult", args: [taskId, subtaskId, success, summary, details] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: subtaskId,
+        parentTaskId: taskId,
+        title: "Result Subtask",
+        commandText: "Done",
+        status: success ? "done" : "failed" as TaskStatus,
+        resultSummary: summary,
+        resultDetails: details,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:02:00.000Z",
+      };
+    },
+
+    async deleteSubtask(taskId: string, subtaskId: string): Promise<void> {
+      calls.push({ method: "deleteSubtask", args: [taskId, subtaskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
   };
   return mock;
 }
@@ -889,8 +970,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 55 tools", () => {
-      expect(mockServer.registrations).toHaveLength(55);
+    it("registers all 60 tools", () => {
+      expect(mockServer.registrations).toHaveLength(60);
     });
 
     it("registers list_tasks with correct description", () => {

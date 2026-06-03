@@ -126,6 +126,13 @@ export interface TaskStore {
   unlockTask(taskId: string, deviceId: string): Promise<boolean>;
   getTaskLock(taskId: string): Promise<import("../../shared/types.js").TaskLock | undefined>;
   cleanupExpiredLocks(): Promise<number>;
+  // Task subtask methods (break tasks into independently trackable child tasks)
+  createSubtask(parentTaskId: string, title: string, commandText: string): Promise<import("../../shared/types.js").Subtask>;
+  listSubtasks(parentTaskId: string): Promise<import("../../shared/types.js").Subtask[]>;
+  getSubtask(parentTaskId: string, subtaskId: string): Promise<import("../../shared/types.js").Subtask | undefined>;
+  updateSubtaskStatus(parentTaskId: string, subtaskId: string, status: TaskStatus): Promise<import("../../shared/types.js").Subtask>;
+  saveSubtaskResult(parentTaskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../../shared/types.js").Subtask>;
+  deleteSubtask(parentTaskId: string, subtaskId: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -259,6 +266,20 @@ function rowToSlaBreachLog(row: Record<string, unknown>): SlaBreachLog {
     actualMinutes: row["actual_minutes"] as number,
     detectedAt: row["detected_at"] as string,
     resolvedAt: (row["resolved_at"] as string) ?? undefined,
+  };
+}
+
+function rowToSubtask(row: Record<string, unknown>): import("../../shared/types.js").Subtask {
+  return {
+    id: row["id"] as string,
+    parentTaskId: row["parent_task_id"] as string,
+    title: row["title"] as string,
+    commandText: row["command_text"] as string,
+    status: row["status"] as TaskStatus,
+    resultSummary: (row["result_summary"] as string) ?? undefined,
+    resultDetails: (row["result_details"] as string) ?? undefined,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
   };
 }
 
@@ -443,9 +464,13 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_notes_task_id\n      ON task_notes(task_id)\n  `);
 
-
   // Task locks table (TTL-based locks to prevent concurrent processing)
   db.exec(`\n    CREATE TABLE IF NOT EXISTS task_locks (\n      task_id TEXT PRIMARY KEY,\n      locked_by TEXT NOT NULL,\n      locked_at TEXT NOT NULL,\n      expires_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
+
+  // Task subtasks table (break tasks into independently trackable child tasks)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS task_subtasks (\n      id TEXT PRIMARY KEY,\n      parent_task_id TEXT NOT NULL,\n      title TEXT NOT NULL,\n      command_text TEXT NOT NULL,\n      status TEXT NOT NULL DEFAULT 'pending',\n      result_summary TEXT,\n      result_details TEXT,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent\n      ON task_subtasks(parent_task_id)\n  `);
   // Prepare statements
   const insertTask = db.prepare(`
     INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, created_at, updated_at)
@@ -1607,6 +1632,71 @@ export function createTaskStore(storagePath: string): TaskStore {
         `DELETE FROM task_locks WHERE expires_at <= ?`
       ).run(now);
       return Number(result.changes);
+    },
+
+    // ── Task Subtasks ──────────────────────────────────────────
+
+    async createSubtask(parentTaskId: string, title: string, commandText: string): Promise<import("../../shared/types.js").Subtask> {
+      // Verify parent task exists
+      const parentRow = selectTaskById.get(parentTaskId) as Record<string, unknown> | undefined;
+      if (!parentRow) {
+        throw new Error(`Task not found: ${parentTaskId}`);
+      }
+
+      const id = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+
+      db.prepare(`\n        INSERT INTO task_subtasks (id, parent_task_id, title, command_text, status, created_at, updated_at)\n        VALUES (?, ?, ?, ?, 'pending', ?, ?)\n      `).run(id, parentTaskId, title, commandText, now, now);
+
+      const row = db.prepare(`SELECT * FROM task_subtasks WHERE id = ?`).get(id) as Record<string, unknown>;
+      return rowToSubtask(row);
+    },
+
+    async listSubtasks(parentTaskId: string): Promise<import("../../shared/types.js").Subtask[]> {
+      const rows = db.prepare(`\n        SELECT * FROM task_subtasks\n        WHERE parent_task_id = ?\n        ORDER BY created_at ASC\n      `).all(parentTaskId) as Array<Record<string, unknown>>;
+      return rows.map(rowToSubtask);
+    },
+
+    async getSubtask(parentTaskId: string, subtaskId: string): Promise<import("../../shared/types.js").Subtask | undefined> {
+      const row = db.prepare(`\n        SELECT * FROM task_subtasks\n        WHERE id = ? AND parent_task_id = ?\n      `).get(subtaskId, parentTaskId) as Record<string, unknown> | undefined;
+      return row ? rowToSubtask(row) : undefined;
+    },
+
+    async updateSubtaskStatus(parentTaskId: string, subtaskId: string, status: TaskStatus): Promise<import("../../shared/types.js").Subtask> {
+      const row = db.prepare(`\n        SELECT * FROM task_subtasks\n        WHERE id = ? AND parent_task_id = ?\n      `).get(subtaskId, parentTaskId) as Record<string, unknown> | undefined;
+      if (!row) {
+        throw new Error(`Subtask not found: ${subtaskId}`);
+      }
+
+      const currentStatus = row["status"] as TaskStatus;
+      if (!isValidTransition(currentStatus, status)) {
+        throw new Error(`Invalid status transition: ${currentStatus} -> ${status}`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE task_subtasks SET status = ?, updated_at = ? WHERE id = ?`).run(status, now, subtaskId);
+
+      const updated = db.prepare(`SELECT * FROM task_subtasks WHERE id = ?`).get(subtaskId) as Record<string, unknown>;
+      return rowToSubtask(updated);
+    },
+
+    async saveSubtaskResult(parentTaskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../../shared/types.js").Subtask> {
+      const row = db.prepare(`\n        SELECT * FROM task_subtasks\n        WHERE id = ? AND parent_task_id = ?\n      `).get(subtaskId, parentTaskId) as Record<string, unknown> | undefined;
+      if (!row) {
+        throw new Error(`Subtask not found: ${subtaskId}`);
+      }
+
+      const newStatus: TaskStatus = success ? "done" : "failed";
+      const now = new Date().toISOString();
+      db.prepare(`\n        UPDATE task_subtasks SET status = ?, result_summary = ?, result_details = ?, updated_at = ?\n        WHERE id = ?\n      `).run(newStatus, summary, details ?? null, now, subtaskId);
+
+      const updated = db.prepare(`SELECT * FROM task_subtasks WHERE id = ?`).get(subtaskId) as Record<string, unknown>;
+      return rowToSubtask(updated);
+    },
+
+    async deleteSubtask(parentTaskId: string, subtaskId: string): Promise<boolean> {
+      const result = db.prepare(`\n        DELETE FROM task_subtasks\n        WHERE id = ? AND parent_task_id = ?\n      `).run(subtaskId, parentTaskId);
+      return Number(result.changes) > 0;
     },
 
     // ── Export/Import ────────────────────────────────────────────

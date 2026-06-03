@@ -85,6 +85,13 @@ export interface TaskApiClient {
   addNote(taskId: string, body: string): Promise<TaskNote>;
   // Task user search
   listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
+  // Task subtask methods
+  listSubtasks(taskId: string): Promise<import("../shared/types.js").Subtask[]>;
+  getSubtask(taskId: string, subtaskId: string): Promise<import("../shared/types.js").Subtask>;
+  createSubtask(taskId: string, title: string, commandText: string): Promise<import("../shared/types.js").Subtask>;
+  updateSubtaskStatus(taskId: string, subtaskId: string, status: TaskStatus): Promise<import("../shared/types.js").Subtask>;
+  reportSubtaskResult(taskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../shared/types.js").Subtask>;
+  deleteSubtask(taskId: string, subtaskId: string): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -975,6 +982,81 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    // ── Task Subtasks ──────────────────────────────────────────
+
+    async listSubtasks(taskId: string): Promise<import("../shared/types.js").Subtask[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list subtasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { subtasks: import("../shared/types.js").Subtask[] };
+      return data.subtasks;
+    },
+
+    async getSubtask(taskId: string, subtaskId: string): Promise<import("../shared/types.js").Subtask> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      return data.subtask;
+    },
+
+    async createSubtask(taskId: string, title: string, commandText: string): Promise<import("../shared/types.js").Subtask> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ title, commandText }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      return data.subtask;
+    },
+
+    async updateSubtaskStatus(taskId: string, subtaskId: string, status: TaskStatus): Promise<import("../shared/types.js").Subtask> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}/status`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update subtask status: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      return data.subtask;
+    },
+
+    async reportSubtaskResult(taskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../shared/types.js").Subtask> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}/result`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ success, summary, details }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to report subtask result: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      return data.subtask;
+    },
+
+    async deleteSubtask(taskId: string, subtaskId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
   };
 }

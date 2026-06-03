@@ -2381,4 +2381,202 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ── Task Subtasks ──────────────────────────────────────────
+
+  // list_subtasks tool
+  server.registerTool(
+    "list_subtasks",
+    {
+      description: "List all subtasks for a given parent task. Subtasks are independently trackable child tasks with their own status.",
+      inputSchema: {
+        taskId: z.string().describe("The parent task ID to list subtasks for"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const subtasks = await client.listSubtasks(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ subtasks, count: subtasks.length, taskId }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_subtask tool
+  server.registerTool(
+    "create_subtask",
+    {
+      description: "Create a new subtask under a parent task. Subtasks are independently trackable child tasks.",
+      inputSchema: {
+        taskId: z.string().describe("The parent task ID"),
+        title: z.string().describe("Short title for the subtask"),
+        commandText: z.string().describe("The command or description for the subtask"),
+      },
+    },
+    async (args) => {
+      const { taskId, title, commandText } = args;
+
+      try {
+        const subtask = await client.createSubtask(taskId, title, commandText);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ subtask }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_subtask_status tool
+  server.registerTool(
+    "update_subtask_status",
+    {
+      description: "Update the status of a subtask. Valid transitions follow the same state machine as parent tasks: pending -> picked -> running -> done/failed.",
+      inputSchema: {
+        taskId: z.string().describe("The parent task ID"),
+        subtaskId: z.string().describe("The subtask ID"),
+        status: z
+          .enum(["pending", "picked", "running", "done", "failed"])
+          .describe("The new status for the subtask"),
+      },
+    },
+    async (args) => {
+      const { taskId, subtaskId, status } = args;
+
+      try {
+        const subtask = await client.updateSubtaskStatus(taskId, subtaskId, status);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ subtask }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // report_subtask_result tool
+  server.registerTool(
+    "report_subtask_result",
+    {
+      description: "Report the result of a subtask. This sets the subtask to done or failed status and saves the result summary.",
+      inputSchema: {
+        taskId: z.string().describe("The parent task ID"),
+        subtaskId: z.string().describe("The subtask ID"),
+        success: z.boolean().describe("Whether the subtask completed successfully"),
+        summary: z.string().describe("Brief summary of the result"),
+        details: z.string().optional().describe("Optional detailed description of the result"),
+      },
+    },
+    async (args) => {
+      const { taskId, subtaskId, success, summary, details } = args;
+
+      try {
+        const subtask = await client.reportSubtaskResult(taskId, subtaskId, success, summary, details);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ subtask }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_subtask tool
+  server.registerTool(
+    "delete_subtask",
+    {
+      description: "Delete a subtask from a parent task. This permanently removes the subtask.",
+      inputSchema: {
+        taskId: z.string().describe("The parent task ID"),
+        subtaskId: z.string().describe("The subtask ID to delete"),
+      },
+    },
+    async (args) => {
+      const { taskId, subtaskId } = args;
+
+      try {
+        await client.deleteSubtask(taskId, subtaskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ ok: true, message: `Subtask ${subtaskId} deleted` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
 }

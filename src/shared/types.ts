@@ -52,6 +52,19 @@ export interface Task {
   resultDetails?: string;
 }
 
+/** A subtask — an independently trackable child task */
+export interface Subtask {
+  id: string;
+  parentTaskId: string;
+  title: string;
+  commandText: string;
+  status: TaskStatus;
+  resultSummary?: string;
+  resultDetails?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** A node in the dependency tree */
 export interface DependencyTreeNode {
   taskId: string;
@@ -114,7 +127,11 @@ export type AuditAction =
   | "api_key.revoked"
   | "task.forwarded"
   | "task.note_added"
-  | "task.note_deleted";
+  | "task.note_deleted"
+  | "task.subtask_created"
+  | "task.subtask_status_changed"
+  | "task.subtask_result_reported"
+  | "task.subtask_deleted";
 
 export interface AuditLogSearchOptions {
   action?: string;
