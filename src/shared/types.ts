@@ -29,9 +29,11 @@ export interface Device {
   createdAt: string;
 }
 
+export type TaskSource = "feishu" | "web" | "mcp";
+
 export interface Task {
   id: string;
-  source: "feishu";
+  source: TaskSource;
   feishuMessageId: string;
   feishuChatId: string;
   feishuUserId: string;

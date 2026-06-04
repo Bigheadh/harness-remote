@@ -290,6 +290,50 @@ export function renderDashboardHTML(
     .activity-time { font-size: 11px; color: var(--text-dim); }
     .overdue { color: var(--red); font-weight: 600; }
     .no-data { color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+    /* Create task modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+      width: 500px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+    }
+    .modal-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-header h2 { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 20px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; font-weight: 500; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); }
+    .form-group textarea { resize: vertical; min-height: 60px; font-family: inherit; }
+    .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+
+    /* Action buttons in detail */
+    .action-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); }
+    .btn-sm:hover { border-color: var(--accent); color: var(--text); }
+    .btn-sm.green { border-color: var(--green); color: var(--green); }
+    .btn-sm.green:hover { background: rgba(46,213,115,0.1); }
+    .btn-sm.red { border-color: var(--red); color: var(--red); }
+    .btn-sm.red:hover { background: rgba(255,71,87,0.1); }
+    .btn-sm.orange { border-color: var(--orange); color: var(--orange); }
+    .btn-sm.orange:hover { background: rgba(255,99,72,0.1); }
+    .btn-sm.blue { border-color: var(--blue); color: var(--blue); }
+    .btn-sm.blue:hover { background: rgba(30,144,255,0.1); }
+
+    /* Comment form in detail */
+    .comment-form { display: flex; gap: 8px; margin-top: 10px; }
+    .comment-form input { flex: 1; }
   </style>
 </head>
 <body>
@@ -300,6 +344,8 @@ export function renderDashboardHTML(
         <div class="sse-indicator" id="sseIndicator"></div>
         <span class="sse-label" id="sseLabel">Connecting...</span>
       </div>
+      <button class="btn" onclick="openCreateModal()">+ New Task</button>
+      <button class="btn btn-outline" onclick="exportCSV()">⬇ CSV</button>
       <button class="btn btn-outline" onclick="refresh()">↻ Refresh</button>
       <button class="btn btn-outline" onclick="logout()">Logout</button>
     </div>
@@ -339,6 +385,55 @@ export function renderDashboardHTML(
         <button class="detail-close" onclick="closeDetail()">&times;</button>
       </div>
       <div class="detail-body" id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- Create task modal -->
+  <div class="modal-overlay" id="createModal" onclick="if(event.target===this)closeCreateModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Create Task</h2>
+        <button class="detail-close" onclick="closeCreateModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Command Text *</label>
+          <textarea id="createCommand" placeholder="What should be done?" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="createDescription" placeholder="Optional details..." rows="2"></textarea>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1">
+            <label>Priority</label>
+            <select id="createPriority">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Tags (comma-separated)</label>
+            <input id="createTags" placeholder="bug, frontend, urgent" />
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1">
+            <label>Assigned Device</label>
+            <input id="createDevice" placeholder="device ID (optional)" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Due Date</label>
+            <input id="createDueDate" type="datetime-local" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline" onclick="closeCreateModal()">Cancel</button>
+          <button class="btn" id="createSubmitBtn" onclick="submitCreateTask()">Create Task</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -502,6 +597,27 @@ export function renderDashboardHTML(
         if (t.completedAt) html += field('Completed At', formatTime(t.completedAt));
         html += '</div></div></div>';
 
+        // Action buttons
+        html += '<div class=\"detail-section\"><div class=\"detail-section-header\">⚡ Actions</div><div class=\"detail-section-body\">';
+        html += '<div class=\"action-bar\" id=\"actionBar\">';
+        if (t.status === 'pending' || t.status === 'picked') {
+          html += '<button class=\"btn-sm orange\" onclick=\"taskAction(\\'' + t.id + '\\',\\'running\\')\">▶ Start</button>';
+        }
+        if (t.status === 'running' || t.status === 'picked') {
+          html += '<button class=\"btn-sm green\" onclick=\"taskAction(\\'' + t.id + '\\',\\'done\\')\">✅ Done</button>';
+          html += '<button class=\"btn-sm red\" onclick=\"taskAction(\\'' + t.id + '\\',\\'failed\\')\">❌ Fail</button>';
+        }
+        if (t.status === 'done' || t.status === 'failed') {
+          html += '<button class=\"btn-sm blue\" onclick=\"taskRetry(\\'' + t.id + '\\')\">🔄 Retry</button>';
+        }
+        if (t.pinned) {
+          html += '<button class=\"btn-sm\" onclick=\"taskUnpin(\\'' + t.id + '\\')\">📌 Unpin</button>';
+        } else {
+          html += '<button class=\"btn-sm\" onclick=\"taskPin(\\'' + t.id + '\\')\">📌 Pin</button>';
+        }
+        html += '<button class=\"btn-sm\" onclick=\"taskClone(\\'' + t.id + '\\')\">📋 Clone</button>';
+        html += '</div></div></div>';
+
         // Tags section
         if (t.tags && t.tags.length > 0) {
           html += '<div class="detail-section"><div class="detail-section-header">🏷️ Tags</div><div class="detail-section-body">';
@@ -601,21 +717,40 @@ export function renderDashboardHTML(
       try {
         const data = await apiFetch('/api/tasks/' + taskId + '/comments');
         const comments = data.comments || [];
-        if (comments.length === 0) return;
 
         const section = document.createElement('div');
         section.className = 'detail-section';
-        section.innerHTML = '<div class="detail-section-header">💬 Comments (' + comments.length + ')</div>' +
-          '<div class="detail-section-body">' +
-          comments.map(c =>
+        let inner = '<div class="detail-section-header">💬 Comments (' + comments.length + ')</div>';
+        inner += '<div class="detail-section-body">';
+        if (comments.length > 0) {
+          inner += comments.map(c =>
             '<div class="comment-item">' +
               '<div class="comment-meta">' + escapeHtml(c.author) + ' · ' + formatTime(c.createdAt) + '</div>' +
               '<div class="comment-body">' + escapeHtml(c.body) + '</div>' +
             '</div>'
-          ).join('') +
+          ).join('');
+        }
+        inner += '<div class="comment-form">' +
+          '<input id="commentInput" type="text" placeholder="Add a comment..." />' +
+          '<button class="btn-sm blue" onclick="addComment('' + taskId + '')">Send</button>' +
           '</div>';
+        inner += '</div>';
+        section.innerHTML = inner;
         document.getElementById('detailBody').appendChild(section);
       } catch { /* comments endpoint may not exist */ }
+    }
+
+    async function addComment(taskId) {
+      const input = document.getElementById('commentInput');
+      if (!input || !input.value.trim()) return;
+      try {
+        await apiFetch('/api/tasks/' + taskId + '/comments', {
+          method: 'POST',
+          body: JSON.stringify({ body: input.value.trim() }),
+        });
+        input.value = '';
+        showDetail(taskId);
+      } catch (e) { alert('Comment failed: ' + e.message); }
     }
 
     async function loadActivity(taskId) {
@@ -712,6 +847,83 @@ export function renderDashboardHTML(
       };
     }
 
+    // Task actions from detail panel
+    let currentDetailId = null;
+    async function taskAction(id, status) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/status', {
+          method: 'POST',
+          body: JSON.stringify({ status }),
+        });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Action failed: ' + e.message); }
+    }
+    async function taskRetry(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/retry', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Retry failed: ' + e.message); }
+    }
+    async function taskPin(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/pin', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Pin failed: ' + e.message); }
+    }
+    async function taskUnpin(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/unpin', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Unpin failed: ' + e.message); }
+    }
+    async function taskClone(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/clone', { method: 'POST' });
+        loadTasks();
+      } catch (e) { alert('Clone failed: ' + e.message); }
+    }
+
+    // Create task modal
+    function openCreateModal() {
+      document.getElementById('createModal').classList.add('open');
+      document.getElementById('createCommand').focus();
+    }
+    function closeCreateModal() {
+      document.getElementById('createModal').classList.remove('open');
+      document.getElementById('createCommand').value = '';
+      document.getElementById('createDescription').value = '';
+      document.getElementById('createPriority').value = 'normal';
+      document.getElementById('createTags').value = '';
+      document.getElementById('createDevice').value = '';
+      document.getElementById('createDueDate').value = '';
+    }
+    async function submitCreateTask() {
+      const commandText = document.getElementById('createCommand').value.trim();
+      if (!commandText) { alert('Command text is required'); return; }
+      const body = {
+        commandText,
+        description: document.getElementById('createDescription').value.trim() || undefined,
+        priority: document.getElementById('createPriority').value,
+        tags: document.getElementById('createTags').value.split(',').map(s => s.trim()).filter(Boolean),
+        assignedDeviceId: document.getElementById('createDevice').value.trim() || undefined,
+        dueDate: document.getElementById('createDueDate').value ? new Date(document.getElementById('createDueDate').value).toISOString() : undefined,
+      };
+      try {
+        await apiFetch('/api/tasks', { method: 'POST', body: JSON.stringify(body) });
+        closeCreateModal();
+        loadTasks();
+      } catch (e) { alert('Create failed: ' + e.message); }
+    }
+
+    // CSV export
+    function exportCSV() {
+      window.open(API_BASE + '/api/tasks/export.csv', '_blank');
+    }
+
     // Event listeners
     document.getElementById('search').addEventListener('input', e => {
       searchQuery = e.target.value;
@@ -731,7 +943,17 @@ export function renderDashboardHTML(
       renderTasks();
     });
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closeDetail();
+      if (e.key === 'Escape') {
+        if (document.getElementById('createModal').classList.contains('open')) {
+          closeCreateModal();
+        } else {
+          closeDetail();
+        }
+      }
+      if (e.key === 'n' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        openCreateModal();
+      }
     });
 
     // Init

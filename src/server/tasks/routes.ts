@@ -339,6 +339,67 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
+  // POST /api/tasks - create a task from the web dashboard (requires tasks.write)
+  server.post("/api/tasks", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as {
+      commandText?: string;
+      description?: string;
+      priority?: TaskPriority;
+      tags?: string[];
+      assignedDeviceId?: string;
+      dueDate?: string;
+    };
+
+    if (!body.commandText || body.commandText.trim().length === 0) {
+      return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "commandText is required" } });
+    }
+
+    const now = new Date().toISOString();
+    const task = await store.createTask({
+      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      source: "web",
+      feishuMessageId: `web_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      feishuChatId: "",
+      feishuUserId: (authCtx as { username?: string }).username ?? "web_user",
+      commandText: body.commandText.trim(),
+      status: "pending",
+      priority: body.priority ?? "normal",
+      tags: body.tags,
+      assignedDeviceId: body.assignedDeviceId,
+      dueDate: body.dueDate,
+      description: body.description,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Audit log
+    if (auditStore) {
+      await auditStore.log({
+        taskId: task.id,
+        action: "task.created" as never,
+        actor: (authCtx as { username?: string }).username ?? "web_user",
+        actorType: "api",
+        details: { source: "web", commandText: body.commandText.slice(0, 100) },
+      });
+    }
+
+    // Broadcast SSE
+    broadcastTaskUpdated(task);
+
+    log.info({ taskId: task.id, source: "web" }, "Task created from web dashboard");
+    return reply.code(201).send({ task });
+  });
+
   // GET /api/tasks/search - search task history (requires tasks.search)
   server.get("/api/tasks/search", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
