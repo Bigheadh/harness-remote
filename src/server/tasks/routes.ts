@@ -330,12 +330,14 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { status, limit, deviceId } = req.query as {
+    const { status, limit, deviceId, from, to } = req.query as {
       status?: TaskStatus;
       limit?: number;
       deviceId?: string;
+      from?: string;
+      to?: string;
     };
-    const tasks = await store.listTasks(status, limit, deviceId);
+    const tasks = await store.listTasks(status, limit, deviceId, from, to);
     return reply.send({ tasks });
   });
 

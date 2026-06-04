@@ -119,6 +119,20 @@ export function renderDashboardHTML(
     }
     .toolbar input:focus, .toolbar select:focus { border-color: var(--accent); }
     .toolbar input { flex: 1; min-width: 200px; }
+    .toolbar input[type="date"] {
+      max-width: 150px;
+      flex: none;
+    }
+    .toolbar label.date-label {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .toolbar .date-range-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: none;
+    }
     .task-table {
       width: 100%;
       border-collapse: collapse;
@@ -372,6 +386,14 @@ export function renderDashboardHTML(
         <option value="low">Low</option>
       </select>
       <input id="tagFilter" type="text" placeholder="Filter by tag..." style="max-width:160px;flex:none" />
+      <div class="date-range-group">
+        <label class="date-label">From</label>
+        <input id="dateFrom" type="date" title="Filter by creation date (start)" />
+      </div>
+      <div class="date-range-group">
+        <label class="date-label">To</label>
+        <input id="dateTo" type="date" title="Filter by creation date (end)" />
+      </div>
     </div>
 
     <div id="taskList"><div class="loading">Loading...</div></div>
@@ -446,6 +468,8 @@ export function renderDashboardHTML(
     let currentPriorityFilter = '';
     let searchQuery = '';
     let tagQuery = '';
+    let dateFrom = '';
+    let dateTo = '';
     let allTags = new Set();
 
     async function apiFetch(path, opts = {}) {
@@ -467,6 +491,11 @@ export function renderDashboardHTML(
     async function loadTasks() {
       try {
         const params = new URLSearchParams({ limit: '500' });
+        if (dateFrom) params.set('from', dateFrom);
+        if (dateTo) {
+          // Append T23:59:59 to include tasks created on the "to" date
+          params.set('to', dateTo + 'T23:59:59');
+        }
         const data = await apiFetch('/api/tasks?' + params);
         allTasks = data.tasks || [];
         // Collect all tags
@@ -941,6 +970,14 @@ export function renderDashboardHTML(
     document.getElementById('tagFilter').addEventListener('input', e => {
       tagQuery = e.target.value;
       renderTasks();
+    });
+    document.getElementById('dateFrom').addEventListener('change', e => {
+      dateFrom = e.target.value;
+      loadTasks();
+    });
+    document.getElementById('dateTo').addEventListener('change', e => {
+      dateTo = e.target.value;
+      loadTasks();
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {

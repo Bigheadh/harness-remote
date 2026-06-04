@@ -37,7 +37,7 @@ export interface TaskCounts {
 
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
-  listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
+  listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string): Promise<Task[]>;
   searchTasks(options: SearchOptions): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   updateTaskStatus(id: string, status: TaskStatus): Promise<Task>;
@@ -643,7 +643,50 @@ export function createTaskStore(storagePath: string): TaskStore {
       return rowToTask(row);
     },
 
-    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]> {
+    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string): Promise<Task[]> {
+      // Use dynamic SQL when date range filtering is requested
+      if (from || to) {
+        const conditions: string[] = ["archived_at IS NULL"];
+        const params: (string | number | null)[] = [];
+
+        if (status) {
+          conditions.push("status = ?");
+          params.push(status);
+        }
+        if (deviceId) {
+          conditions.push("(assigned_device_id IS NULL OR assigned_device_id = ?)");
+          params.push(deviceId);
+        }
+        if (from) {
+          conditions.push("created_at >= ?");
+          params.push(from);
+        }
+        if (to) {
+          conditions.push("created_at <= ?");
+          params.push(to);
+        }
+
+        const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const effectiveLimit = limit ?? 100;
+        const sql = `
+          SELECT * FROM tasks ${where}
+          ORDER BY
+            pinned DESC,
+            CASE priority
+              WHEN 'urgent' THEN 0
+              WHEN 'high' THEN 1
+              WHEN 'normal' THEN 2
+              WHEN 'low' THEN 3
+            END,
+            created_at DESC
+          LIMIT ?
+        `;
+        const rows = db.prepare(sql).all(...params, effectiveLimit) as Array<
+          Record<string, unknown>
+        >;
+        return rows.map(rowToTask);
+      }
+
       const effectiveLimit = limit ?? 20;
       const rows = selectTasks.all(status ?? null, deviceId ?? null, effectiveLimit) as Array<
         Record<string, unknown>

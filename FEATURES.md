@@ -215,5 +215,5 @@
 - [x] Task detail action buttons (start, done, fail, retry, pin/unpin, clone)
 - [x] Comment form in task detail panel (add comments without leaving the dashboard)
 - [x] Keyboard shortcuts (Ctrl+N to create, Escape to close modals)
-- [ ] Date range filter (filter tasks by creation date range in toolbar)
+- [x] Date range filter (filter tasks by creation date range in toolbar)
 - [ ] Bulk selection with actions (checkbox selection + bulk status update/assign/delete)
