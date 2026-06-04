@@ -623,6 +623,96 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, ...result });
   });
 
+  // POST /api/tasks/bulk/tags/add - add tags to multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/tags/add", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; tags?: string[] };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+    if (!Array.isArray(body?.tags) || body.tags.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'tags' (non-empty array of strings)" },
+      });
+    }
+
+    // Validate all tags are non-empty strings
+    const validTags = body.tags
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t.length > 0);
+    if (validTags.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "All tags must be non-empty strings" },
+      });
+    }
+
+    const result = await store.bulkAddTags(body.ids, validTags);
+    log.info({ count: result.updated, tags: validTags, errors: result.errors.length }, "Bulk add tags completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.tags_added",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, tags: validTags, ids: body.ids, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
+  // POST /api/tasks/bulk/tags/remove - remove a tag from multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/tags/remove", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; tag?: string };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+    if (typeof body?.tag !== "string" || body.tag.trim() === "") {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'tag' (non-empty string)" },
+      });
+    }
+
+    const result = await store.bulkRemoveTags(body.ids, body.tag.trim());
+    log.info({ count: result.updated, tag: body.tag, errors: result.errors.length }, "Bulk remove tag completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.tags_removed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, tag: body.tag.trim(), ids: body.ids, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
   // GET /api/tasks/ready - list tasks ready for processing (pending + all deps met)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get("/api/tasks/ready", async (req: FastifyRequest, reply: FastifyReply) => {

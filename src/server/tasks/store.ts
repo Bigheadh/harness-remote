@@ -69,6 +69,8 @@ export interface TaskStore {
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
+  bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
+  bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
   // Task template methods
   createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
   listTemplates(): Promise<TaskTemplate[]>;
@@ -1293,6 +1295,54 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       return { deleted, errors };
+    },
+
+    async bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          const existingTags = parseTags(row["tags"]) ?? [];
+          const mergedTags = [...new Set([...existingTags, ...tags])].sort();
+          const tagsJson = JSON.stringify(mergedTags);
+          db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(tagsJson, now, id);
+          updated++;
+        } catch (e) {
+          errors.push(`Error adding tags to ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
+    },
+
+    async bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          const existingTags = parseTags(row["tags"]) ?? [];
+          const filteredTags = existingTags.filter((t) => t !== tag);
+          const tagsJson = filteredTags.length > 0 ? JSON.stringify(filteredTags) : null;
+          db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(tagsJson, now, id);
+          updated++;
+        } catch (e) {
+          errors.push(`Error removing tag from ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
     },
 
     // ── Task Templates ──────────────────────────────────────────────

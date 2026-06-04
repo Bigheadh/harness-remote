@@ -291,6 +291,18 @@ function createMockClient(): TaskApiClient & {
       return { deleted: ids.length, errors: [] };
     },
 
+    async bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkAddTags", args: [ids, tags] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
+    async bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkRemoveTags", args: [ids, tag] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
     async listTemplates(): Promise<import("../../src/shared/types.js").TaskTemplate[]> {
       calls.push({ method: "listTemplates", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);

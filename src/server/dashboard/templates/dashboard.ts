@@ -437,6 +437,8 @@ export function renderDashboardHTML(
         <button class="btn-sm orange" onclick="bulkAction('running')">▶ Start</button>
         <button class="btn-sm red" onclick="bulkAction('failed')">❌ Mark Failed</button>
         <button class="btn-sm blue" onclick="bulkAssign()">💻 Assign Device</button>
+        <button class="btn-sm blue" onclick="bulkAddTags()">🏷️ Add Tags</button>
+        <button class="btn-sm orange" onclick="bulkRemoveTag()">🏷️ Remove Tag</button>
         <button class="btn-sm red" onclick="bulkDelete()">🗑️ Delete</button>
         <button class="btn-sm" onclick="clearSelection()">✕ Clear</button>
       </div>
@@ -1179,6 +1181,40 @@ export function renderDashboardHTML(
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk delete failed: ' + e.message); }
+    }
+
+    async function bulkAddTags() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      const tagsInput = prompt('Enter tags to add (comma-separated):');
+      if (!tagsInput || !tagsInput.trim()) return;
+      const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      if (tags.length === 0) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/tags/add', {
+          method: 'POST',
+          body: JSON.stringify({ ids, tags }),
+        });
+        alert('Added tags to ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk add tags failed: ' + e.message); }
+    }
+
+    async function bulkRemoveTag() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      const tag = prompt('Enter tag to remove:');
+      if (!tag || !tag.trim()) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/tags/remove', {
+          method: 'POST',
+          body: JSON.stringify({ ids, tag: tag.trim() }),
+        });
+        alert('Removed tag from ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk remove tag failed: ' + e.message); }
     }
 
     // Init

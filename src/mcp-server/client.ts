@@ -36,6 +36,8 @@ export interface TaskApiClient {
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
+  bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
+  bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
   // Template methods
   listTemplates(): Promise<TaskTemplate[]>;
   getTemplate(templateId: string): Promise<TaskTemplate>;
@@ -539,6 +541,48 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { deleted: number; errors: string[] };
       return { deleted: data.deleted, errors: data.errors };
+    },
+
+    async bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/tags/add`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids, tags }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk add tags: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { updated: number; errors: string[] };
+      return { updated: data.updated, errors: data.errors };
+    },
+
+    async bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/tags/remove`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids, tag }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk remove tag: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { updated: number; errors: string[] };
+      return { updated: data.updated, errors: data.errors };
     },
 
     // ── Task Templates ──────────────────────────────────────────────

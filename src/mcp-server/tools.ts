@@ -607,27 +607,31 @@ export function registerMcpTools(
     "manage_task_tags",
     {
       description:
-        "Manage tags on a task. Supports adding tags, removing a tag, or listing all tags. Use action 'add' to add tags, 'remove' to remove a tag, or 'list' to get all unique tags in the system.",
+        "Manage tags on tasks. Supports adding/removing tags on single or multiple tasks, or listing all tags. Use action 'add' for single task add, 'remove' for single task remove, 'bulk_add' to add tags to multiple tasks, 'bulk_remove' to remove a tag from multiple tasks, or 'list' to get all unique tags.",
       inputSchema: {
         action: z
-          .enum(["add", "remove", "list"])
+          .enum(["add", "remove", "list", "bulk_add", "bulk_remove"])
           .describe("The tag action to perform"),
         taskId: z
           .string()
           .optional()
           .describe("The task ID (required for add/remove actions)"),
+        taskIds: z
+          .array(z.string())
+          .optional()
+          .describe("Array of task IDs (required for bulk_add/bulk_remove actions)"),
         tags: z
           .array(z.string())
           .optional()
-          .describe("Tags to add (required for 'add' action)"),
+          .describe("Tags to add (required for 'add' and 'bulk_add' actions)"),
         tag: z
           .string()
           .optional()
-          .describe("Tag to remove (required for 'remove' action)"),
+          .describe("Tag to remove (required for 'remove' and 'bulk_remove' actions)"),
       },
     },
     async (args) => {
-      const { action, taskId, tags, tag } = args;
+      const { action, taskId, taskIds, tags, tag } = args;
 
       try {
         if (action === "list") {
@@ -685,6 +689,54 @@ export function registerMcpTools(
               {
                 type: "text" as const,
                 text: JSON.stringify({ task, message: `Removed tag: ${tag}` }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (action === "bulk_add") {
+          if (!taskIds || taskIds.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "taskIds array is required for 'bulk_add' action" }) }],
+              isError: true,
+            };
+          }
+          if (!tags || tags.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "tags array is required for 'bulk_add' action" }) }],
+              isError: true,
+            };
+          }
+          const result = await client.bulkAddTags(taskIds, tags);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ result, message: `Added tags [${tags.join(", ")}] to ${result.updated} task(s)` }, null, 2),
+              },
+            ],
+          };
+        }
+
+        if (action === "bulk_remove") {
+          if (!taskIds || taskIds.length === 0) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "taskIds array is required for 'bulk_remove' action" }) }],
+              isError: true,
+            };
+          }
+          if (!tag) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ error: "tag is required for 'bulk_remove' action" }) }],
+              isError: true,
+            };
+          }
+          const result = await client.bulkRemoveTags(taskIds, tag);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ result, message: `Removed tag '${tag}' from ${result.updated} task(s)` }, null, 2),
               },
             ],
           };
