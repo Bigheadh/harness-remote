@@ -216,4 +216,10 @@
 - [x] Comment form in task detail panel (add comments without leaving the dashboard)
 - [x] Keyboard shortcuts (Ctrl+N to create, Escape to close modals)
 - [x] Date range filter (filter tasks by creation date range in toolbar)
-- [ ] Bulk selection with actions (checkbox selection + bulk status update/assign/delete)
+- [x] Bulk selection with actions (checkbox selection + bulk status update/assign/delete)
+
+## Phase 33: Advanced Dashboard UX
+- [x] Sortable columns (click headers to sort by status, priority, created date, due date)
+- [ ] Bulk tag operations (add/remove tags from selected tasks)
+- [ ] Task quick-create from detail panel (clone with modification)
+- [x] Dashboard task count summary in page title (Tab title shows counts)

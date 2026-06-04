@@ -346,8 +346,39 @@ export function renderDashboardHTML(
     .btn-sm.blue:hover { background: rgba(30,144,255,0.1); }
 
     /* Comment form in detail */
-    .comment-form { display: flex; gap: 8px; margin-top: 10px; }
-    .comment-form input { flex: 1; }
+   .comment-form { display: flex; gap: 8px; margin-top: 10px; }
+   .comment-form input { flex: 1; }
+        .task-table th.sortable { cursor: pointer; user-select: none; }
+    .task-table th.sortable:hover { color: var(--accent); }
+    .task-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.5; }
+    .task-table th.sort-asc .sort-arrow,
+    .task-table th.sort-desc .sort-arrow { opacity: 1; color: var(--accent); }
+
+    /* Bulk selection */
+    .bulk-bar {
+      display: none;
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-bottom: 12px;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .bulk-bar.visible { display: flex; }
+    .bulk-bar .bulk-count { font-size: 13px; color: var(--accent); font-weight: 600; }
+    .bulk-bar .bulk-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .task-table th:first-child,
+    .task-table td:first-child { width: 36px; text-align: center; }
+    .task-table input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 15px; height: 15px; cursor: pointer;
+    }
+    .bulk-select-modal {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+      width: 340px; max-width: 90vw;
+    }
   </style>
 </head>
 <body>
@@ -397,6 +428,19 @@ export function renderDashboardHTML(
     </div>
 
     <div id="taskList"><div class="loading">Loading...</div></div>
+
+    <!-- Bulk actions bar -->
+    <div class="bulk-bar" id="bulkBar">
+      <span class="bulk-count" id="bulkCount">0 selected</span>
+      <div class="bulk-actions">
+        <button class="btn-sm green" onclick="bulkAction('done')">✅ Mark Done</button>
+        <button class="btn-sm orange" onclick="bulkAction('running')">▶ Start</button>
+        <button class="btn-sm red" onclick="bulkAction('failed')">❌ Mark Failed</button>
+        <button class="btn-sm blue" onclick="bulkAssign()">💻 Assign Device</button>
+        <button class="btn-sm red" onclick="bulkDelete()">🗑️ Delete</button>
+        <button class="btn-sm" onclick="clearSelection()">✕ Clear</button>
+      </div>
+    </div>
   </div>
 
   <!-- Detail overlay -->
@@ -471,6 +515,8 @@ export function renderDashboardHTML(
     let dateFrom = '';
     let dateTo = '';
     let allTags = new Set();
+    let sortCol = '';
+    let sortDir = 'asc';
 
     async function apiFetch(path, opts = {}) {
       const res = await fetch(API_BASE + path, {
@@ -529,10 +575,33 @@ export function renderDashboardHTML(
         '<div class="stat-label">' + s.label + '</div>' +
         '<div class="stat-value ' + s.cls + '">' + s.value + '</div></div>'
       ).join('');
+
+      // Update page title with counts
+      const active = counts.pending + counts.picked + counts.running;
+      document.title = (active > 0 ? '(' + active + ') ' : '') + 'Harness Remote - Task Dashboard';
     }
 
     function renderTasks() {
       let filtered = allTasks;
+
+      // Sort
+      if (sortCol) {
+        const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
+        const statusOrder = { pending: 0, picked: 1, running: 2, failed: 3, done: 4 };
+        filtered = [...filtered].sort((a, b) => {
+          let va = a[sortCol], vb = b[sortCol];
+          if (sortCol === 'priority') { va = priorityOrder[va] ?? 9; vb = priorityOrder[vb] ?? 9; }
+          else if (sortCol === 'status') { va = statusOrder[va] ?? 9; vb = statusOrder[vb] ?? 9; }
+          else if (sortCol === 'dueDate' || sortCol === 'createdAt') {
+            va = va ? new Date(va).getTime() : 0;
+            vb = vb ? new Date(vb).getTime() : 0;
+          }
+          else if (sortCol === 'id') { va = (va || '').slice(0, 16); vb = (vb || '').slice(0, 16); }
+          if (va < vb) return sortDir === 'asc' ? -1 : 1;
+          if (va > vb) return sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
 
       if (currentFilter) {
         filtered = filtered.filter(t => t.status === currentFilter);
@@ -577,6 +646,7 @@ export function renderDashboardHTML(
           : '<span style="color:var(--text-dim);font-size:12px">—</span>';
 
         return '<tr onclick="showDetail(\\'' + t.id + '\\')" style="cursor:pointer">' +
+          '<td onclick="event.stopPropagation()"><input type="checkbox" class="row-cb" data-id="' + t.id + '" onchange="onRowSelect()" /></td>' +
           '<td><code style="font-size:12px;color:var(--text-dim)">' + t.id.slice(0, 16) + '...</code></td>' +
           '<td><span class="badge badge-' + t.status + '">' + t.status + '</span>' + pin + '</td>' +
           '<td><span class="priority priority-' + t.priority + '">' + t.priority + '</span></td>' +
@@ -591,8 +661,15 @@ export function renderDashboardHTML(
       document.getElementById('taskList').innerHTML =
         '<table class="task-table">' +
           '<thead><tr>' +
-            '<th>ID</th><th>Status</th><th>Priority</th><th>Command</th>' +
-            '<th>Tags</th><th>Due Date</th><th>Device</th><th>Created</th>' +
+            '<th><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)" title="Select all" /></th>' +
+            '<th class="sortable" onclick="sortBy(\'id\')">ID <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\'status\')">Status <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\'priority\')">Priority <span class="sort-arrow">⇅</span></th>' +
+            '<th>Command</th>' +
+            '<th>Tags</th>' +
+            '<th class="sortable" onclick="sortBy(\'dueDate\')">Due Date <span class="sort-arrow">⇅</span></th>' +
+            '<th>Device</th>' +
+            '<th class="sortable" onclick="sortBy(\'createdAt\')">Created <span class="sort-arrow">⇅</span></th>' +
           '</tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
         '</table>';
@@ -993,6 +1070,118 @@ export function renderDashboardHTML(
       }
     });
 
+
+    // Column sorting
+    function sortBy(col) {
+      if (sortCol === col) {
+        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortCol = col;
+        sortDir = 'asc';
+      }
+      // Update header indicators
+      document.querySelectorAll('.task-table th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        th.querySelector('.sort-arrow').textContent = '⇅';
+      });
+      const headers = document.querySelectorAll('.task-table th.sortable');
+      headers.forEach(th => {
+        if (th.textContent.trim().startsWith(col.charAt(0).toUpperCase() + col.slice(1)) ||
+            (col === 'id' && th.textContent.includes('ID')) ||
+            (col === 'dueDate' && th.textContent.includes('Due'))) {
+          th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+          th.querySelector('.sort-arrow').textContent = sortDir === 'asc' ? '↑' : '↓';
+        }
+      });
+      renderTasks();
+    }
+
+    // Bulk selection
+    let selectedIds = new Set();
+
+    function onRowSelect() {
+      const checkboxes = document.querySelectorAll('.row-cb');
+      selectedIds.clear();
+      checkboxes.forEach(cb => { if (cb.checked) selectedIds.add(cb.dataset.id); });
+      updateBulkBar();
+    }
+
+    function toggleSelectAll(checked) {
+      const checkboxes = document.querySelectorAll('.row-cb');
+      selectedIds.clear();
+      checkboxes.forEach(cb => {
+        cb.checked = checked;
+        if (checked) selectedIds.add(cb.dataset.id);
+      });
+      updateBulkBar();
+    }
+
+    function clearSelection() {
+      selectedIds.clear();
+      document.querySelectorAll('.row-cb').forEach(cb => cb.checked = false);
+      const sa = document.getElementById('selectAll');
+      if (sa) sa.checked = false;
+      updateBulkBar();
+    }
+
+    function updateBulkBar() {
+      const bar = document.getElementById('bulkBar');
+      const count = document.getElementById('bulkCount');
+      if (selectedIds.size > 0) {
+        bar.classList.add('visible');
+        count.textContent = selectedIds.size + ' selected';
+      } else {
+        bar.classList.remove('visible');
+      }
+    }
+
+    async function bulkAction(status) {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      if (!confirm('Set ' + ids.length + ' task(s) to ' + status + '?')) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/status', {
+          method: 'POST',
+          body: JSON.stringify({ ids, status }),
+        });
+        alert('Updated ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk status failed: ' + e.message); }
+    }
+
+    async function bulkAssign() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      const deviceId = prompt('Enter device ID to assign to:');
+      if (!deviceId || !deviceId.trim()) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/assign', {
+          method: 'POST',
+          body: JSON.stringify({ ids, deviceId: deviceId.trim() }),
+        });
+        alert('Assigned ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk assign failed: ' + e.message); }
+    }
+
+    async function bulkDelete() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      if (!confirm('Delete ' + ids.length + ' task(s)? This cannot be undone.')) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/delete', {
+          method: 'POST',
+          body: JSON.stringify({ ids }),
+        });
+        alert('Deleted ' + (data.deleted || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk delete failed: ' + e.message); }
+    }
+
+    // Init
     // Init
     loadTasks();
     connectSSE();
