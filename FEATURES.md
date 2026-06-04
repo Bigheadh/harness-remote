@@ -221,5 +221,5 @@
 ## Phase 33: Advanced Dashboard UX
 - [x] Sortable columns (click headers to sort by status, priority, created date, due date)
 - [x] Bulk tag operations (add/remove tags from selected tasks)
-- [ ] Task quick-create from detail panel (clone with modification)
+- [x] Task quick-create from detail panel (clone with modification)
 - [x] Dashboard task count summary in page title (Tab title shows counts)

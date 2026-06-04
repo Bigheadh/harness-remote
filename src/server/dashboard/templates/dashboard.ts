@@ -724,6 +724,7 @@ export function renderDashboardHTML(
           html += '<button class=\"btn-sm\" onclick=\"taskPin(\\'' + t.id + '\\')\">📌 Pin</button>';
         }
         html += '<button class=\"btn-sm\" onclick=\"taskClone(\\'' + t.id + '\\')\">📋 Clone</button>';
+        html += '<button class=\"btn-sm blue\" onclick=\"taskCloneAndEdit(\\'' + t.id + '\\')\">📝 Clone & Edit</button>';
         html += '</div></div></div>';
 
         // Tags section
@@ -994,9 +995,31 @@ export function renderDashboardHTML(
         loadTasks();
       } catch (e) { alert('Clone failed: ' + e.message); }
     }
+    async function taskCloneAndEdit(id) {
+      try {
+        const data = await apiFetch('/api/tasks/' + id);
+        const t = data.task;
+        if (!t) return;
+        // Set modal title to indicate clone mode
+        document.querySelector('#createModal .modal-header h2').textContent = 'Clone & Edit Task';
+        // Pre-fill form fields
+        document.getElementById('createCommand').value = t.commandText || '';
+        document.getElementById('createDescription').value = t.description || '';
+        document.getElementById('createPriority').value = t.priority || 'normal';
+        document.getElementById('createTags').value = (t.tags || []).join(', ');
+        document.getElementById('createDevice').value = t.assignedDeviceId || '';
+        document.getElementById('createDueDate').value = t.dueDate ? new Date(t.dueDate).toISOString().slice(0, 16) : '';
+        // Show modal
+        document.getElementById('createModal').classList.add('open');
+        document.getElementById('createCommand').focus();
+        // Close the detail panel
+        closeDetail();
+      } catch (e) { alert('Failed to load task for cloning: ' + e.message); }
+    }
 
     // Create task modal
     function openCreateModal() {
+      document.querySelector('#createModal .modal-header h2').textContent = 'Create Task';
       document.getElementById('createModal').classList.add('open');
       document.getElementById('createCommand').focus();
     }
