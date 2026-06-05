@@ -247,3 +247,7 @@
 - [x] MCP client: priority parameter on listTasks() and searchTasks()
 - [x] MCP tools: priority filter on list_tasks and search_tasks tools
 - [x] Updated mock client in tests for new interface
+
+## Phase 37: v14 Description-Aware Search
+- [x] Store layer: description LIKE filter in searchTasks() full-text query
+- [x] MCP tools: updated search_tasks description and q parameter docs

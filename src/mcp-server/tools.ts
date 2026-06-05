@@ -82,12 +82,12 @@ export function registerMcpTools(
     "search_tasks",
     {
       description:
-        "Search task history by text, status, priority, date range, and tags. Returns matching tasks sorted by creation time (newest first).",
+        "Search task history by text, status, priority, date range, and tags. Text search covers command text, description, and result summary. Returns matching tasks sorted by creation time (newest first).",
       inputSchema: {
         q: z
           .string()
           .optional()
-          .describe("Full-text search on task command text and result summary"),
+          .describe("Full-text search on task command text, description, and result summary"),
         status: z
           .enum(["pending", "picked", "running", "done", "failed"])
           .optional()

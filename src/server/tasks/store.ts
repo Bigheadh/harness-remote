@@ -726,9 +726,9 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       if (options.q) {
-        conditions.push("(command_text LIKE ? OR result_summary LIKE ?)");
+        conditions.push("(command_text LIKE ? OR result_summary LIKE ? OR description LIKE ?)");
         const pattern = `%${options.q}%`;
-        params.push(pattern, pattern);
+        params.push(pattern, pattern, pattern);
       }
 
       if (options.deviceId) {

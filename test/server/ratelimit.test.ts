@@ -17,7 +17,7 @@ describe("RateLimiter", () => {
       const result = limiter.consume("user:alice");
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(5);
-      expect(result.remaining).toBe(5 - i - 1);
+      expect(result.remaining).toBe(4 - i);
     }
   });
 
