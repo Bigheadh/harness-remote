@@ -223,3 +223,11 @@
 - [x] Bulk tag operations (add/remove tags from selected tasks)
 - [x] Task quick-create from detail panel (clone with modification)
 - [x] Dashboard task count summary in page title (Tab title shows counts)
+
+## Phase 34: v11 Dashboard Bulk Archive
+- [x] Dashboard bulk archive button (archive multiple tasks from dashboard)
+- [x] Dashboard bulk unarchive button (restore multiple archived tasks from dashboard)
+- [x] POST /api/tasks/bulk/archive endpoint (bulk soft-delete with audit logging)
+- [x] POST /api/tasks/bulk/unarchive endpoint (bulk restore with audit logging)
+- [x] MCP bulk_archive_tasks tool (archive multiple tasks via MCP)
+- [x] MCP bulk_unarchive_tasks tool (restore multiple tasks via MCP)

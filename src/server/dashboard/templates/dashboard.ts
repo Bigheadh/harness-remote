@@ -439,6 +439,8 @@ export function renderDashboardHTML(
         <button class="btn-sm blue" onclick="bulkAssign()">💻 Assign Device</button>
         <button class="btn-sm blue" onclick="bulkAddTags()">🏷️ Add Tags</button>
         <button class="btn-sm orange" onclick="bulkRemoveTag()">🏷️ Remove Tag</button>
+        <button class="btn-sm purple" onclick="bulkArchive()">📦 Archive</button>
+        <button class="btn-sm orange" onclick="bulkUnarchive()">📤 Unarchive</button>
         <button class="btn-sm red" onclick="bulkDelete()">🗑️ Delete</button>
         <button class="btn-sm" onclick="clearSelection()">✕ Clear</button>
       </div>
@@ -1238,6 +1240,36 @@ export function renderDashboardHTML(
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk remove tag failed: ' + e.message); }
+    }
+
+    async function bulkArchive() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      if (!confirm('Archive ' + ids.length + ' task(s)? They will be hidden from the active view.')) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/archive', {
+          method: 'POST',
+          body: JSON.stringify({ ids }),
+        });
+        alert('Archived ' + (data.archived || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk archive failed: ' + e.message); }
+    }
+
+    async function bulkUnarchive() {
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+      if (!confirm('Restore ' + ids.length + ' archived task(s)?')) return;
+      try {
+        const data = await apiFetch('/api/tasks/bulk/unarchive', {
+          method: 'POST',
+          body: JSON.stringify({ ids }),
+        });
+        alert('Restored ' + (data.restored || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        clearSelection();
+        loadTasks();
+      } catch (e) { alert('Bulk unarchive failed: ' + e.message); }
     }
 
     // Init

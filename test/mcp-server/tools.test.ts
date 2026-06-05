@@ -1007,6 +1007,18 @@ function createMockClient(): TaskApiClient & {
       ];
     },
 
+    async bulkArchiveTasks(ids: string[]): Promise<{ archived: number; errors: string[] }> {
+      calls.push({ method: "bulkArchiveTasks", args: [ids] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { archived: ids.length, errors: [] };
+    },
+
+    async bulkUnarchiveTasks(ids: string[]): Promise<{ restored: number; errors: string[] }> {
+      calls.push({ method: "bulkUnarchiveTasks", args: [ids] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { restored: ids.length, errors: [] };
+    },
+
     async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {
       calls.push({ method: "escalateOverduePriorities", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1097,8 +1109,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 67 tools", () => {
-      expect(mockServer.registrations).toHaveLength(67);
+    it("registers all 69 tools", () => {
+      expect(mockServer.registrations).toHaveLength(69);
     });
 
     it("registers list_tasks with correct description", () => {

@@ -101,6 +101,8 @@ export interface TaskApiClient {
   archiveTask(taskId: string): Promise<Task>;
   unarchiveTask(taskId: string): Promise<Task>;
   listArchivedTasks(limit?: number): Promise<Task[]>;
+  bulkArchiveTasks(ids: string[]): Promise<{ archived: number; errors: string[] }>;
+  bulkUnarchiveTasks(ids: string[]): Promise<{ restored: number; errors: string[] }>;
   // Priority auto-escalation
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
   // API usage analytics
@@ -1207,6 +1209,36 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: Task[] };
       return data.tasks;
+    },
+
+    async bulkArchiveTasks(ids: string[]): Promise<{ archived: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/archive`,
+        { method: "POST", headers, body: JSON.stringify({ ids }) },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk archive: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { archived: number; errors: string[] };
+      return data;
+    },
+
+    async bulkUnarchiveTasks(ids: string[]): Promise<{ restored: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/unarchive`,
+        { method: "POST", headers, body: JSON.stringify({ ids }) },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk unarchive: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { restored: number; errors: string[] };
+      return data;
     },
 
     async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {

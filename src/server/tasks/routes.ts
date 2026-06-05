@@ -713,6 +713,112 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, ...result });
   });
 
+  // POST /api/tasks/bulk/archive - archive (soft-delete) multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/archive", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[] };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+
+    const archived: string[] = [];
+    const errors: string[] = [];
+    for (const id of body.ids) {
+      try {
+        await store.archiveTask(id);
+        archived.push(id);
+      } catch (e) {
+        errors.push(id);
+      }
+    }
+
+    log.info({ count: archived.length, errors: errors.length }, "Bulk archive completed");
+
+    if (auditStore && archived.length > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, action: "archive", count: archived.length, ids: body.ids, errors },
+      });
+    }
+
+    // Broadcast SSE events for each archived task
+    for (const taskId of archived) {
+      const task = await store.getTask(taskId);
+      if (task) {
+        broadcastTaskUpdated(task);
+      }
+    }
+
+    return reply.send({ ok: true, archived: archived.length, errors });
+  });
+
+  // POST /api/tasks/bulk/unarchive - restore multiple archived tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/unarchive", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[] };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+
+    const restored: string[] = [];
+    const errors: string[] = [];
+    for (const id of body.ids) {
+      try {
+        await store.unarchiveTask(id);
+        restored.push(id);
+      } catch (e) {
+        errors.push(id);
+      }
+    }
+
+    log.info({ count: restored.length, errors: errors.length }, "Bulk unarchive completed");
+
+    if (auditStore && restored.length > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, action: "unarchive", count: restored.length, ids: body.ids, errors },
+      });
+    }
+
+    // Broadcast SSE events for each restored task
+    for (const taskId of restored) {
+      const task = await store.getTask(taskId);
+      if (task) {
+        broadcastTaskUpdated(task);
+      }
+    }
+
+    return reply.send({ ok: true, restored: restored.length, errors });
+  });
+
   // GET /api/tasks/ready - list tasks ready for processing (pending + all deps met)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get("/api/tasks/ready", async (req: FastifyRequest, reply: FastifyReply) => {

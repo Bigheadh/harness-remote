@@ -2854,6 +2854,100 @@ export function registerMcpTools(
     },
   );
 
+  // bulk_archive_tasks tool
+  server.registerTool(
+    "bulk_archive_tasks",
+    {
+      description:
+        "Archive (soft-delete) multiple tasks at once. Archived tasks are hidden from normal listings but can be restored with bulk_unarchive_tasks. Returns the count of successfully archived tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to archive (1-100 IDs)"),
+      },
+    },
+    async (args) => {
+      const { ids } = args;
+      try {
+        const result = await client.bulkArchiveTasks(ids);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                archived: result.archived,
+                errors: result.errors,
+                message: result.archived > 0
+                  ? `Archived ${result.archived} task(s)`
+                  : "No tasks were archived",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // bulk_unarchive_tasks tool
+  server.registerTool(
+    "bulk_unarchive_tasks",
+    {
+      description:
+        "Restore multiple archived tasks at once. Returns the count of successfully restored tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to restore (1-100 IDs)"),
+      },
+    },
+    async (args) => {
+      const { ids } = args;
+      try {
+        const result = await client.bulkUnarchiveTasks(ids);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                restored: result.restored,
+                errors: result.errors,
+                message: result.restored > 0
+                  ? `Restored ${result.restored} task(s)`
+                  : "No tasks were restored",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // escalate_overdue_priorities tool
   server.registerTool(
     "escalate_overdue_priorities",
