@@ -19,6 +19,7 @@ export interface TaskExportPayload {
 export interface SearchOptions {
   q?: string;
   status?: TaskStatus;
+  priority?: TaskPriority;
   from?: string;
   to?: string;
   limit?: number;
@@ -37,7 +38,7 @@ export interface TaskCounts {
 
 export interface TaskStore {
   createTask(task: Task): Promise<Task>;
-  listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string): Promise<Task[]>;
+  listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string, priority?: TaskPriority): Promise<Task[]>;
   searchTasks(options: SearchOptions): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
   updateTaskStatus(id: string, status: TaskStatus): Promise<Task>;
@@ -645,9 +646,9 @@ export function createTaskStore(storagePath: string): TaskStore {
       return rowToTask(row);
     },
 
-    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string): Promise<Task[]> {
-      // Use dynamic SQL when date range filtering is requested
-      if (from || to) {
+    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string, from?: string, to?: string, priority?: TaskPriority): Promise<Task[]> {
+      // Use dynamic SQL when date range or priority filtering is requested
+      if (from || to || priority) {
         const conditions: string[] = ["archived_at IS NULL"];
         const params: (string | number | null)[] = [];
 
@@ -666,6 +667,10 @@ export function createTaskStore(storagePath: string): TaskStore {
         if (to) {
           conditions.push("created_at <= ?");
           params.push(to);
+        }
+        if (priority) {
+          conditions.push("priority = ?");
+          params.push(priority);
         }
 
         const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -703,6 +708,11 @@ export function createTaskStore(storagePath: string): TaskStore {
       if (options.status) {
         conditions.push("status = ?");
         params.push(options.status);
+      }
+
+      if (options.priority) {
+        conditions.push("priority = ?");
+        params.push(options.priority);
       }
 
       if (options.from) {

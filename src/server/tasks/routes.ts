@@ -330,14 +330,21 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { status, limit, deviceId, from, to } = req.query as {
+    const { status, limit, deviceId, from, to, priority } = req.query as {
       status?: TaskStatus;
       limit?: number;
       deviceId?: string;
       from?: string;
       to?: string;
+      priority?: string;
     };
-    const tasks = await store.listTasks(status, limit, deviceId, from, to);
+    const validPriorities = ["low", "normal", "high", "urgent"];
+    if (priority && !validPriorities.includes(priority)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: `Invalid priority: ${priority}. Must be one of: ${validPriorities.join(", ")}` },
+      });
+    }
+    const tasks = await store.listTasks(status, limit, deviceId, from, to, priority as TaskPriority | undefined);
     return reply.send({ tasks });
   });
 
@@ -414,7 +421,7 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { q, status, from, to, limit, deviceId, tags } = req.query as {
+    const { q, status, from, to, limit, deviceId, tags, priority } = req.query as {
       q?: string;
       status?: TaskStatus;
       from?: string;
@@ -422,11 +429,19 @@ export function registerTaskRoutes(
       limit?: number;
       deviceId?: string;
       tags?: string;
+      priority?: string;
     };
 
     if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
       return reply.code(400).send({
         error: { code: "invalid_request", message: `Invalid status: ${status}` },
+      });
+    }
+
+    const validPriorities = ["low", "normal", "high", "urgent"];
+    if (priority && !validPriorities.includes(priority)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: `Invalid priority: ${priority}. Must be one of: ${validPriorities.join(", ")}` },
       });
     }
 
@@ -443,7 +458,7 @@ export function registerTaskRoutes(
     }
 
     const parsedTags = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-    const tasks = await store.searchTasks({ q, status, from, to, limit, deviceId, tags: parsedTags });
+    const tasks = await store.searchTasks({ q, status, priority: priority as TaskPriority | undefined, from, to, limit, deviceId, tags: parsedTags });
     return reply.send({ tasks });
   });
 

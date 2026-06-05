@@ -43,13 +43,17 @@ export function registerMcpTools(
           .string()
           .optional()
           .describe("Filter by assigned device ID. If not provided, uses the configured deviceId."),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Filter by task priority."),
       },
     },
     async (args) => {
-      const { status, limit, deviceId } = args;
+      const { status, limit, deviceId, priority } = args;
 
       try {
-        const tasks = await client.listTasks(status, limit, deviceId);
+        const tasks = await client.listTasks(status, limit, deviceId, priority);
         return {
           content: [
             {
@@ -78,7 +82,7 @@ export function registerMcpTools(
     "search_tasks",
     {
       description:
-        "Search task history by text, status, date range, and tags. Returns matching tasks sorted by creation time (newest first).",
+        "Search task history by text, status, priority, date range, and tags. Returns matching tasks sorted by creation time (newest first).",
       inputSchema: {
         q: z
           .string()
@@ -88,6 +92,10 @@ export function registerMcpTools(
           .enum(["pending", "picked", "running", "done", "failed"])
           .optional()
           .describe("Filter by task status"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Filter by task priority"),
         from: z
           .string()
           .optional()
@@ -114,10 +122,10 @@ export function registerMcpTools(
       },
     },
     async (args) => {
-      const { q, status, from, to, limit, deviceId, tags } = args;
+      const { q, status, priority, from, to, limit, deviceId, tags } = args;
 
       try {
-        const tasks = await client.searchTasks({ q, status, from, to, limit, deviceId, tags });
+        const tasks = await client.searchTasks({ q, status, priority, from, to, limit, deviceId, tags });
         return {
           content: [
             {

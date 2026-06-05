@@ -240,3 +240,10 @@
 - [x] Task completion trend (30-day bar chart)
 - [x] Processing time metrics (avg, p50, p95, success rate)
 - [x] Per-user task count horizontal bar chart
+
+## Phase 36: v13 Priority Filtering for Task Listing & Search
+- [x] Store layer: priority filter in listTasks() and searchTasks()
+- [x] API routes: priority query parameter on GET /api/tasks and GET /api/tasks/search
+- [x] MCP client: priority parameter on listTasks() and searchTasks()
+- [x] MCP tools: priority filter on list_tasks and search_tasks tools
+- [x] Updated mock client in tests for new interface

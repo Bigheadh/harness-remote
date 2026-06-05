@@ -16,8 +16,8 @@ function createMockClient(): TaskApiClient & {
     calls,
     failWith: undefined,
 
-    async listTasks(status?: TaskStatus, limit?: number): Promise<Task[]> {
-      calls.push({ method: "listTasks", args: [status, limit] });
+    async listTasks(status?: TaskStatus, limit?: number, deviceId?: string, priority?: string): Promise<Task[]> {
+      calls.push({ method: "listTasks", args: [status, limit, deviceId, priority] });
       if (mock.failWith) throw new Error(mock.failWith);
       return [
         {
@@ -100,6 +100,7 @@ function createMockClient(): TaskApiClient & {
     async searchTasks(options: {
       q?: string;
       status?: TaskStatus;
+      priority?: string;
       from?: string;
       to?: string;
       limit?: number;

@@ -3,10 +3,11 @@ import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFreque
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 
 export interface TaskApiClient {
-  listTasks(status?: TaskStatus, limit?: number, deviceId?: string): Promise<Task[]>;
+  listTasks(status?: TaskStatus, limit?: number, deviceId?: string, priority?: string): Promise<Task[]>;
   searchTasks(options: {
     q?: string;
     status?: TaskStatus;
+    priority?: string;
     from?: string;
     to?: string;
     limit?: number;
@@ -120,10 +121,11 @@ export function createTaskApiClient(
   };
 
   return {
-    async listTasks(status?: TaskStatus, limit?: number, filterDeviceId?: string): Promise<Task[]> {
+    async listTasks(status?: TaskStatus, limit?: number, filterDeviceId?: string, priority?: string): Promise<Task[]> {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       if (limit) params.set("limit", String(limit));
+      if (priority) params.set("priority", priority);
       // Use the explicitly passed deviceId, or fall back to the configured one
       const effectiveDeviceId = filterDeviceId ?? deviceId;
       if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
@@ -145,6 +147,7 @@ export function createTaskApiClient(
     async searchTasks(options: {
       q?: string;
       status?: TaskStatus;
+      priority?: string;
       from?: string;
       to?: string;
       limit?: number;
@@ -154,6 +157,7 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (options.q) params.set("q", options.q);
       if (options.status) params.set("status", options.status);
+      if (options.priority) params.set("priority", options.priority);
       if (options.from) params.set("from", options.from);
       if (options.to) params.set("to", options.to);
       if (options.limit) params.set("limit", String(options.limit));
