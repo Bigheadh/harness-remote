@@ -251,3 +251,13 @@
 ## Phase 37: v14 Description-Aware Search
 - [x] Store layer: description LIKE filter in searchTasks() full-text query
 - [x] MCP tools: updated search_tasks description and q parameter docs
+
+## Phase 38: Dashboard Settings/Management Tab
+- [x] Settings tab with CSS (settings-grid, settings-card, settings-table, settings-form, role-badge styles)
+- [x] Users management (list, create, delete, token regeneration)
+- [x] Devices management (list, register, delete)
+- [x] Webhooks management (list, create, delete)
+- [x] Templates management (list, create, delete)
+- [x] Scheduled tasks management (list, create, delete)
+- [x] SLA policies management (list, create, delete)
+- [x] Updated switchView to handle 3 tabs (tasks, analytics, settings)
