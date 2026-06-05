@@ -1,46 +1,37 @@
-# Changelog: Phase 38 — Dashboard Settings/Management Tab
+# Phase 38: Dashboard Settings/Management Tab
 
-**Date:** 2026-06-06
-**Task:** Add Settings/Management tab to the web dashboard for admin operations
-**Files changed:** 2
-**Lines added:** ~414 (dashboard.ts: +414, FEATURES.md: +10)
+## 概览 (Overview)
 
-## Overview
+**日期**: 2026-06-06
+**功能**: 在 Dashboard 中添加 Settings 管理标签页，提供 Users、Devices、Webhooks、Templates、Scheduled Tasks、SLA Policies 的管理界面。
+**涉及文件数**: 2
+**新增行数**: ~414 (dashboard.ts: +414, FEATURES.md: +10)
 
-Added a third tab ("⚙️ Settings") to the web dashboard, providing management UI for Users, Devices, Webhooks, Templates, Scheduled Tasks, and SLA Policies. All backend APIs already existed — this is purely a frontend addition that makes admin operations accessible from the browser.
-
-## File Changes
+## 改动明细 (File Changes)
 
 ### src/server/dashboard/templates/dashboard.ts
 
-| Hunk | Before | After | Reason | Impact |
-|------|--------|-------|--------|--------|
-| CSS: settings styles (line ~426) | No settings CSS | Added `.settings-grid`, `.settings-card`, `.settings-table`, `.settings-form`, `.role-badge-*` styles | Visual consistency with existing dark theme | Settings cards display in responsive grid layout |
-| Nav tab (line ~453) | 2 tabs: Tasks, Analytics | 3 tabs: Tasks, Analytics, Settings | New management tab | Users can access settings from header |
-| HTML: settings view panel (line ~524) | Only `analyticsView` panel | Added `settingsView` panel with 6 cards (Users, Devices, Webhooks, Templates, Scheduled, SLA) | Container for management sections | Each card has a table + inline create form |
-| JS: switchView function | 2-branch (tasks/analytics) | 3-branch (tasks/analytics/settings) | Route to settings panel | Settings loads on tab click |
-| JS: loadSettings + 6 load* functions | None | 6 async functions to fetch and render each entity list from API | Data loading for management views | Tables populate from `/api/users`, `/api/devices`, etc. |
-| JS: create/delete/regenerate functions | None | CRUD functions for each entity (submitCreate*, delete*, regenerate*) | Write operations for management | Forms toggle open/close, API calls, list refresh |
-| HTML: inline create forms | None | 6 forms (user, device, webhook, template, scheduled, SLA) inside settings cards | Input for creating new entities | Forms hidden by default, toggled by + buttons |
-
-**Risk:** Low — purely additive dashboard UI, no backend changes, all APIs already exist and are tested.
-**Verification:** `npm run typecheck && npm run build && npm run test` all pass.
+| 改动位置 | 改前 | 改后 | 原因 | 影响 |
+|---------|------|------|------|------|
+| CSS 样式 (line ~426) | 无 Settings 相关样式 | 新增 `.settings-grid`, `.settings-card`, `.settings-table`, `.settings-form`, `.role-badge-*` 样式 | 保持与现有暗色主题一致 | Settings 卡片以响应式网格布局显示 |
+| 导航标签 (line ~453) | 2 个标签: Tasks, Analytics | 3 个标签: Tasks, Analytics, Settings | 新增管理标签 | 用户可从 header 访问设置 |
+| HTML: settings 视图面板 (line ~524) | 仅有 `analyticsView` 面板 | 新增 `settingsView` 面板，含 6 个卡片 (Users, Devices, Webhooks, Templates, Scheduled, SLA) | 管理分区容器 | 每个卡片有表格 + 内联创建表单 |
+| JS: switchView 函数 | 2 分支 (tasks/analytics) | 3 分支 (tasks/analytics/settings) | 路由到 settings 面板 | 点击标签时加载 settings |
+| JS: loadSettings + 6 个 load* 函数 | 无 | 6 个异步函数，从 API 获取并渲染各实体列表 | 管理视图的数据加载 | 表格从 `/api/users`, `/api/devices` 等接口填充 |
+| JS: create/delete/regenerate 函数 | 无 | 每个实体的 CRUD 函数 (submitCreate*, delete*, regenerate*) | 管理的写操作 | 表单显示/隐藏，API 调用，列表刷新 |
+| HTML: 内联创建表单 | 无 | 6 个表单 (user, device, webhook, template, scheduled, SLA) 嵌入 settings 卡片中 | 创建新实体的输入 | 表单默认隐藏，点击 + 按钮切换 |
 
 ### FEATURES.md
 
-Added Phase 38 section with 8 checked items covering Settings tab CSS, Users, Devices, Webhooks, Templates, Scheduled Tasks, SLA Policies management, and switchView update.
+新增 Phase 38 区段，含 8 个已完成项：Settings 标签 CSS、Users、Devices、Webhooks、Templates、Scheduled Tasks、SLA Policies 管理，以及 switchView 更新。
 
-## Structural Summary
+## 风险说明 (Risk)
 
-- **New:** Settings tab in dashboard header nav
-- **New:** 6 management cards with tables and inline create forms
-- **New:** ~414 lines of CSS + HTML + JavaScript for settings UI
-- **Modified:** `switchView()` function extended for 3-tab navigation
-- **Modified:** FEATURES.md updated with Phase 38
+**低风险** — 纯前端添加，无后端改动，所有 API 已存在且已测试。
 
-## Verification Steps
+## 验证步骤 (Verification)
 
-1. `npm run typecheck` — passes (0 errors)
-2. `npm run build` — passes
-3. `npm run test` — 270/270 tests pass across 11 test files
-4. Manual: open `/dashboard?token=...` → click ⚙️ Settings tab → verify 6 management sections load
+1. `npm run typecheck` — 通过 (0 错误)
+2. `npm run build` — 通过
+3. `npm run test` — 11 个测试文件，270/270 测试通过
+4. 手动验证: 打开 `/dashboard?token=...` → 点击 ⚙️ Settings 标签 → 验证 6 个管理分区正确加载
