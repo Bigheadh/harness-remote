@@ -379,11 +379,58 @@ export function renderDashboardHTML(
       background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
       width: 340px; max-width: 90vw;
     }
+
+    /* Analytics view */
+    .view-tabs { display: flex; gap: 0; margin: 0; }
+    .view-tab { padding: 8px 20px; cursor: pointer; font-size: 13px; font-weight: 500;
+      color: var(--text-dim); border-bottom: 2px solid transparent; transition: all 0.15s;
+      background: transparent; border-top: none; border-left: none; border-right: none; }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .view-panel { display: none; }
+    .view-panel.active { display: block; }
+    .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; padding: 16px 0; }
+    .chart-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: var(--text); }
+    .bar-chart { display: flex; flex-direction: column; gap: 6px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; }
+    .bar-label { width: 80px; font-size: 11px; color: var(--text-dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { flex: 1; height: 22px; background: var(--bg); border-radius: 4px; overflow: hidden; position: relative; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; min-width: 2px; }
+    .bar-fill.pending { background: #f59e0b; }
+    .bar-fill.picked { background: #8b5cf6; }
+    .bar-fill.running { background: #3b82f6; }
+    .bar-fill.done { background: #22c55e; }
+    .bar-fill.failed { background: #ef4444; }
+    .bar-fill.created { background: #3b82f6; }
+    .bar-fill.completed { background: #22c55e; }
+    .bar-fill.urgent { background: #ef4444; }
+    .bar-fill.high { background: #f59e0b; }
+    .bar-fill.normal { background: #3b82f6; }
+    .bar-fill.low { background: #6b7280; }
+    .bar-value { width: 40px; font-size: 12px; font-weight: 600; color: var(--text); }
+    .trend-chart { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding: 0 4px; }
+    .trend-bar { flex: 1; border-radius: 3px 3px 0 0; transition: height 0.3s ease; min-width: 4px; cursor: default; position: relative; }
+    .trend-bar.created { background: var(--accent); opacity: 0.85; }
+    .trend-bar.completed { background: #22c55e; opacity: 0.85; }
+    .trend-bar:hover { opacity: 1; }
+    .trend-labels { display: flex; justify-content: space-between; padding: 4px 4px 0; }
+    .trend-labels span { font-size: 10px; color: var(--text-dim); }
+    .stat-metric { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .metric-card { background: var(--bg); border-radius: 8px; padding: 12px; text-align: center; }
+    .metric-value { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .metric-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .chart-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 30px 0; }
+    .analytics-loading { color: var(--text-dim); font-size: 13px; text-align: center; padding: 40px 0; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>⚡ Harness Remote</h1>
+    <nav class="view-tabs" id="viewTabs">
+      <button class="view-tab active" onclick="switchView('tasks')">📋 Tasks</button>
+      <button class="view-tab" onclick="switchView('analytics')">📊 Analytics</button>
+    </nav>
     <div class="header-actions">
       <div style="display:flex;align-items:center;gap:6px">
         <div class="sse-indicator" id="sseIndicator"></div>
@@ -397,6 +444,7 @@ export function renderDashboardHTML(
   </div>
 
   <div class="container">
+    <div class="view-panel active" id="tasksView">
     <div class="stats-row" id="stats"></div>
 
     <div class="toolbar">
@@ -445,6 +493,13 @@ export function renderDashboardHTML(
         <button class="btn-sm" onclick="clearSelection()">✕ Clear</button>
       </div>
     </div>
+    </div><!-- /tasksView -->
+
+    <!-- Analytics view -->
+    <div class="view-panel" id="analyticsView">
+      <div id="analyticsContent"><div class="analytics-loading">Loading analytics...</div></div>
+    </div>
+
   </div>
 
   <!-- Detail overlay -->
@@ -1273,6 +1328,151 @@ export function renderDashboardHTML(
     }
 
     // Init
+
+    // View switching
+    let currentView = 'tasks';
+    function switchView(view) {
+      currentView = view;
+      document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+      if (view === 'tasks') {
+        document.querySelector('.view-tab:nth-child(1)').classList.add('active');
+        document.getElementById('tasksView').classList.add('active');
+      } else {
+        document.querySelector('.view-tab:nth-child(2)').classList.add('active');
+        document.getElementById('analyticsView').classList.add('active');
+        loadAnalytics();
+      }
+    }
+
+    // Analytics
+    async function loadAnalytics() {
+      const container = document.getElementById('analyticsContent');
+      container.innerHTML = '<div class="analytics-loading">Loading analytics...</div>';
+      try {
+        const [summary, processing, created, completed, users] = await Promise.all([
+          apiFetch('/api/stats/summary'),
+          apiFetch('/api/stats/processing').catch(() => null),
+          apiFetch('/api/stats/timeseries?metric=created&interval=day').catch(() => null),
+          apiFetch('/api/stats/timeseries?metric=completed&interval=day').catch(() => null),
+          apiFetch('/api/stats/users').catch(() => null),
+        ]);
+        renderAnalytics(container, summary, processing, created, completed, users);
+      } catch (e) {
+        container.innerHTML = '<div class="chart-empty">Failed to load analytics: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderAnalytics(container, summary, processing, created, completed, users) {
+      let html = '<div class="analytics-grid">';
+
+      // 1. Status distribution
+      html += '<div class="chart-card"><h3>📊 Task Status Distribution</h3>';
+      const statusData = summary.byStatus || {};
+      const statusMax = Math.max(1, ...Object.values(statusData));
+      html += '<div class="bar-chart">';
+      ['pending','picked','running','done','failed'].forEach(s => {
+        const count = statusData[s] || 0;
+        const pct = Math.round(count / statusMax * 100);
+        html += '<div class="bar-row"><span class="bar-label">' + s + '</span><div class="bar-track"><div class="bar-fill ' + s + '" style="width:' + pct + '%"></div></div><span class="bar-value">' + count + '</span></div>';
+      });
+      html += '</div></div>';
+
+      // 2. Priority distribution
+      html += '<div class="chart-card"><h3>🏷️ Priority Distribution</h3>';
+      const prioData = summary.byPriority || {};
+      const prioMax = Math.max(1, ...Object.values(prioData));
+      html += '<div class="bar-chart">';
+      ['urgent','high','normal','low'].forEach(p => {
+        const count = prioData[p] || 0;
+        const pct = Math.round(count / prioMax * 100);
+        html += '<div class="bar-row"><span class="bar-label">' + p + '</span><div class="bar-track"><div class="bar-fill ' + p + '" style="width:' + pct + '%"></div></div><span class="bar-value">' + count + '</span></div>';
+      });
+      html += '</div></div>';
+
+      // 3. Task creation trend (last 30 days)
+      html += '<div class="chart-card" style="grid-column: span 2"><h3>📈 Task Creation Trend (Last 30 Days)</h3>';
+      if (created && created.dataPoints && created.dataPoints.length > 0) {
+        const pts = created.dataPoints;
+        const maxVal = Math.max(1, ...pts.map(p => p.value));
+        html += '<div class="trend-chart">';
+        pts.forEach(p => {
+          const h = Math.max(2, Math.round(p.value / maxVal * 100));
+          html += '<div class="trend-bar created" style="height:' + h + '%" title="' + p.bucket + ': ' + p.value + ' tasks"></div>';
+        });
+        html += '</div><div class="trend-labels"><span>' + (pts[0].bucket || '') + '</span><span>' + (pts[pts.length - 1].bucket || '') + '</span></div>';
+      } else {
+        html += '<div class="chart-empty">No data available</div>';
+      }
+      html += '</div>';
+
+      // 4. Task completion trend (last 30 days)
+      html += '<div class="chart-card" style="grid-column: span 2"><h3>✅ Task Completion Trend (Last 30 Days)</h3>';
+      if (completed && completed.dataPoints && completed.dataPoints.length > 0) {
+        const pts = completed.dataPoints;
+        const maxVal = Math.max(1, ...pts.map(p => p.value));
+        html += '<div class="trend-chart">';
+        pts.forEach(p => {
+          const h = Math.max(2, Math.round(p.value / maxVal * 100));
+          html += '<div class="trend-bar completed" style="height:' + h + '%" title="' + p.bucket + ': ' + p.value + ' tasks"></div>';
+        });
+        html += '</div><div class="trend-labels"><span>' + (pts[0].bucket || '') + '</span><span>' + (pts[pts.length - 1].bucket || '') + '</span></div>';
+      } else {
+        html += '<div class="chart-empty">No data available</div>';
+      }
+      html += '</div>';
+
+      // 5. Processing time metrics
+      html += '<div class="chart-card"><h3>⏱️ Processing Time</h3>';
+      if (processing && processing.totalCompleted > 0) {
+        html += '<div class="stat-metric">';
+        const metrics = [
+          { label: 'Avg Duration', value: formatDuration(processing.avgDurationMs) },
+          { label: 'P50 Duration', value: formatDuration(processing.p50DurationMs) },
+          { label: 'P95 Duration', value: formatDuration(processing.p95DurationMs) },
+          { label: 'Avg Queue Wait', value: formatDuration(processing.avgQueueWaitMs) },
+          { label: 'Avg Processing', value: formatDuration(processing.avgProcessingMs) },
+          { label: 'Total Done', value: (processing.byStatus && processing.byStatus.done || 0) },
+          { label: 'Total Failed', value: (processing.byStatus && processing.byStatus.failed || 0) },
+          { label: 'Success Rate', value: processing.totalCompleted > 0 ? Math.round((processing.byStatus && processing.byStatus.done || 0) / processing.totalCompleted * 100) + '%' : '—' },
+        ];
+        metrics.forEach(m => {
+          html += '<div class="metric-card"><div class="metric-value">' + m.value + '</div><div class="metric-label">' + m.label + '</div></div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="chart-empty">No completed tasks yet</div>';
+      }
+      html += '</div>';
+
+      // 6. Per-user task counts
+      html += '<div class="chart-card"><h3>👥 Tasks by User</h3>';
+      if (users && users.users && users.users.length > 0) {
+        const userData = users.users.slice(0, 10);
+        const userMax = Math.max(1, ...userData.map(u => u.total));
+        html += '<div class="bar-chart">';
+        userData.forEach(u => {
+          const pct = Math.round(u.total / userMax * 100);
+          html += '<div class="bar-row"><span class="bar-label" title="' + escapeHtml(u.userId) + '">' + escapeHtml(u.userId.slice(0, 12)) + '</span><div class="bar-track"><div class="bar-fill created" style="width:' + pct + '%"></div></div><span class="bar-value">' + u.total + '</span></div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<div class="chart-empty">No user data available</div>';
+      }
+      html += '</div>';
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function formatDuration(ms) {
+      if (ms === null || ms === undefined) return '—';
+      if (ms < 1000) return ms + 'ms';
+      if (ms < 60000) return Math.round(ms / 1000) + 's';
+      if (ms < 3600000) return Math.round(ms / 60000) + 'm';
+      return Math.round(ms / 3600000) + 'h';
+    }
+
     // Init
     loadTasks();
     connectSSE();

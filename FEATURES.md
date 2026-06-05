@@ -231,3 +231,12 @@
 - [x] POST /api/tasks/bulk/unarchive endpoint (bulk restore with audit logging)
 - [x] MCP bulk_archive_tasks tool (archive multiple tasks via MCP)
 - [x] MCP bulk_unarchive_tasks tool (restore multiple tasks via MCP)
+
+## Phase 35: v12 Dashboard Analytics View
+- [x] Tab-based navigation (Tasks / Analytics views)
+- [x] Task status distribution bar chart
+- [x] Priority distribution bar chart
+- [x] Task creation trend (30-day bar chart)
+- [x] Task completion trend (30-day bar chart)
+- [x] Processing time metrics (avg, p50, p95, success rate)
+- [x] Per-user task count horizontal bar chart
