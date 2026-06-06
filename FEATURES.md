@@ -315,3 +315,13 @@
 - [x] Updated mock client in tests for 4 new interface methods
 - [x] Updated tool count assertion (80 → 84)
 - [x] Added 12 new tests for stats MCP tools (registration, data return, error cases)
+
+## Phase 44: SLA Breach Feishu Notifications
+- [x] Shared types: SlaBreachNotification interface (taskId, taskCommandText, taskPriority, taskStatus, taskTags, taskFeishuMessageId, policyName, breachType, targetMinutes, actualMinutes)
+- [x] Card builder: buildSlaBreachCard — rich Feishu card with breach/warning emoji, policy name, task details, priority badge, target vs elapsed times, tags
+- [x] Store layer: checkAndRecordSlaBreaches returns breach details array (not just counts)
+- [x] Client interface: checkSlaBreaches return type updated to include details
+- [x] Client implementation: HTTP client parses details from API response
+- [x] SLA check route: sends Feishu card notifications for each breach/warning with a feishuMessageId
+- [x] Updated mock client in tests for new return type
+- [x] Added 6 new tests for buildSlaBreachCard (breach/warning cards, task details, timing, tags)

@@ -104,7 +104,7 @@ export interface TaskStore {
   getSlaStatusForTask(taskId: string): Promise<{ status: SlaStatus; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
   listSlaBreaches(): Promise<SlaBreachLog[]>;
   getSlaSummary(): Promise<SlaSummary>;
-  checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
+  checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../../shared/types.js").SlaBreachNotification[] }>;
 
   // Analytics methods
   getTaskStats(): Promise<import("../../shared/types.js").TaskStats>;
@@ -2337,10 +2337,11 @@ export function createTaskStore(storagePath: string): TaskStore {
       };
     },
 
-    async checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+    async checkAndRecordSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../../shared/types.js").SlaBreachNotification[] }> {
       const policies = await this.listSlaPolicies();
       let warnings = 0;
       let breaches = 0;
+      const details: import("../../shared/types.js").SlaBreachNotification[] = [];
       const now = new Date().toISOString();
 
       for (const policy of policies) {
@@ -2384,10 +2385,34 @@ export function createTaskStore(storagePath: string): TaskStore {
               db.prepare(`UPDATE sla_breach_log SET resolved_at = ? WHERE task_id = ? AND policy_id = ? AND breach_type = 'warning' AND resolved_at IS NULL`).run(now, task.id, policy.id);
             }
             breaches++;
+            details.push({
+              taskId: task.id,
+              taskCommandText: task.commandText,
+              taskPriority: task.priority,
+              taskStatus: task.status,
+              taskTags: task.tags,
+              taskFeishuMessageId: task.feishuMessageId,
+              policyName: policy.name,
+              breachType: "breach",
+              targetMinutes: policy.targetMinutes,
+              actualMinutes: elapsedMinutes,
+            });
           } else if (elapsedMinutes >= warningMinutes && !existingWarning && !existingBreach) {
             // Record warning
             db.prepare(`\n              INSERT INTO sla_breach_log (task_id, policy_id, policy_name, breach_type, target_minutes, actual_minutes, detected_at)\n              VALUES (?, ?, ?, 'warning', ?, ?, ?)\n            `).run(task.id, policy.id, policy.name, policy.targetMinutes, elapsedMinutes, now);
             warnings++;
+            details.push({
+              taskId: task.id,
+              taskCommandText: task.commandText,
+              taskPriority: task.priority,
+              taskStatus: task.status,
+              taskTags: task.tags,
+              taskFeishuMessageId: task.feishuMessageId,
+              policyName: policy.name,
+              breachType: "warning",
+              targetMinutes: policy.targetMinutes,
+              actualMinutes: elapsedMinutes,
+            });
           }
         }
       }
@@ -2395,8 +2420,8 @@ export function createTaskStore(storagePath: string): TaskStore {
       // Auto-resolve breaches/warnings for completed tasks
       db.prepare(`\n        UPDATE sla_breach_log SET resolved_at = ?\n        WHERE resolved_at IS NULL\n        AND task_id IN (SELECT id FROM tasks WHERE status IN ('done', 'failed'))\n      `).run(now);
 
-     return { warnings, breaches };
-   },
+     return { warnings, breaches, details };
+    },
 
     async getTaskStats(): Promise<import("../../shared/types.js").TaskStats> {
       const now = new Date();

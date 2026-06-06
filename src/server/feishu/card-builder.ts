@@ -15,6 +15,7 @@
  */
 
 import type { Task, TaskPriority, TaskStatus } from "../../shared/types.js";
+import type { SlaBreachType } from "../../shared/types.js";
 
 /** Color themes for Feishu card headers */
 type CardTemplate =
@@ -95,7 +96,7 @@ export function buildTaskCreatedCard(task: Task): FeishuCard {
     elements.push({
       tag: "div",
       text: {
-        content: `**Tags:** ${task.tags.map((t) => `\`${t}\``).join(" ")}`,
+        content: `**Tags:** ${task.tags.map((t) => `${t}`).join(" ")}`,
         tag: "lark_md",
       },
     });
@@ -255,7 +256,7 @@ export function buildTaskStatusCard(
     elements.push({
       tag: "div",
       text: {
-        content: `**Tags:** ${task.tags.map((t) => `\`${t}\``).join(" ")}`,
+        content: `**Tags:** ${task.tags.map((t) => `${t}`).join(" ")}`,
         tag: "lark_md",
       },
     });
@@ -329,4 +330,83 @@ export function buildCustomCard(
 /** Serialize a FeishuCard to JSON string for the `content` field */
 export function serializeCard(card: FeishuCard): string {
   return JSON.stringify(card);
+}
+
+/** Build a Feishu interactive card for an SLA breach or warning notification */
+export function buildSlaBreachCard(
+  task: Task,
+  policyName: string,
+  breachType: SlaBreachType,
+  targetMinutes: number,
+  actualMinutes: number,
+): FeishuCard {
+  const isBreach = breachType === "breach";
+  const emoji = isBreach ? "🚨" : "⚠️";
+  const label = isBreach ? "SLA Breached" : "SLA Warning";
+  const template: CardTemplate = isBreach ? "red" : "orange";
+
+  const elements: CardElement[] = [];
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `${emoji} **${label}** — Policy: \`${policyName}\``,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Task:** ${task.id} — ${task.commandText}`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Priority:** ${PRIORITY_LABELS[task.priority]} · **Status:** ${STATUS_LABELS[task.status]}`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Target:** ${targetMinutes} min · **Elapsed:** ${Math.round(actualMinutes)} min`,
+      tag: "lark_md",
+    },
+  });
+
+  if (task.tags && task.tags.length > 0) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Tags:** ${task.tags.map((t) => `${t}`).join(" ")}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
+  elements.push({ tag: "hr" });
+
+  elements.push({
+    tag: "note",
+    elements: [
+      {
+        tag: "plain_text",
+        content: `SLA ${label} · ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`,
+      },
+    ],
+  });
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      title: { content: `${emoji} ${label}`, tag: "plain_text" },
+      template,
+    },
+    elements,
+  };
 }

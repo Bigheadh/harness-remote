@@ -349,6 +349,20 @@ export interface SlaBreachLog {
   resolvedAt?: string;
 }
 
+/** SLA breach notification detail — returned by checkAndRecordSlaBreaches for Feishu notifications */
+export interface SlaBreachNotification {
+  taskId: string;
+  taskCommandText: string;
+  taskPriority: TaskPriority;
+  taskStatus: TaskStatus;
+  taskTags?: string[];
+  taskFeishuMessageId?: string;
+  policyName: string;
+  breachType: SlaBreachType;
+  targetMinutes: number;
+  actualMinutes: number;
+}
+
 /** SLA compliance summary */
 export interface SlaSummary {
   totalTasksTracked: number;

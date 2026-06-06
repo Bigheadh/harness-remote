@@ -4,6 +4,7 @@ import {
   buildTaskResultCard,
   buildTaskStatusCard,
   buildCustomCard,
+  buildSlaBreachCard,
   serializeCard,
 } from "../../src/server/feishu/card-builder.js";
 import type { Task } from "../../src/shared/types.js";
@@ -176,6 +177,54 @@ describe("card-builder", () => {
       const json = serializeCard(card);
       const parsed = JSON.parse(json);
       expect(parsed.header.title.content).toBe("Test");
+    });
+  });
+
+  describe("buildSlaBreachCard", () => {
+    it("creates a breach card with red template", () => {
+      const task = makeTask();
+      const card = buildSlaBreachCard(task, "Response Time SLA", "breach", 60, 75);
+      expect(card.header.template).toBe("red");
+      expect(card.header.title.content).toContain("SLA Breached");
+    });
+
+    it("creates a warning card with orange template", () => {
+      const task = makeTask();
+      const card = buildSlaBreachCard(task, "Response Time SLA", "warning", 60, 50);
+      expect(card.header.template).toBe("orange");
+      expect(card.header.title.content).toContain("SLA Warning");
+    });
+
+    it("includes task details in the card", () => {
+      const task = makeTask({ commandText: "Deploy to prod", priority: "urgent" });
+      const card = buildSlaBreachCard(task, "Deploy SLA", "breach", 30, 45);
+      const body = JSON.stringify(card);
+      expect(body).toContain("Deploy to prod");
+      expect(body).toContain("Urgent");
+      expect(body).toContain("Deploy SLA");
+    });
+
+    it("includes target and elapsed times", () => {
+      const task = makeTask();
+      const card = buildSlaBreachCard(task, "Test SLA", "breach", 120, 135);
+      const body = JSON.stringify(card);
+      expect(body).toContain("120 min");
+      expect(body).toContain("135 min");
+    });
+
+    it("includes tags when present", () => {
+      const task = makeTask({ tags: ["production", "urgent"] });
+      const card = buildSlaBreachCard(task, "Test SLA", "breach", 60, 90);
+      const body = JSON.stringify(card);
+      expect(body).toContain("production");
+      expect(body).toContain("urgent");
+    });
+
+    it("omits tags section when no tags", () => {
+      const task = makeTask({ tags: [] });
+      const card = buildSlaBreachCard(task, "Test SLA", "warning", 60, 50);
+      const body = JSON.stringify(card);
+      expect(body).not.toContain("**Tags:**");
     });
   });
 });

@@ -6,7 +6,7 @@ import type { AuditLogEntry } from "../../shared/types.js";
 import type { ActivityFeedItem } from "../../shared/types.js";
 import type { Subtask } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
-import { buildTaskResultCard, buildTaskStatusCard, buildCustomCard, STATUS_LABELS, STATUS_COLORS } from "../feishu/card-builder.js";
+import { buildTaskResultCard, buildTaskStatusCard, buildCustomCard, buildSlaBreachCard, STATUS_LABELS, STATUS_COLORS } from "../feishu/card-builder.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
@@ -2896,6 +2896,32 @@ export function registerTaskRoutes(
 
     const result = await store.checkAndRecordSlaBreaches();
     log.info({ warnings: result.warnings, breaches: result.breaches }, "SLA breach check completed");
+
+    // Send Feishu notifications for SLA breaches and warnings
+    if (feishuClient && result.details.length > 0) {
+      for (const detail of result.details) {
+        if (detail.taskFeishuMessageId) {
+          const card = buildSlaBreachCard(
+            {
+              id: detail.taskId,
+              feishuMessageId: detail.taskFeishuMessageId,
+              commandText: detail.taskCommandText,
+              priority: detail.taskPriority,
+              status: detail.taskStatus,
+              tags: detail.taskTags,
+            } as any,
+            detail.policyName,
+            detail.breachType,
+            detail.targetMinutes,
+            detail.actualMinutes,
+          );
+          feishuClient.sendCardMessage({ messageId: detail.taskFeishuMessageId, card }).catch((err) => {
+            log.warn({ taskId: detail.taskId, err: err instanceof Error ? err.message : String(err) }, "Failed to send SLA breach notification to Feishu");
+          });
+        }
+      }
+    }
+
     return reply.send({ ok: true, ...result });
   });
 

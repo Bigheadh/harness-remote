@@ -777,10 +777,10 @@ function createMockClient(): TaskApiClient & {
       ];
     },
 
-    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../../src/shared/types.js").SlaBreachNotification[] }> {
       calls.push({ method: "checkSlaBreaches", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
-      return { warnings: 1, breaches: 0 };
+      return { warnings: 1, breaches: 0, details: [] };
     },
 
     async getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: import("../../src/shared/types.js").SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {

@@ -75,7 +75,7 @@ export interface TaskApiClient {
   deleteSlaPolicy(policyId: string): Promise<void>;
   getSlaSummary(): Promise<SlaSummary>;
   listSlaBreaches(): Promise<SlaBreachLog[]>;
-  checkSlaBreaches(): Promise<{ warnings: number; breaches: number }>;
+  checkSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../shared/types.js").SlaBreachNotification[] }>;
   getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>;
   // Task retry
   retryTask(taskId: string): Promise<Task>;
@@ -1018,7 +1018,7 @@ export function createTaskApiClient(
       return data.breaches;
     },
 
-    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number }> {
+    async checkSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../shared/types.js").SlaBreachNotification[] }> {
       const response = await fetch(`${serverBaseUrl}/api/sla/check`, {
         method: "POST",
         headers,
@@ -1027,8 +1027,8 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to check SLA breaches: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
-      const data = (await response.json()) as { warnings: number; breaches: number };
-      return { warnings: data.warnings, breaches: data.breaches };
+      const data = (await response.json()) as { warnings: number; breaches: number; details?: import("../shared/types.js").SlaBreachNotification[] };
+      return { warnings: data.warnings, breaches: data.breaches, details: data.details ?? [] };
     },
 
     async getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {
