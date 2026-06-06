@@ -294,3 +294,13 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (76 → 77)
 - [x] Added 4 new tests for create_task_from_template tool
+
+## Phase 42: Device Management MCP Tools
+- [x] Client interface: 3 new device methods (listDevices, getDevice, deleteDevice)
+- [x] Client implementation: HTTP client methods calling existing device API routes
+- [x] MCP tool: list_devices — list all registered devices with name, capabilities, last seen
+- [x] MCP tool: get_device — get device details by ID (name, token, capabilities, timestamps)
+- [x] MCP tool: delete_device — permanently remove a device
+- [x] Updated mock client in tests for 3 new interface methods
+- [x] Updated tool count assertion (77 → 80)
+- [x] Added 9 new tests for device MCP tools (registration, listing, details, deletion, error cases)

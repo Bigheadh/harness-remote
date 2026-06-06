@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
+import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions, Device } from "../shared/types.js";
 import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 import type { WebhookSubscription, WebhookDelivery } from "../shared/types.js";
@@ -119,6 +119,10 @@ export interface TaskApiClient {
   updateWebhook(webhookId: string, updates: { url?: string; events?: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription>;
   deleteWebhook(webhookId: string): Promise<void>;
   listWebhookDeliveries(webhookId: string, limit?: number): Promise<WebhookDelivery[]>;
+  // Device management methods
+  listDevices(): Promise<Device[]>;
+  getDevice(deviceId: string): Promise<Device>;
+  deleteDevice(deviceId: string): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -294,6 +298,54 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { device: { id: string; token: string } };
       return { id: data.device.id, token: data.device.token };
+    },
+
+    async listDevices(): Promise<Device[]> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/devices`,
+        { method: "GET", headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list devices: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { devices: Device[] };
+      return data.devices;
+    },
+
+    async getDevice(deviceId: string): Promise<Device> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/devices/${encodeURIComponent(deviceId)}`,
+        { method: "GET", headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get device: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { device: Device };
+      return data.device;
+    },
+
+    async deleteDevice(deviceId: string): Promise<void> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/devices/${encodeURIComponent(deviceId)}`,
+        { method: "DELETE", headers },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to delete device: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
     },
 
     async queryAuditLog(options: AuditLogSearchOptions): Promise<AuditLogEntry[]> {

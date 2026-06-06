@@ -268,6 +268,39 @@ function createMockClient(): TaskApiClient & {
       return { id: "dev_001", token: "tok_test" };
     },
 
+    async listDevices(): Promise<import("../../src/shared/types.js").Device[]> {
+      calls.push({ method: "listDevices", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "dev_001",
+          name: "office-desktop",
+          token: "tok_test",
+          capabilities: "frontend,react",
+          lastSeen: "2026-06-01T12:00:00.000Z",
+          createdAt: "2026-06-01T10:00:00.000Z",
+        },
+      ];
+    },
+
+    async getDevice(deviceId: string): Promise<import("../../src/shared/types.js").Device> {
+      calls.push({ method: "getDevice", args: [deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: deviceId,
+        name: "office-desktop",
+        token: "tok_test",
+        capabilities: "frontend,react",
+        lastSeen: "2026-06-01T12:00:00.000Z",
+        createdAt: "2026-06-01T10:00:00.000Z",
+      };
+    },
+
+    async deleteDevice(deviceId: string): Promise<void> {
+      calls.push({ method: "deleteDevice", args: [deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
     async queryAuditLog(options: { action?: string; taskId?: string; actor?: string; actorType?: string; from?: string; to?: string; limit?: number }): Promise<import("../../src/shared/types.js").AuditLogEntry[]> {
       calls.push({ method: "queryAuditLog", args: [options] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1226,8 +1259,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 77 tools", () => {
-        expect(mockServer.registrations).toHaveLength(77);
+      it("registers all 80 tools", () => {
+        expect(mockServer.registrations).toHaveLength(80);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1994,6 +2027,82 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Template not found");
+    });
+  });
+
+  // --- Device tools tests ---
+  describe("device tools", () => {
+    it("registers list_devices tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_devices");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("device");
+    });
+
+    it("lists devices", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_devices")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("listDevices");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.devices).toHaveLength(1);
+      expect(parsed.devices[0].id).toBe("dev_001");
+      expect(parsed.total).toBe(1);
+    });
+
+    it("registers get_device tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_device");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("device");
+    });
+
+    it("gets device details", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_device")!;
+      const result = await tool.handler({ deviceId: "dev_001" });
+
+      expect(mock.calls[0].method).toBe("getDevice");
+      expect(mock.calls[0].args[0]).toBe("dev_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.device.id).toBe("dev_001");
+      expect(parsed.device.name).toBe("office-desktop");
+    });
+
+    it("returns error when getDevice fails", async () => {
+      mock.failWith = "Device not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_device")!;
+      const result = await tool.handler({ deviceId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Device not found");
+    });
+
+    it("registers delete_device tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_device");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("device");
+    });
+
+    it("deletes a device", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_device")!;
+      const result = await tool.handler({ deviceId: "dev_001" });
+
+      expect(mock.calls[0].method).toBe("deleteDevice");
+      expect(mock.calls[0].args[0]).toBe("dev_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("deleted successfully");
+    });
+
+    it("returns error when deleteDevice fails", async () => {
+      mock.failWith = "Device not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_device")!;
+      const result = await tool.handler({ deviceId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Device not found");
     });
   });
 });

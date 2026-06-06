@@ -361,6 +361,125 @@ export function registerMcpTools(
     },
   );
 
+  // list_devices tool
+  server.registerTool(
+    "list_devices",
+    {
+      description:
+        "List all registered devices. Returns device ID, name, capabilities, last seen time, and creation date. Use this to discover available devices for task routing.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const devices = await client.listDevices();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                devices,
+                total: devices.length,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_device tool
+  server.registerTool(
+    "get_device",
+    {
+      description:
+        "Get detailed information about a specific device by its ID. Returns device name, capabilities, token, last seen time, and creation date.",
+      inputSchema: {
+        deviceId: z
+          .string()
+          .describe("The device ID to look up (e.g., 'dev_1234567890_abcdef01')"),
+      },
+    },
+    async (args) => {
+      const { deviceId } = args;
+
+      try {
+        const device = await client.getDevice(deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ device }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_device tool
+  server.registerTool(
+    "delete_device",
+    {
+      description:
+        "Permanently remove a device. This cannot be undone. The device will no longer be available for task routing.",
+      inputSchema: {
+        deviceId: z
+          .string()
+          .describe("The device ID to delete (e.g., 'dev_1234567890_abcdef01')"),
+      },
+    },
+    async (args) => {
+      const { deviceId } = args;
+
+      try {
+        await client.deleteDevice(deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                message: `Device ${deviceId} deleted successfully.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // query_audit_log tool
   server.registerTool(
     "query_audit_log",
