@@ -410,3 +410,97 @@ export function buildSlaBreachCard(
     elements,
   };
 }
+
+/** Build a Feishu card for task watcher notifications (sent as direct message) */
+export function buildWatcherNotificationCard(
+  task: Task,
+  previousStatus: string,
+  newStatus: string,
+  watcherUsername: string,
+): FeishuCard {
+  const statusColor = STATUS_COLORS[newStatus as TaskStatus] || "blue";
+  const statusLabel = STATUS_LABELS[newStatus as TaskStatus] || newStatus;
+
+  const elements: CardElement[] = [];
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `🔔 **Task you're watching has been updated**`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Task:** ${task.id}`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Command:** ${task.commandText}`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Status:** ${STATUS_LABELS[previousStatus as TaskStatus] || previousStatus} → ${statusLabel}`,
+      tag: "lark_md",
+    },
+  });
+
+  elements.push({
+    tag: "div",
+    text: {
+      content: `**Priority:** ${PRIORITY_LABELS[task.priority]}`,
+      tag: "lark_md",
+    },
+  });
+
+  if (task.tags && task.tags.length > 0) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Tags:** ${task.tags.join(", ")}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
+  if (task.description) {
+    elements.push({
+      tag: "div",
+      text: {
+        content: `**Description:** ${task.description.slice(0, 200)}${task.description.length > 200 ? "..." : ""}`,
+        tag: "lark_md",
+      },
+    });
+  }
+
+  elements.push({ tag: "hr" });
+
+  elements.push({
+    tag: "note",
+    elements: [
+      {
+        tag: "plain_text",
+        content: `Watcher notification · ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`,
+      },
+    ],
+  });
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      title: { content: `🔔 Watched Task Updated`, tag: "plain_text" },
+      template: statusColor,
+    },
+    elements,
+  };
+}

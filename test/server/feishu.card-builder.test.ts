@@ -5,6 +5,7 @@ import {
   buildTaskStatusCard,
   buildCustomCard,
   buildSlaBreachCard,
+  buildWatcherNotificationCard,
   serializeCard,
 } from "../../src/server/feishu/card-builder.js";
 import type { Task } from "../../src/shared/types.js";
@@ -225,6 +226,77 @@ describe("card-builder", () => {
       const card = buildSlaBreachCard(task, "Test SLA", "warning", 60, 50);
       const body = JSON.stringify(card);
       expect(body).not.toContain("**Tags:**");
+    });
+  });
+
+  describe("buildWatcherNotificationCard", () => {
+    it("creates a card with task info and status transition", () => {
+      const task = makeTask({ status: "running" });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      expect(card.config.wide_screen_mode).toBe(true);
+      expect(card.header.title.content).toContain("Watched Task Updated");
+      expect(card.elements.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it("shows status transition from previous to new", () => {
+      const task = makeTask({ status: "done" });
+      const card = buildWatcherNotificationCard(task, "running", "done", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("Running");
+      expect(body).toContain("Done");
+    });
+
+    it("includes task ID and command", () => {
+      const task = makeTask({ id: "task_xyz", commandText: "Deploy app" });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("task_xyz");
+      expect(body).toContain("Deploy app");
+    });
+
+    it("includes priority", () => {
+      const task = makeTask({ priority: "urgent" });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("Urgent");
+    });
+
+    it("includes tags when present", () => {
+      const task = makeTask({ tags: ["deploy", "production"] });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("deploy");
+      expect(body).toContain("production");
+    });
+
+    it("omits tags when empty", () => {
+      const task = makeTask({ tags: [] });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).not.toContain("**Tags:**");
+    });
+
+    it("includes description when present", () => {
+      const task = makeTask({ description: "Important deployment" });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("Important deployment");
+    });
+
+    it("truncates long descriptions", () => {
+      const longDesc = "x".repeat(300);
+      const task = makeTask({ description: longDesc });
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const body = JSON.stringify(card);
+      expect(body).toContain("...");
+      expect(body).not.toContain(longDesc);
+    });
+
+    it("serializes to valid JSON", () => {
+      const task = makeTask();
+      const card = buildWatcherNotificationCard(task, "pending", "running", "testuser");
+      const json = serializeCard(card);
+      expect(() => JSON.parse(json)).not.toThrow();
     });
   });
 });

@@ -11,9 +11,15 @@ export interface FeishuSendCardInput {
   card: FeishuCard;
 }
 
+export interface FeishuDirectCardInput {
+  feishuUserId: string;
+  card: FeishuCard;
+}
+
 export interface FeishuReplyClient {
   replyToMessage(input: FeishuReplyInput): Promise<void>;
   sendCardMessage(input: FeishuSendCardInput): Promise<void>;
+  sendDirectCardMessage(input: FeishuDirectCardInput): Promise<void>;
   downloadFile(messageId: string, fileKey: string, type: string): Promise<{ buffer: Buffer; contentType: string; fileName: string }>;
 }
 
@@ -119,6 +125,35 @@ export function createFeishuReplyClient(config: FeishuReplyConfig): FeishuReplyC
 
       if (data.code !== 0) {
         throw new Error(`Failed to send Feishu card message: ${data.msg}`);
+      }
+    },
+
+    async sendDirectCardMessage(input: FeishuDirectCardInput): Promise<void> {
+      const token = await getTenantAccessToken(config);
+
+      const response = await fetch(
+        `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=user_id`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            receive_id: input.feishuUserId,
+            msg_type: "interactive",
+            content: serializeCard(input.card),
+          }),
+        },
+      );
+
+      const data = (await response.json()) as {
+        code: number;
+        msg: string;
+      };
+
+      if (data.code !== 0) {
+        throw new Error(`Failed to send direct Feishu card message: ${data.msg}`);
       }
     },
 

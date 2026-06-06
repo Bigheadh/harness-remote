@@ -6,7 +6,7 @@ import type { AuditLogEntry } from "../../shared/types.js";
 import type { ActivityFeedItem } from "../../shared/types.js";
 import type { Subtask } from "../../shared/types.js";
 import type { FeishuReplyClient } from "../feishu/client.js";
-import { buildTaskResultCard, buildTaskStatusCard, buildCustomCard, buildSlaBreachCard, STATUS_LABELS, STATUS_COLORS } from "../feishu/card-builder.js";
+import { buildTaskResultCard, buildTaskStatusCard, buildCustomCard, buildSlaBreachCard, buildWatcherNotificationCard, STATUS_LABELS, STATUS_COLORS } from "../feishu/card-builder.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
@@ -647,6 +647,26 @@ export function registerTaskRoutes(
       }
     }
 
+    // Notify task watchers via direct Feishu message (bulk)
+    if (feishuClient && userStore && result.updated > 0) {
+      for (const taskId of body.ids) {
+        if (result.errors.includes(taskId)) continue;
+        const task = await store.getTask(taskId);
+        if (task) {
+          const watchers = await store.listWatchers(taskId);
+          for (const watcher of watchers) {
+            const user = await userStore.getUserById(watcher.userId);
+            if (user?.feishuUserId) {
+              const watcherCard = buildWatcherNotificationCard(task, "unknown", body.status, user.username);
+              feishuClient.sendDirectCardMessage({ feishuUserId: user.feishuUserId, card: watcherCard }).catch((err) => {
+                log.warn({ taskId, watcherUserId: watcher.userId, err: err instanceof Error ? err.message : String(err) }, "Failed to send bulk watcher notification");
+              });
+            }
+          }
+        }
+      }
+    }
+
     return reply.send({ ok: true, ...result });
   });
 
@@ -1244,6 +1264,19 @@ export function registerTaskRoutes(
         feishuClient.sendCardMessage({ messageId: task.feishuMessageId, card }).catch((err) => {
           log.warn({ taskId: id, status, err: err instanceof Error ? err.message : String(err) }, "Failed to send status change notification to Feishu");
         });
+      }
+      // Notify task watchers via direct Feishu message
+      if (feishuClient && userStore && previousStatus) {
+        const watchers = await store.listWatchers(id);
+        for (const watcher of watchers) {
+          const user = await userStore.getUserById(watcher.userId);
+          if (user?.feishuUserId) {
+            const watcherCard = buildWatcherNotificationCard(task, previousStatus, status, user.username);
+            feishuClient.sendDirectCardMessage({ feishuUserId: user.feishuUserId, card: watcherCard }).catch((err) => {
+              log.warn({ taskId: id, watcherUserId: watcher.userId, err: err instanceof Error ? err.message : String(err) }, "Failed to send watcher notification");
+            });
+          }
+        }
       }
       return reply.send({ task });
     } catch (e) {

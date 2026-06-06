@@ -386,3 +386,10 @@
 - [x] MCP tools: list_task_watchers — list all users watching a specific task
 - [x] Updated mock client in tests for 3 new interface methods
 - [x] Updated tool count assertion (105 → 108)
+
+## Phase 50: Task Watcher Notifications
+- [x] Feishu client: sendDirectCardMessage — send card messages directly to users by Feishu user ID
+- [x] Card builder: buildWatcherNotificationCard — rich notification card with task details, status transition, priority, tags
+- [x] Status update route: notify all task watchers via direct Feishu message when task status changes
+- [x] Bulk status update route: notify watchers for each updated task in bulk operations
+- [x] Card builder tests: 9 new tests for buildWatcherNotificationCard (info display, status transition, tags, description truncation, serialization)
