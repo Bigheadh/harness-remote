@@ -1055,6 +1055,89 @@ function createMockClient(): TaskApiClient & {
         },
       };
     },
+
+    async listWebhooks(): Promise<import("../../src/shared/types.js").WebhookSubscription[]> {
+      calls.push({ method: "listWebhooks", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "wh_test_001",
+          url: "https://example.com/webhook",
+          events: ["task.created"],
+          secret: "abc123",
+          enabled: true,
+          description: "Test webhook",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getWebhook(webhookId: string): Promise<import("../../src/shared/types.js").WebhookSubscription> {
+      calls.push({ method: "getWebhook", args: [webhookId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: webhookId,
+        url: "https://example.com/webhook",
+        events: ["task.created"],
+        secret: "abc123",
+        enabled: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createWebhook(_data: { url: string; events: string[]; enabled?: boolean; description?: string }): Promise<import("../../src/shared/types.js").WebhookSubscription> {
+      calls.push({ method: "createWebhook", args: [_data] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "wh_new_001",
+        url: _data.url,
+        events: _data.events as import("../../src/shared/types.js").WebhookEvent[],
+        secret: "newsecret",
+        enabled: _data.enabled !== false,
+        description: _data.description,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async updateWebhook(webhookId: string, _updates: Record<string, unknown>): Promise<import("../../src/shared/types.js").WebhookSubscription> {
+      calls.push({ method: "updateWebhook", args: [webhookId, _updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: webhookId,
+        url: "https://example.com/updated",
+        events: ["task.status_changed"],
+        secret: "abc123",
+        enabled: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:01:00.000Z",
+      };
+    },
+
+    async deleteWebhook(webhookId: string): Promise<void> {
+      calls.push({ method: "deleteWebhook", args: [webhookId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async listWebhookDeliveries(webhookId: string, _limit?: number): Promise<import("../../src/shared/types.js").WebhookDelivery[]> {
+      calls.push({ method: "listWebhookDeliveries", args: [webhookId, _limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: 1,
+          webhookId,
+          event: "task.created",
+          url: "https://example.com/webhook",
+          statusCode: 200,
+          success: true,
+          durationMs: 120,
+          timestamp: "2026-06-01T12:00:01.000Z",
+          retryCount: 1,
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -1110,8 +1193,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-    it("registers all 69 tools", () => {
-      expect(mockServer.registrations).toHaveLength(69);
+      it("registers all 75 tools", () => {
+        expect(mockServer.registrations).toHaveLength(75);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1652,6 +1735,136 @@ describe("MCP tools", () => {
       expect(mock.calls).toHaveLength(1);
       expect(mock.calls[0].method).toBe("escalateOverduePriorities");
       expect(result.isError).toBeFalsy();
+    });
+
+    // --- Webhook tools tests ---
+
+    it("registers list_webhooks tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_webhooks");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("webhook");
+    });
+
+    it("lists webhooks", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_webhooks")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("listWebhooks");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.webhooks).toHaveLength(1);
+      expect(parsed.webhooks[0].id).toBe("wh_test_001");
+    });
+
+    it("registers get_webhook tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_webhook");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("webhook");
+    });
+
+    it("gets a webhook by ID", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_webhook")!;
+      const result = await tool.handler({ webhookId: "wh_test_001" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("getWebhook");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.id).toBe("wh_test_001");
+    });
+
+    it("registers create_webhook tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_webhook");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Create");
+    });
+
+    it("creates a webhook", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_webhook")!;
+      const result = await tool.handler({
+        url: "https://example.com/hook",
+        events: ["task.created"],
+        description: "My new hook",
+      });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("createWebhook");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.webhook.id).toBe("wh_new_001");
+      expect(parsed.webhook.url).toBe("https://example.com/hook");
+    });
+
+    it("registers update_webhook tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "update_webhook");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Update");
+    });
+
+    it("updates a webhook", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_webhook")!;
+      const result = await tool.handler({
+        webhookId: "wh_test_001",
+        enabled: false,
+      });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("updateWebhook");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.id).toBe("wh_test_001");
+    });
+
+    it("registers delete_webhook tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_webhook");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Delete");
+    });
+
+    it("deletes a webhook", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_webhook")!;
+      const result = await tool.handler({ webhookId: "wh_test_001" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("deleteWebhook");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("deleted");
+    });
+
+    it("registers list_webhook_deliveries tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_webhook_deliveries");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("delivery");
+    });
+
+    it("lists webhook deliveries", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_webhook_deliveries")!;
+      const result = await tool.handler({ webhookId: "wh_test_001", limit: 10 });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("listWebhookDeliveries");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deliveries).toHaveLength(1);
+      expect(parsed.summary.success).toBe(1);
+    });
+
+    it("returns error when list_webhooks fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_webhooks")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
     });
   });
 });

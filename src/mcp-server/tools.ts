@@ -3040,4 +3040,223 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_webhooks tool
+  server.registerTool(
+    "list_webhooks",
+    {
+      description:
+        "List all webhook subscriptions. Returns webhooks with their URL, subscribed events, enabled status, and creation time. Useful for auditing which external services receive task event notifications.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const webhooks = await client.listWebhooks();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ webhooks, count: webhooks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_webhook tool
+  server.registerTool(
+    "get_webhook",
+    {
+      description:
+        "Get details of a specific webhook subscription including URL, events, secret, and enabled status.",
+      inputSchema: {
+        webhookId: z.string().describe("The webhook subscription ID (e.g., 'wh_1234567890_abc123')"),
+      },
+    },
+    async (args) => {
+      const { webhookId } = args;
+      try {
+        const webhook = await client.getWebhook(webhookId);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(webhook, null, 2) }],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_webhook tool
+  server.registerTool(
+    "create_webhook",
+    {
+      description:
+        "Create a new webhook subscription. The webhook will receive HTTP POST requests to the specified URL when the subscribed events occur. A signing secret is auto-generated for payload verification. Valid events: task.created, task.status_changed, task.result_reported, task.assigned, task.deleted.",
+      inputSchema: {
+        url: z.string().describe("The HTTPS URL to receive webhook POST requests"),
+        events: z
+          .array(z.string())
+          .describe('Array of event types to subscribe to (e.g., ["task.created", "task.status_changed"])'),
+        enabled: z
+          .boolean()
+          .optional()
+          .describe("Whether the webhook is active (default: true)"),
+        description: z
+          .string()
+          .optional()
+          .describe("A human-readable description of what this webhook does"),
+      },
+    },
+    async (args) => {
+      const { url, events, enabled, description } = args;
+      try {
+        const webhook = await client.createWebhook({ url, events, enabled, description });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  message: `Webhook created: ${webhook.id}`,
+                  webhook,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_webhook tool
+  server.registerTool(
+    "update_webhook",
+    {
+      description:
+        "Update an existing webhook subscription. Only specified fields are updated; others remain unchanged. Can change URL, events, enabled status, or description.",
+      inputSchema: {
+        webhookId: z.string().describe("The webhook subscription ID to update"),
+        url: z.string().optional().describe("New URL for the webhook endpoint"),
+        events: z
+          .array(z.string())
+          .optional()
+          .describe("New array of event types to subscribe to"),
+        enabled: z.boolean().optional().describe("Enable or disable the webhook"),
+        description: z.string().optional().describe("New description for the webhook"),
+      },
+    },
+    async (args) => {
+      const { webhookId, url, events, enabled, description } = args;
+      try {
+        const webhook = await client.updateWebhook(webhookId, { url, events, enabled, description });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(webhook, null, 2) }],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_webhook tool
+  server.registerTool(
+    "delete_webhook",
+    {
+      description:
+        "Delete a webhook subscription. This permanently removes the subscription and its delivery history. The webhook will stop receiving events immediately.",
+      inputSchema: {
+        webhookId: z.string().describe("The webhook subscription ID to delete"),
+      },
+    },
+    async (args) => {
+      const { webhookId } = args;
+      try {
+        await client.deleteWebhook(webhookId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Webhook ${webhookId} deleted successfully` }),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_webhook_deliveries tool
+  server.registerTool(
+    "list_webhook_deliveries",
+    {
+      description:
+        "List delivery history for a webhook subscription. Shows past HTTP delivery attempts with status codes, success/failure, response times, and error messages. Useful for debugging webhook integration issues.",
+      inputSchema: {
+        webhookId: z.string().describe("The webhook subscription ID to check deliveries for"),
+        limit: z
+          .number()
+          .optional()
+          .describe("Maximum number of delivery entries to return (default: 50, max: 200)"),
+      },
+    },
+    async (args) => {
+      const { webhookId, limit } = args;
+      try {
+        const deliveries = await client.listWebhookDeliveries(webhookId, limit);
+        const successCount = deliveries.filter((d) => d.success).length;
+        const failCount = deliveries.length - successCount;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  webhookId,
+                  deliveries,
+                  count: deliveries.length,
+                  summary: { success: successCount, failed: failCount },
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

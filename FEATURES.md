@@ -261,3 +261,16 @@
 - [x] Scheduled tasks management (list, create, delete)
 - [x] SLA policies management (list, create, delete)
 - [x] Updated switchView to handle 3 tabs (tasks, analytics, settings)
+
+## Phase 39: Webhook Management MCP Tools
+- [x] Client interface: 6 new webhook methods (listWebhooks, getWebhook, createWebhook, updateWebhook, deleteWebhook, listWebhookDeliveries)
+- [x] Client implementation: HTTP client methods calling existing webhook API routes
+- [x] MCP tools: list_webhooks — list all webhook subscriptions
+- [x] MCP tools: get_webhook — get webhook details by ID
+- [x] MCP tools: create_webhook — create new webhook with URL and event subscriptions
+- [x] MCP tools: update_webhook — update webhook URL, events, enabled status
+- [x] MCP tools: delete_webhook — permanently remove webhook subscription
+- [x] MCP tools: list_webhook_deliveries — view delivery history with success/fail summary
+- [x] Updated mock client in tests for 6 new interface methods
+- [x] Updated tool count assertion (69 → 75)
+- [x] Added 13 new tests for webhook MCP tools

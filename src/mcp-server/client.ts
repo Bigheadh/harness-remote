@@ -1,6 +1,7 @@
 import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions } from "../shared/types.js";
 import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
+import type { WebhookSubscription, WebhookDelivery } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string, priority?: string): Promise<Task[]>;
@@ -108,6 +109,13 @@ export interface TaskApiClient {
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
   // API usage analytics
   getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>>;
+  // Webhook methods
+  listWebhooks(): Promise<WebhookSubscription[]>;
+  getWebhook(webhookId: string): Promise<WebhookSubscription>;
+  createWebhook(data: { url: string; events: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription>;
+  updateWebhook(webhookId: string, updates: { url?: string; events?: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription>;
+  deleteWebhook(webhookId: string): Promise<void>;
+  listWebhookDeliveries(webhookId: string, limit?: number): Promise<WebhookDelivery[]>;
 }
 
 export function createTaskApiClient(
@@ -1274,6 +1282,91 @@ export function createTaskApiClient(
         );
       }
       return (await response.json()) as Record<string, unknown>;
+    },
+
+    async listWebhooks(): Promise<WebhookSubscription[]> {
+      const response = await fetch(`${serverBaseUrl}/api/webhooks`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list webhooks: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { webhooks: WebhookSubscription[] };
+      return data.webhooks;
+    },
+
+    async getWebhook(webhookId: string): Promise<WebhookSubscription> {
+      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { webhook: WebhookSubscription };
+      return data.webhook;
+    },
+
+    async createWebhook(data: { url: string; events: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription> {
+      const response = await fetch(`${serverBaseUrl}/api/webhooks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to create webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const result = (await response.json()) as { webhook: WebhookSubscription };
+      return result.webhook;
+    },
+
+    async updateWebhook(webhookId: string, updates: { url?: string; events?: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription> {
+      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to update webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const result = (await response.json()) as { webhook: WebhookSubscription };
+      return result.webhook;
+    },
+
+    async deleteWebhook(webhookId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to delete webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+    },
+
+    async listWebhookDeliveries(webhookId: string, limit?: number): Promise<WebhookDelivery[]> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list webhook deliveries: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { deliveries: WebhookDelivery[] };
+      return data.deliveries;
     },
   };
 }
