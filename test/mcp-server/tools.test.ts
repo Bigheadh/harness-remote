@@ -1326,6 +1326,114 @@ function createMockClient(): TaskApiClient & {
         updatedAt: "2026-06-07T00:00:00.000Z",
       };
     },
+
+    // API key management mocks
+    async listApiKeys(userId?: string): Promise<Array<Record<string, unknown>>> {
+      calls.push({ method: "listApiKeys", args: [userId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "ak_001",
+          name: "Test API Key",
+          key: "ak_test123",
+          userId: userId ?? "user_001",
+          role: "admin",
+          enabled: true,
+          lastUsedAt: "2026-06-06T12:00:00.000Z",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getApiKey(keyId: string): Promise<Record<string, unknown>> {
+      calls.push({ method: "getApiKey", args: [keyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: keyId,
+        name: "Test API Key",
+        key: "ak_test123",
+        userId: "user_001",
+        role: "admin",
+        enabled: true,
+        lastUsedAt: "2026-06-06T12:00:00.000Z",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createApiKey(name: string, userId: string, role?: string): Promise<Record<string, unknown>> {
+      calls.push({ method: "createApiKey", args: [name, userId, role] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "ak_new_001",
+        name,
+        key: "ak_new_secret_key_123",
+        userId,
+        role: role ?? "viewer",
+        enabled: true,
+        createdAt: "2026-06-07T12:00:00.000Z",
+        updatedAt: "2026-06-07T12:00:00.000Z",
+      };
+    },
+
+    async rotateApiKey(keyId: string, gracePeriodMs?: number): Promise<Record<string, unknown>> {
+      calls.push({ method: "rotateApiKey", args: [keyId, gracePeriodMs] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: keyId,
+        name: "Test API Key",
+        key: "ak_rotated_new_key",
+        previousKey: "ak_old_key",
+        previousKeyExpiresAt: "2026-06-08T12:00:00.000Z",
+        userId: "user_001",
+        role: "admin",
+        enabled: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T12:00:00.000Z",
+      };
+    },
+
+    async revokeApiKey(keyId: string): Promise<void> {
+      calls.push({ method: "revokeApiKey", args: [keyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async enableApiKey(keyId: string): Promise<Record<string, unknown>> {
+      calls.push({ method: "enableApiKey", args: [keyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: keyId,
+        name: "Test API Key",
+        key: "ak_test123",
+        userId: "user_001",
+        role: "admin",
+        enabled: true,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T12:00:00.000Z",
+      };
+    },
+
+    async disableApiKey(keyId: string): Promise<Record<string, unknown>> {
+      calls.push({ method: "disableApiKey", args: [keyId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: keyId,
+        name: "Test API Key",
+        key: "ak_test123",
+        userId: "user_001",
+        role: "admin",
+        enabled: false,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T12:00:00.000Z",
+      };
+    },
+
+    async cleanupExpiredApiKeys(): Promise<{ cleaned: number }> {
+      calls.push({ method: "cleanupExpiredApiKeys", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { cleaned: 3 };
+    },
   };
   return mock;
 }
@@ -1381,8 +1489,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 90 tools", () => {
-        expect(mockServer.registrations).toHaveLength(90);
+      it("registers all 98 tools", () => {
+        expect(mockServer.registrations).toHaveLength(98);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2526,6 +2634,199 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("User not found");
+    });
+
+    // --- API key management tools ---
+    it("registers list_api_keys tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_api_keys");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("API key");
+    });
+
+    it("lists API keys", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_api_keys")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("listApiKeys");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.apiKeys).toHaveLength(1);
+      expect(parsed.apiKeys[0].id).toBe("ak_001");
+    });
+
+    it("returns error when listApiKeys fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_api_keys")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("DB error");
+    });
+
+    it("registers get_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("API key");
+    });
+
+    it("gets API key details", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_key")!;
+      const result = await tool.handler({ keyId: "ak_001" });
+
+      expect(mock.calls[0].method).toBe("getApiKey");
+      expect(mock.calls[0].args[0]).toBe("ak_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.id).toBe("ak_001");
+    });
+
+    it("returns error when getApiKey fails", async () => {
+      mock.failWith = "Key not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_key")!;
+      const result = await tool.handler({ keyId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Key not found");
+    });
+
+    it("registers create_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Create");
+    });
+
+    it("creates an API key", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_api_key")!;
+      const result = await tool.handler({ name: "My Key", userId: "usr_001", role: "operator" });
+
+      expect(mock.calls[0].method).toBe("createApiKey");
+      expect(mock.calls[0].args[0]).toBe("My Key");
+      expect(mock.calls[0].args[1]).toBe("usr_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.apiKey.name).toBe("My Key");
+      expect(parsed.message).toContain("created");
+    });
+
+    it("returns error when createApiKey fails", async () => {
+      mock.failWith = "Invalid role";
+      const tool = mockServer.registrations.find((r) => r.name === "create_api_key")!;
+      const result = await tool.handler({ name: "Key", userId: "usr_001" });
+
+      expect(result.isError).toBe(true);
+    });
+
+    it("registers rotate_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "rotate_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Rotate");
+    });
+
+    it("rotates an API key", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "rotate_api_key")!;
+      const result = await tool.handler({ keyId: "ak_001", gracePeriodMs: 3600000 });
+
+      expect(mock.calls[0].method).toBe("rotateApiKey");
+      expect(mock.calls[0].args[0]).toBe("ak_001");
+      expect(mock.calls[0].args[1]).toBe(3600000);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.apiKey.key).toBe("ak_rotated_new_key");
+      expect(parsed.message).toContain("rotated");
+    });
+
+    it("returns error when rotateApiKey fails", async () => {
+      mock.failWith = "Key not found";
+      const tool = mockServer.registrations.find((r) => r.name === "rotate_api_key")!;
+      const result = await tool.handler({ keyId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+    });
+
+    it("registers revoke_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "revoke_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("revoke");
+    });
+
+    it("revokes an API key", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "revoke_api_key")!;
+      const result = await tool.handler({ keyId: "ak_001" });
+
+      expect(mock.calls[0].method).toBe("revokeApiKey");
+      expect(mock.calls[0].args[0]).toBe("ak_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("revoked successfully");
+    });
+
+    it("returns error when revokeApiKey fails", async () => {
+      mock.failWith = "Key not found";
+      const tool = mockServer.registrations.find((r) => r.name === "revoke_api_key")!;
+      const result = await tool.handler({ keyId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+    });
+
+    it("registers enable_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "enable_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("enable");
+    });
+
+    it("enables an API key", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "enable_api_key")!;
+      const result = await tool.handler({ keyId: "ak_001" });
+
+      expect(mock.calls[0].method).toBe("enableApiKey");
+      expect(mock.calls[0].args[0]).toBe("ak_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("enabled successfully");
+    });
+
+    it("registers disable_api_key tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "disable_api_key");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("disable");
+    });
+
+    it("disables an API key", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "disable_api_key")!;
+      const result = await tool.handler({ keyId: "ak_001" });
+
+      expect(mock.calls[0].method).toBe("disableApiKey");
+      expect(mock.calls[0].args[0]).toBe("ak_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("disabled successfully");
+    });
+
+    it("registers cleanup_expired_api_keys tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_expired_api_keys");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("expired");
+    });
+
+    it("cleans up expired API keys", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_expired_api_keys")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("cleanupExpiredApiKeys");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.cleaned).toBe(3);
+      expect(parsed.message).toContain("3");
+    });
+
+    it("returns error when cleanupExpiredApiKeys fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_expired_api_keys")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
     });
   });
 });

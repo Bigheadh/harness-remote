@@ -338,3 +338,18 @@
 - [x] Updated mock client in tests for 6 new interface methods
 - [x] Updated tool count assertion (84 → 90)
 - [x] Added 12 new tests for user management MCP tools (registration, CRUD, error cases)
+
+## Phase 46: API Key Management MCP Tools
+- [x] Client interface: 8 new API key methods (listApiKeys, getApiKey, createApiKey, rotateApiKey, revokeApiKey, enableApiKey, disableApiKey, cleanupExpiredApiKeys)
+- [x] Client implementation: HTTP client methods calling existing API key routes (/api/keys/*)
+- [x] MCP tool: list_api_keys — list all API keys, optionally filtered by user ID
+- [x] MCP tool: get_api_key — get API key details by ID (name, role, enabled status, last used, previous key info)
+- [x] MCP tool: create_api_key — create new API key with name, user assignment, and optional role
+- [x] MCP tool: rotate_api_key — rotate API key with configurable grace period (0-7 days)
+- [x] MCP tool: revoke_api_key — permanently delete an API key
+- [x] MCP tool: enable_api_key — re-enable a disabled API key
+- [x] MCP tool: disable_api_key — temporarily disable an API key
+- [x] MCP tool: cleanup_expired_api_keys — delete expired previous keys from rotations
+- [x] Updated mock client in tests for 8 new interface methods
+- [x] Updated tool count assertion (90 → 98)
+- [x] Added 22 new tests for API key MCP tools (registration, CRUD, rotation, enable/disable, cleanup, error cases)

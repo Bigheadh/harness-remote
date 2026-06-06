@@ -135,6 +135,15 @@ export interface TaskApiClient {
   updateUserRole(userId: string, role: UserRole): Promise<User>;
   deleteUser(userId: string): Promise<void>;
   regenerateUserToken(userId: string): Promise<User>;
+  // API key management methods
+  listApiKeys(userId?: string): Promise<Array<Record<string, unknown>>>;
+  getApiKey(keyId: string): Promise<Record<string, unknown>>;
+  createApiKey(name: string, userId: string, role?: string): Promise<Record<string, unknown>>;
+  rotateApiKey(keyId: string, gracePeriodMs?: number): Promise<Record<string, unknown>>;
+  revokeApiKey(keyId: string): Promise<void>;
+  enableApiKey(keyId: string): Promise<Record<string, unknown>>;
+  disableApiKey(keyId: string): Promise<Record<string, unknown>>;
+  cleanupExpiredApiKeys(): Promise<{ cleaned: number }>;
 }
 
 export function createTaskApiClient(
@@ -1605,6 +1614,107 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { user: User };
       return data.user;
+    },
+
+    async listApiKeys(userId?: string): Promise<Array<Record<string, unknown>>> {
+      const params = new URLSearchParams();
+      if (userId) params.set("userId", userId);
+      const url = `${serverBaseUrl}/api/keys${params.toString() ? `?${params.toString()}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list API keys: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKeys: Array<Record<string, unknown>> };
+      return data.apiKeys;
+    },
+
+    async getApiKey(keyId: string): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      return data.apiKey;
+    },
+
+    async createApiKey(name: string, userId: string, role?: string): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/keys`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ name, userId, role }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      return data.apiKey;
+    },
+
+    async rotateApiKey(keyId: string, gracePeriodMs?: number): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/rotate`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ gracePeriodMs }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to rotate API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      return data.apiKey;
+    },
+
+    async revokeApiKey(keyId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/revoke`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to revoke API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async enableApiKey(keyId: string): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/enable`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to enable API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      return data.apiKey;
+    },
+
+    async disableApiKey(keyId: string): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/disable`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to disable API key: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      return data.apiKey;
+    },
+
+    async cleanupExpiredApiKeys(): Promise<{ cleaned: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/keys/cleanup-expired`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to cleanup expired API keys: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { cleaned: number };
+      return { cleaned: data.cleaned };
     },
   };
 }

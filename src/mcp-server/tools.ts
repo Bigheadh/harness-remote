@@ -3805,4 +3805,275 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_api_keys tool
+  server.registerTool(
+    "list_api_keys",
+    {
+      description: "List all API keys, optionally filtered by user ID. Shows key name, user assignment, role, enabled status, and last used time. The actual key token is included for newly created or rotated keys.",
+      inputSchema: {
+        userId: z
+          .string()
+          .optional()
+          .describe("Filter API keys by user ID"),
+      },
+    },
+    async (args) => {
+      const { userId } = args;
+      try {
+        const apiKeys = await client.listApiKeys(userId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ apiKeys, count: apiKeys.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_api_key tool
+  server.registerTool(
+    "get_api_key",
+    {
+      description: "Get details of a specific API key including name, user assignment, role, enabled status, last used time, and previous key info (for grace period rotations).",
+      inputSchema: {
+        keyId: z.string().describe("The API key ID (e.g., 'ak_1234567890_abc123')"),
+      },
+    },
+    async (args) => {
+      const { keyId } = args;
+      try {
+        const apiKey = await client.getApiKey(keyId);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(apiKey, null, 2) }],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_api_key tool
+  server.registerTool(
+    "create_api_key",
+    {
+      description:
+        "Create a new API key for a user. The key can be used as a Bearer token for authentication. Only admins and operators can create API keys.",
+      inputSchema: {
+        name: z.string().describe("A human-readable name for the API key (e.g., 'Codex CLI key')"),
+        userId: z.string().describe("The user ID to assign this API key to"),
+        role: z
+          .enum(["admin", "operator", "viewer"])
+          .optional()
+          .describe("The role for this API key (default: the creator's role)"),
+      },
+    },
+    async (args) => {
+      const { name, userId, role } = args;
+      try {
+        const apiKey = await client.createApiKey(name, userId, role);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  apiKey,
+                  message: `API key '${name}' created for user '${userId}'. Key: ${apiKey.key}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // rotate_api_key tool
+  server.registerTool(
+    "rotate_api_key",
+    {
+      description:
+        "Rotate an API key — generate a new key and optionally keep the old one valid for a grace period (default: 24 hours). After the grace period, the old key is automatically revoked.",
+      inputSchema: {
+        keyId: z.string().describe("The API key ID to rotate"),
+        gracePeriodMs: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Grace period in milliseconds for the previous key to remain valid (default: 86400000 = 24 hours, max: 604800000 = 7 days). Set to 0 to revoke immediately."),
+      },
+    },
+    async (args) => {
+      const { keyId, gracePeriodMs } = args;
+      try {
+        const apiKey = await client.rotateApiKey(keyId, gracePeriodMs);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  apiKey,
+                  message: `API key rotated. New key: ${apiKey.key}${apiKey.previousKeyExpiresAt ? `. Previous key expires at: ${apiKey.previousKeyExpiresAt}` : ""}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // revoke_api_key tool
+  server.registerTool(
+    "revoke_api_key",
+    {
+      description: "Permanently revoke (delete) an API key. The key will immediately stop working for authentication. This action cannot be undone.",
+      inputSchema: {
+        keyId: z.string().describe("The API key ID to revoke"),
+      },
+    },
+    async (args) => {
+      const { keyId } = args;
+      try {
+        await client.revokeApiKey(keyId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `API key '${keyId}' revoked successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // enable_api_key tool
+  server.registerTool(
+    "enable_api_key",
+    {
+      description: "Re-enable a disabled API key. The key will immediately start working for authentication again.",
+      inputSchema: {
+        keyId: z.string().describe("The API key ID to enable"),
+      },
+    },
+    async (args) => {
+      const { keyId } = args;
+      try {
+        const apiKey = await client.enableApiKey(keyId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ apiKey, message: `API key '${keyId}' enabled successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // disable_api_key tool
+  server.registerTool(
+    "disable_api_key",
+    {
+      description: "Temporarily disable an API key. The key will stop working for authentication but can be re-enabled later.",
+      inputSchema: {
+        keyId: z.string().describe("The API key ID to disable"),
+      },
+    },
+    async (args) => {
+      const { keyId } = args;
+      try {
+        const apiKey = await client.disableApiKey(keyId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ apiKey, message: `API key '${keyId}' disabled successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // cleanup_expired_api_keys tool
+  server.registerTool(
+    "cleanup_expired_api_keys",
+    {
+      description:
+        "Delete expired previous API keys from key rotations. After a key rotation with grace period, the old key stays in the database until it expires. This tool cleans up those expired entries.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const result = await client.cleanupExpiredApiKeys();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Cleaned up ${result.cleaned} expired API key(s)`, cleaned: result.cleaned }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
