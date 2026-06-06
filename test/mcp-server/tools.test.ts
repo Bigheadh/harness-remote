@@ -1506,6 +1506,24 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { deletedCount: 15 };
     },
+
+    async watchTask(taskId: string): Promise<import("../../src/shared/types.js").TaskWatcher> {
+      calls.push({ method: "watchTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { taskId, userId: "user_1", createdAt: new Date().toISOString() };
+    },
+
+    async unwatchTask(taskId: string): Promise<{ removed: boolean }> {
+      calls.push({ method: "unwatchTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { removed: true };
+    },
+
+    async listTaskWatchers(taskId: string): Promise<import("../../src/shared/types.js").TaskWatcher[]> {
+      calls.push({ method: "listTaskWatchers", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [{ taskId, userId: "user_1", createdAt: new Date().toISOString() }];
+    },
   };
   return mock;
 }
@@ -1561,8 +1579,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 105 tools", () => {
-        expect(mockServer.registrations).toHaveLength(105);
+      it("registers all 108 tools", () => {
+        expect(mockServer.registrations).toHaveLength(108);
     });
 
     it("registers list_tasks with correct description", () => {

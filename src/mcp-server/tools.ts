@@ -4325,4 +4325,94 @@ export function registerMcpTools(
       }
     },
   );
+
+  // watch_task tool
+  server.registerTool(
+    "watch_task",
+    {
+      description: "Subscribe to updates for a task. You will be notified of status changes, comments, and other updates to this task.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to watch"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const watcher = await client.watchTask(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: "Now watching task", watcher }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // unwatch_task tool
+  server.registerTool(
+    "unwatch_task",
+    {
+      description: "Unsubscribe from updates for a task. You will no longer receive notifications for this task.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to stop watching"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const result = await client.unwatchTask(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: result.removed ? "Unwatched task" : "Not watching this task", removed: result.removed }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_task_watchers tool
+  server.registerTool(
+    "list_task_watchers",
+    {
+      description: "List all users who are watching a specific task for updates.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to list watchers for"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const watchers = await client.listTaskWatchers(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ watchers, count: watchers.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

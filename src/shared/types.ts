@@ -62,6 +62,28 @@ export interface Task {
   description?: string;
   /** ISO 8601 timestamp when the task reached a terminal state (done/failed) */
   completedAt?: string;
+  /** Estimated time in minutes for this task */
+  estimatedMinutes?: number;
+  /** Actual total time spent in minutes (computed from time entries) */
+  actualMinutes?: number;
+}
+
+/** A time entry — a block of time logged against a task */
+export interface TimeEntry {
+  id: string;
+  taskId: string;
+  /** ISO 8601 timestamp when this time entry started */
+  startedAt: string;
+  /** ISO 8601 timestamp when this time entry ended (null if still running) */
+  endedAt?: string;
+  /** Duration in minutes (computed from startedAt/endedAt, or manually set) */
+  durationMinutes: number;
+  /** Optional description of what was done during this time */
+  description?: string;
+  /** Who logged this entry (device ID, user ID, or "system") */
+  loggedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** A subtask — an independently trackable child task */
@@ -543,4 +565,11 @@ export interface SavedViewFilters {
   toDate?: string;
   /** Full-text search query */
   query?: string;
+}
+
+/** A task watcher/subscriber — tracks who is watching a task for updates */
+export interface TaskWatcher {
+  taskId: string;
+  userId: string;
+  createdAt: string;
 }

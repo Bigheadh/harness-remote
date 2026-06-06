@@ -2,6 +2,7 @@ import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions, Device, Us
 import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 import type { WebhookSubscription, WebhookDelivery } from "../shared/types.js";
+import type { TaskWatcher } from "../shared/types.js";
 
 export interface TaskApiClient {
   listTasks(status?: TaskStatus, limit?: number, deviceId?: string, priority?: string): Promise<Task[]>;
@@ -153,6 +154,10 @@ export interface TaskApiClient {
   // Maintenance methods
   resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }>;
   cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }>;
+  // Task watcher methods
+  watchTask(taskId: string): Promise<TaskWatcher>;
+  unwatchTask(taskId: string): Promise<{ removed: boolean }>;
+  listTaskWatchers(taskId: string): Promise<TaskWatcher[]>;
 }
 
 export function createTaskApiClient(
@@ -1811,6 +1816,44 @@ export function createTaskApiClient(
         throw new Error(`Failed to cleanup processed events: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       return (await response.json()) as { deletedCount: number };
+    },
+
+    async watchTask(taskId: string): Promise<TaskWatcher> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to watch task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { watcher: TaskWatcher };
+      return data.watcher;
+    },
+
+    async unwatchTask(taskId: string): Promise<{ removed: boolean }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to unwatch task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as { removed: boolean };
+    },
+
+    async listTaskWatchers(taskId: string): Promise<TaskWatcher[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
+        method: "GET",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list task watchers: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { watchers: TaskWatcher[] };
+      return data.watchers;
     },
   };
 }

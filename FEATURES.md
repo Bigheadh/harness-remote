@@ -376,3 +376,13 @@
 - [x] Updated mock client in tests for 2 new interface methods
 - [x] Updated tool count assertion (103 → 105)
 - [x] Added 8 new tests for maintenance MCP tools (registration, default/custom params, error cases)
+
+## Phase 49: Task Watchers (Subscribe to Task Updates)
+- [x] Store layer: task_watchers SQLite table with CRUD methods (addWatcher, removeWatcher, listWatchers, isWatching)
+- [x] API routes: GET/POST/DELETE /api/tasks/:id/watchers (requires auth + RBAC)
+- [x] MCP client: 3 new methods (watchTask, unwatchTask, listTaskWatchers)
+- [x] MCP tools: watch_task — subscribe to task updates for notifications
+- [x] MCP tools: unwatch_task — unsubscribe from task updates
+- [x] MCP tools: list_task_watchers — list all users watching a specific task
+- [x] Updated mock client in tests for 3 new interface methods
+- [x] Updated tool count assertion (105 → 108)

@@ -162,6 +162,11 @@ export interface TaskStore {
   getSavedView(id: string): Promise<SavedView | undefined>;
   updateSavedView(id: string, updates: Partial<Pick<SavedView, "name" | "filters">>): Promise<SavedView>;
   deleteSavedView(id: string): Promise<boolean>;
+  // Task watchers (subscribe to task updates)
+  addWatcher(taskId: string, userId: string): Promise<import("../../shared/types.js").TaskWatcher>;
+  removeWatcher(taskId: string, userId: string): Promise<boolean>;
+  listWatchers(taskId: string): Promise<import("../../shared/types.js").TaskWatcher[]>;
+  isWatching(taskId: string, userId: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -429,6 +434,29 @@ export function createTaskStore(storagePath: string): TaskStore {
     // Column already exists, ignore
   }
 
+  // Phase 49: estimated_minutes on tasks
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER`); } catch {}
+
+  // Time entries table (Phase 49: Task Time Tracking)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      duration_minutes REAL NOT NULL DEFAULT 0,
+      description TEXT,
+      logged_by TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_time_entries_task_id
+      ON time_entries(task_id)
+  `);
+
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_feishu_message_id
       ON tasks(feishu_message_id)
@@ -545,6 +573,11 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE TABLE IF NOT EXISTS saved_views (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      created_by TEXT NOT NULL,\n      filters TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_saved_views_created_by\n      ON saved_views(created_by)\n  `);
+
+  // Task watchers table (subscribe to task updates)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS task_watchers (\n      task_id TEXT NOT NULL,\n      user_id TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      PRIMARY KEY (task_id, user_id),\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_watchers_user_id\n      ON task_watchers(user_id)\n  `);
 
   // Prepare statements
   const insertTask = db.prepare(`
@@ -3021,6 +3054,32 @@ export function createTaskStore(storagePath: string): TaskStore {
     async deleteSavedView(id: string): Promise<boolean> {
       const result = db.prepare(`DELETE FROM saved_views WHERE id = ?`).run(id);
       return Number(result.changes) > 0;
+    },
+
+    async addWatcher(taskId: string, userId: string): Promise<import("../../shared/types.js").TaskWatcher> {
+      const now = new Date().toISOString();
+      const insert = db.prepare(`INSERT OR IGNORE INTO task_watchers (task_id, user_id, created_at) VALUES (?, ?, ?)`);
+      insert.run(taskId, userId, now);
+      return { taskId, userId, createdAt: now };
+    },
+
+    async removeWatcher(taskId: string, userId: string): Promise<boolean> {
+      const result = db.prepare(`DELETE FROM task_watchers WHERE task_id = ? AND user_id = ?`).run(taskId, userId);
+      return Number(result.changes) > 0;
+    },
+
+    async listWatchers(taskId: string): Promise<import("../../shared/types.js").TaskWatcher[]> {
+      const rows = db.prepare(`SELECT * FROM task_watchers WHERE task_id = ?`).all(taskId) as Record<string, unknown>[];
+      return rows.map(r => ({
+        taskId: r.task_id as string,
+        userId: r.user_id as string,
+        createdAt: r.created_at as string,
+      }));
+    },
+
+    async isWatching(taskId: string, userId: string): Promise<boolean> {
+      const row = db.prepare(`SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?`).get(taskId, userId);
+      return row !== undefined;
     },
   };
 }
