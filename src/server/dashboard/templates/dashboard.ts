@@ -392,6 +392,28 @@ export function renderDashboardHTML(
     .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; padding: 16px 0; }
     .chart-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
     .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: var(--text); }
+    /* Kanban board view */
+    .kanban-board { display: flex; gap: 12px; padding: 16px 0; overflow-x: auto; min-height: 400px; }
+    .kanban-column { flex: 1; min-width: 220px; max-width: 320px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; }
+    .kanban-column-header { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .kanban-column-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .kanban-column-count { font-size: 11px; color: var(--text-dim); background: var(--bg); padding: 2px 8px; border-radius: 10px; }
+    .kanban-column-body { flex: 1; padding: 8px; overflow-y: auto; max-height: 500px; display: flex; flex-direction: column; gap: 6px; }
+    .kanban-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; }
+    .kanban-card:hover { border-color: var(--accent); }
+    .kanban-card-id { font-size: 10px; color: var(--text-dim); font-family: monospace; margin-bottom: 4px; }
+    .kanban-card-command { font-size: 12px; color: var(--text); line-height: 1.4; word-break: break-word; }
+    .kanban-card-meta { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .kanban-card-tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: rgba(108,92,231,0.15); color: var(--accent); }
+    .kanban-card-priority { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+    .kanban-card-priority.urgent { background: rgba(255,71,87,0.15); color: var(--red); }
+    .kanban-card-priority.high { background: rgba(255,99,72,0.15); color: var(--orange); }
+    .kanban-card-priority.normal { background: rgba(30,144,255,0.15); color: var(--blue); }
+    .kanban-card-priority.low { background: rgba(139,143,163,0.15); color: var(--text-dim); }
+    .kanban-card-due { font-size: 10px; color: var(--red); }
+    .kanban-card-pinned { font-size: 10px; color: var(--yellow); }
+    .kanban-empty { text-align: center; color: var(--text-dim); font-size: 12px; padding: 20px; }
+
     .bar-chart { display: flex; flex-direction: column; gap: 6px; }
     .bar-row { display: flex; align-items: center; gap: 8px; }
     .bar-label { width: 80px; font-size: 11px; color: var(--text-dim); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -450,6 +472,7 @@ export function renderDashboardHTML(
     <nav class="view-tabs" id="viewTabs">
       <button class="view-tab active" onclick="switchView('tasks')">📋 Tasks</button>
       <button class="view-tab" onclick="switchView('analytics')">📊 Analytics</button>
+      <button class="view-tab" onclick="switchView('kanban')">📌 Kanban</button>
       <button class="view-tab" onclick="switchView('settings')">⚙️ Settings</button>
     </nav>
     <div class="header-actions">
@@ -519,6 +542,11 @@ export function renderDashboardHTML(
     <!-- Analytics view -->
     <div class="view-panel" id="analyticsView">
       <div id="analyticsContent"><div class="analytics-loading">Loading analytics...</div></div>
+    </div>
+
+    <!-- Kanban view -->
+    <div class="view-panel" id="kanbanView">
+      <div id="kanbanContent"><div class="kanban-empty">Loading kanban board...</div></div>
     </div>
 
     <!-- Settings view -->
@@ -1752,11 +1780,71 @@ export function renderDashboardHTML(
         document.querySelector('.view-tab:nth-child(2)').classList.add('active');
         document.getElementById('analyticsView').classList.add('active');
         loadAnalytics();
-      } else if (view === 'settings') {
+      } else if (view === 'kanban') {
         document.querySelector('.view-tab:nth-child(3)').classList.add('active');
+        document.getElementById('kanbanView').classList.add('active');
+        loadKanban();
+      } else if (view === 'settings') {
+        document.querySelector('.view-tab:nth-child(4)').classList.add('active');
         document.getElementById('settingsView').classList.add('active');
         loadSettings();
       }
+    }
+
+
+    // Kanban board
+    async function loadKanban() {
+      const container = document.getElementById('kanbanContent');
+      container.innerHTML = '<div class="kanban-empty">Loading kanban board...</div>';
+      try {
+        const board = await apiFetch('/api/tasks/kanban');
+        renderKanban(container, board);
+      } catch (e) {
+        container.innerHTML = '<div class="kanban-empty">Failed to load kanban: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function renderKanban(container, board) {
+      if (!board.columns || board.columns.length === 0) {
+        container.innerHTML = '<div class="kanban-empty">No tasks found</div>';
+        return;
+      }
+      const PRIORITY_CLASSES = { urgent: 'urgent', high: 'high', normal: 'normal', low: 'low' };
+      let html = '<div class="kanban-board">';
+      for (const col of board.columns) {
+        html += '<div class="kanban-column">';
+        html += '<div class="kanban-column-header">';
+        html += '<span class="kanban-column-title">' + escapeHtml(col.label) + '</span>';
+        html += '<span class="kanban-column-count">' + col.count + '</span>';
+        html += '</div>';
+        html += '<div class="kanban-column-body">';
+        if (col.tasks.length === 0) {
+          html += '<div class="kanban-empty">No tasks</div>';
+        } else {
+          for (const task of col.tasks) {
+            const priClass = PRIORITY_CLASSES[task.priority] || 'normal';
+            html += '<div class="kanban-card" onclick="openDetail(\'' + task.id + '\')">';
+            html += '<div class="kanban-card-id">' + escapeHtml(task.id.substring(0, 16)) + '</div>';
+            html += '<div class="kanban-card-command">' + escapeHtml(task.commandText.substring(0, 120)) + '</div>';
+            html += '<div class="kanban-card-meta">';
+            html += '<span class="kanban-card-priority ' + priClass + '">' + task.priority + '</span>';
+            if (task.pinned) html += '<span class="kanban-card-pinned">📌</span>';
+            if (task.dueDate) {
+              const isOverdue = new Date(task.dueDate) < new Date();
+              html += '<span class="kanban-card-due">' + (isOverdue ? '⚠️ ' : '') + formatTime(task.dueDate) + '</span>';
+            }
+            if (task.tags && task.tags.length > 0) {
+              for (const tag of task.tags.slice(0, 3)) {
+                html += '<span class="kanban-card-tag">' + escapeHtml(tag) + '</span>';
+              }
+            }
+            html += '</div></div>';
+          }
+        }
+        html += '</div></div>';
+      }
+      html += '</div>';
+      container.innerHTML = html;
     }
 
     // Analytics

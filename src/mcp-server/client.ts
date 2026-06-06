@@ -107,6 +107,8 @@ export interface TaskApiClient {
   bulkUnarchiveTasks(ids: string[]): Promise<{ restored: number; errors: string[] }>;
   // Priority auto-escalation
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
+  // Kanban board
+  getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../shared/types.js").KanbanBoard>;
   // API usage analytics
   getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>>;
   // Webhook methods
@@ -1266,6 +1268,24 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { escalated: number; tasks: Task[] };
       return { escalated: data.escalated, tasks: data.tasks };
+    },
+
+    // ── Kanban Board ──────────────────────────────────────────────
+
+    async getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../shared/types.js").KanbanBoard> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      if (deviceId) params.set("deviceId", deviceId);
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/kanban${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get kanban board: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as import("../shared/types.js").KanbanBoard;
     },
 
     async getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>> {

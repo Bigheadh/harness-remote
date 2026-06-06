@@ -490,3 +490,17 @@ export interface TaskStats {
   /** Timestamp of when stats were computed */
   computedAt: string;
 }
+
+/** A single column in the Kanban board */
+export interface KanbanColumn {
+  status: TaskStatus;
+  label: string;
+  count: number;
+  tasks: Task[];
+}
+
+/** Kanban board view — tasks grouped by status */
+export interface KanbanBoard {
+  columns: KanbanColumn[];
+  totalTasks: number;
+}

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency, KanbanBoard } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -1138,6 +1138,21 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    async getKanbanBoard(): Promise<import("../../src/shared/types.js").KanbanBoard> {
+      calls.push({ method: "getKanbanBoard", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        columns: [
+          { status: "pending", label: "Pending", count: 1, tasks: [] },
+          { status: "picked", label: "Picked", count: 0, tasks: [] },
+          { status: "running", label: "Running", count: 0, tasks: [] },
+          { status: "done", label: "Done", count: 0, tasks: [] },
+          { status: "failed", label: "Failed", count: 0, tasks: [] },
+        ],
+        totalTasks: 1,
+      };
+    },
   };
   return mock;
 }
@@ -1193,8 +1208,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 75 tools", () => {
-        expect(mockServer.registrations).toHaveLength(75);
+      it("registers all 76 tools", () => {
+        expect(mockServer.registrations).toHaveLength(76);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1865,6 +1880,49 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Server error");
+    });
+
+    // ── get_kanban_board tests ─────────────────────────────────────
+
+    it("registers get_kanban_board tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_kanban_board");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Kanban");
+    });
+
+    it("returns kanban board with all status columns", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_kanban_board")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("getKanbanBoard");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.columns).toHaveLength(5);
+      expect(parsed.columns.map((c: { status: string }) => c.status)).toEqual([
+        "pending", "picked", "running", "done", "failed",
+      ]);
+      expect(parsed.totalTasks).toBe(1);
+    });
+
+    it("passes limit parameter to getKanbanBoard", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_kanban_board")!;
+      await tool.handler({ limit: 25 });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("getKanbanBoard");
+    });
+
+    it("returns error when getKanbanBoard fails", async () => {
+      mock.failWith = "Connection refused";
+      const tool = mockServer.registrations.find((r) => r.name === "get_kanban_board")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Connection refused");
     });
   });
 });

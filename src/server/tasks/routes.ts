@@ -462,6 +462,27 @@ export function registerTaskRoutes(
     return reply.send({ tasks });
   });
 
+  // GET /api/tasks/kanban - kanban board view (requires tasks.read)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.get("/api/tasks/kanban", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { limit, deviceId } = req.query as {
+      limit?: number;
+      deviceId?: string;
+    };
+    const board = await store.getKanbanBoard(limit, deviceId);
+    return reply.send(board);
+  });
+
   // GET /api/tasks/overdue - list overdue tasks (requires tasks.read)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get("/api/tasks/overdue", async (req: FastifyRequest, reply: FastifyReply) => {

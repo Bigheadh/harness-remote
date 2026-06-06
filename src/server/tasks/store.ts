@@ -153,6 +153,8 @@ export interface TaskStore {
   listArchivedTasks(limit?: number): Promise<import("../../shared/types.js").Task[]>;
   // Task priority auto-escalation
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
+  // Kanban board view
+  getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../../shared/types.js").KanbanBoard>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -2865,6 +2867,46 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       return { escalated: escalatedTasks.length, tasks: escalatedTasks };
+    },
+
+    // ── Kanban Board ──────────────────────────────────────────────
+
+    async getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../../shared/types.js").KanbanBoard> {
+      const STATUS_LABELS: Record<TaskStatus, string> = {
+        pending: "Pending",
+        picked: "Picked",
+        running: "Running",
+        done: "Done",
+        failed: "Failed",
+      };
+      const STATUSES: TaskStatus[] = ["pending", "picked", "running", "done", "failed"];
+      const perColumnLimit = limit ?? 50;
+
+      const columns: import("../../shared/types.js").KanbanColumn[] = [];
+      let totalTasks = 0;
+
+      for (const status of STATUSES) {
+        const params: (string | number | null)[] = [status];
+        let whereClause = "WHERE status = ? AND archived_at IS NULL";
+        if (deviceId) {
+          whereClause += " AND (assigned_device_id = ? OR assigned_device_id IS NULL)";
+          params.push(deviceId);
+        }
+        whereClause += " ORDER BY pinned DESC, CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, created_at DESC";
+        whereClause += ` LIMIT ${perColumnLimit}`;
+
+        const rows = db.prepare(`SELECT * FROM tasks ${whereClause}`).all(...params) as Array<Record<string, unknown>>;
+        const tasks = rows.map(rowToTask);
+        totalTasks += tasks.length;
+        columns.push({
+          status,
+          label: STATUS_LABELS[status],
+          count: tasks.length,
+          tasks,
+        });
+      }
+
+      return { columns, totalTasks };
     },
   };
 }

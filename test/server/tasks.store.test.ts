@@ -646,4 +646,54 @@ describe("attachments", () => {
       await expect(store.removeTag("nonexistent", "tag")).rejects.toThrow("Task not found");
     });
   });
+
+  describe("getKanbanBoard", () => {
+    it("returns all 5 status columns", async () => {
+      const board = await store.getKanbanBoard();
+      expect(board.columns).toHaveLength(5);
+      expect(board.columns.map((c) => c.status)).toEqual([
+        "pending", "picked", "running", "done", "failed",
+      ]);
+    });
+
+    it("groups tasks by status correctly", async () => {
+      await store.createTask(makeTask({ id: "kb_1", feishuMessageId: "msg_kb_1", status: "pending" }));
+      await store.createTask(makeTask({ id: "kb_2", feishuMessageId: "msg_kb_2", status: "running" }));
+      await store.createTask(makeTask({ id: "kb_3", feishuMessageId: "msg_kb_3", status: "done" }));
+
+      const board = await store.getKanbanBoard();
+      const pendingCol = board.columns.find((c) => c.status === "pending")!;
+      const runningCol = board.columns.find((c) => c.status === "running")!;
+      const doneCol = board.columns.find((c) => c.status === "done")!;
+
+      expect(pendingCol.count).toBe(1);
+      expect(pendingCol.tasks[0].id).toBe("kb_1");
+      expect(runningCol.count).toBe(1);
+      expect(runningCol.tasks[0].id).toBe("kb_2");
+      expect(doneCol.count).toBe(1);
+      expect(doneCol.tasks[0].id).toBe("kb_3");
+      expect(board.totalTasks).toBe(3);
+    });
+
+    it("respects limit parameter per column", async () => {
+      for (let i = 0; i < 5; i++) {
+        await store.createTask(makeTask({
+          id: `kb_lim_${i}`,
+          feishuMessageId: `msg_kb_lim_${i}`,
+          status: "pending",
+        }));
+      }
+      const board = await store.getKanbanBoard(2);
+      const pendingCol = board.columns.find((c) => c.status === "pending")!;
+      expect(pendingCol.tasks.length).toBeLessThanOrEqual(2);
+    });
+
+    it("excludes archived tasks", async () => {
+      await store.createTask(makeTask({ id: "kb_arch", feishuMessageId: "msg_kb_arch", status: "pending" }));
+      await store.archiveTask("kb_arch");
+      const board = await store.getKanbanBoard();
+      const pendingCol = board.columns.find((c) => c.status === "pending")!;
+      expect(pendingCol.count).toBe(0);
+    });
+  });
 });

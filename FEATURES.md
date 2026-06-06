@@ -274,3 +274,14 @@
 - [x] Updated mock client in tests for 6 new interface methods
 - [x] Updated tool count assertion (69 → 75)
 - [x] Added 13 new tests for webhook MCP tools
+
+## Phase 40: Kanban Board View
+- [x] Shared types: KanbanColumn and KanbanBoard interfaces
+- [x] Store layer: getKanbanBoard() method — groups tasks by status with priority sorting
+- [x] API route: GET /api/tasks/kanban — returns kanban board data with limit/deviceId filters
+- [x] MCP client: getKanbanBoard() HTTP client method
+- [x] MCP tool: get_kanban_board — AI agents can query kanban board state
+- [x] Dashboard: Kanban tab with card-based board view (status columns, priority badges, tags, due dates)
+- [x] Store tests: 4 new tests for getKanbanBoard (column count, grouping, limit, archived exclusion)
+- [x] MCP tools tests: 4 new tests for get_kanban_board tool (registration, columns, params, errors)
+- [x] Updated tool count assertion (75 → 76)

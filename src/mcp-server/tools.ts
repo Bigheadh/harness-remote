@@ -3259,4 +3259,46 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_kanban_board tool
+  server.registerTool(
+    "get_kanban_board",
+    {
+      description:
+        "Get a Kanban board view of tasks grouped by status. Returns columns for pending, picked, running, done, and failed statuses, each containing up to limit tasks sorted by priority (urgent first) then creation time. Useful for visualizing task workflow and understanding the current workload distribution across processing stages.",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum tasks per column. Default: 50, max: 100"),
+        deviceId: z
+          .string()
+          .optional()
+          .describe("Filter by assigned device ID. If not provided, uses the configured deviceId."),
+      },
+    },
+    async (args) => {
+      const { limit, deviceId } = args;
+      try {
+        const board = await client.getKanbanBoard(limit, deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(board, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
