@@ -1434,6 +1434,66 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { cleaned: 3 };
     },
+
+    // Saved views mock methods
+    async listSavedViews(createdBy?: string): Promise<import("../../src/shared/types.js").SavedView[]> {
+      calls.push({ method: "listSavedViews", args: createdBy ? [createdBy] : [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "view_1",
+          name: "My urgent tasks",
+          createdBy: "admin",
+          filters: { status: "pending", priority: "urgent" },
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ];
+    },
+
+    async getSavedView(viewId: string): Promise<import("../../src/shared/types.js").SavedView> {
+      calls.push({ method: "getSavedView", args: [viewId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: viewId,
+        name: "My urgent tasks",
+        createdBy: "admin",
+        filters: { status: "pending", priority: "urgent" },
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    },
+
+    async createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../../src/shared/types.js").SavedView> {
+      calls.push({ method: "createSavedView", args: [name, filters] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "view_new",
+        name,
+        createdBy: "admin",
+        filters: filters as import("../../src/shared/types.js").SavedViewFilters,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    },
+
+    async updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../../src/shared/types.js").SavedView> {
+      calls.push({ method: "updateSavedView", args: [viewId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: viewId,
+        name: updates.name ?? "My urgent tasks",
+        createdBy: "admin",
+        filters: (updates.filters ?? { status: "pending" }) as import("../../src/shared/types.js").SavedViewFilters,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      };
+    },
+
+    async deleteSavedView(viewId: string): Promise<void> {
+      calls.push({ method: "deleteSavedView", args: [viewId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
   };
   return mock;
 }
@@ -1489,8 +1549,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 98 tools", () => {
-        expect(mockServer.registrations).toHaveLength(98);
+      it("registers all 103 tools", () => {
+        expect(mockServer.registrations).toHaveLength(103);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2825,6 +2885,163 @@ describe("MCP tools", () => {
       mock.failWith = "DB error";
       const tool = mockServer.registrations.find((r) => r.name === "cleanup_expired_api_keys")!;
       const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  // ─── Saved Views tools ────────────────────────────────────────────────
+
+  describe("list_saved_views", () => {
+    it("registers list_saved_views with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_saved_views");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("saved");
+    });
+
+    it("lists saved views", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_saved_views")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("listSavedViews");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.views).toHaveLength(1);
+      expect(parsed.views[0].name).toBe("My urgent tasks");
+    });
+
+    it("lists saved views filtered by creator", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_saved_views")!;
+      const result = await tool.handler({ createdBy: "admin" });
+
+      expect(mock.calls[0].method).toBe("listSavedViews");
+      expect(mock.calls[0].args).toEqual(["admin"]);
+    });
+
+    it("returns error when listSavedViews fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_saved_views")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("get_saved_view", () => {
+    it("registers get_saved_view with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_saved_view");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("saved view");
+    });
+
+    it("gets a saved view by ID", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1" });
+
+      expect(mock.calls[0].method).toBe("getSavedView");
+      expect(mock.calls[0].args).toEqual(["view_1"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.name).toBe("My urgent tasks");
+    });
+
+    it("returns error when getSavedView fails", async () => {
+      mock.failWith = "Not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1" });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("create_saved_view", () => {
+    it("registers create_saved_view with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_saved_view");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Create");
+    });
+
+    it("creates a saved view with filters", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_saved_view")!;
+      const filters = { status: "pending", priority: "urgent" };
+      const result = await tool.handler({ name: "Urgent pending", filters });
+
+      expect(mock.calls[0].method).toBe("createSavedView");
+      expect(mock.calls[0].args[0]).toBe("Urgent pending");
+      expect(mock.calls[0].args[1]).toEqual(filters);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.view.name).toBe("Urgent pending");
+    });
+
+    it("returns error when createSavedView fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "create_saved_view")!;
+      const result = await tool.handler({ name: "Test", filters: {} });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("update_saved_view", () => {
+    it("registers update_saved_view with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "update_saved_view");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Update");
+    });
+
+    it("updates a saved view name", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1", name: "Renamed view" });
+
+      expect(mock.calls[0].method).toBe("updateSavedView");
+      expect(mock.calls[0].args[0]).toBe("view_1");
+      expect(mock.calls[0].args[1].name).toBe("Renamed view");
+    });
+
+    it("updates saved view filters", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_saved_view")!;
+      const newFilters = { status: "done", priority: "low" };
+      const result = await tool.handler({ viewId: "view_1", filters: newFilters });
+
+      expect(mock.calls[0].method).toBe("updateSavedView");
+      expect(mock.calls[0].args[1].filters).toEqual(newFilters);
+    });
+
+    it("returns error when updateSavedView fails", async () => {
+      mock.failWith = "Not found";
+      const tool = mockServer.registrations.find((r) => r.name === "update_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1", name: "Test" });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("delete_saved_view", () => {
+    it("registers delete_saved_view with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_saved_view");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("delete");
+    });
+
+    it("deletes a saved view", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1" });
+
+      expect(mock.calls[0].method).toBe("deleteSavedView");
+      expect(mock.calls[0].args).toEqual(["view_1"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("deleted");
+    });
+
+    it("returns error when deleteSavedView fails", async () => {
+      mock.failWith = "Not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_saved_view")!;
+      const result = await tool.handler({ viewId: "view_1" });
 
       expect(result.isError).toBe(true);
     });

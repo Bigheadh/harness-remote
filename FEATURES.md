@@ -353,3 +353,17 @@
 - [x] Updated mock client in tests for 8 new interface methods
 - [x] Updated tool count assertion (90 → 98)
 - [x] Added 22 new tests for API key MCP tools (registration, CRUD, rotation, enable/disable, cleanup, error cases)
+
+## Phase 47: Saved Views (Custom Filter Presets)
+- [x] Shared types: SavedView and SavedViewFilters interfaces (name, createdBy, filters with status/priority/deviceId/tags/dateRange/query)
+- [x] Store layer: saved_views SQLite table with CRUD methods (createSavedView, listSavedViews, getSavedView, updateSavedView, deleteSavedView)
+- [x] API routes: GET/POST /api/saved-views, GET/PUT/DELETE /api/saved-views/:id (requires auth + RBAC)
+- [x] MCP client: 5 new methods (listSavedViews, getSavedView, createSavedView, updateSavedView, deleteSavedView)
+- [x] MCP tools: list_saved_views — list all saved filter views with optional creator filter
+- [x] MCP tools: get_saved_view — get saved view details and filter parameters
+- [x] MCP tools: create_saved_view — create named filter preset (status, priority, tags, device, date range, query)
+- [x] MCP tools: update_saved_view — update view name or filter parameters
+- [x] MCP tools: delete_saved_view — permanently delete a saved view
+- [x] Updated mock client in tests for 5 new interface methods
+- [x] Updated tool count assertion (98 → 103)
+- [x] Added 19 new tests for saved views MCP tools (registration, CRUD, filtering, error cases)

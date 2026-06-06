@@ -518,3 +518,29 @@ export interface KanbanBoard {
   columns: KanbanColumn[];
   totalTasks: number;
 }
+
+/** A saved filter view for quick access to commonly used task filters */
+export interface SavedView {
+  id: string;
+  name: string;
+  /** The user who created this view (userId or "system" for global views) */
+  createdBy: string;
+  /** Filter parameters stored as JSON */
+  filters: SavedViewFilters;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Filter parameters that can be saved as a view */
+export interface SavedViewFilters {
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  deviceId?: string;
+  tags?: string[];
+  /** ISO date string — only show tasks created after this date */
+  fromDate?: string;
+  /** ISO date string — only show tasks created before this date */
+  toDate?: string;
+  /** Full-text search query */
+  query?: string;
+}

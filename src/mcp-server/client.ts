@@ -144,6 +144,12 @@ export interface TaskApiClient {
   enableApiKey(keyId: string): Promise<Record<string, unknown>>;
   disableApiKey(keyId: string): Promise<Record<string, unknown>>;
   cleanupExpiredApiKeys(): Promise<{ cleaned: number }>;
+  // Saved views methods
+  listSavedViews(createdBy?: string): Promise<import("../shared/types.js").SavedView[]>;
+  getSavedView(viewId: string): Promise<import("../shared/types.js").SavedView>;
+  createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../shared/types.js").SavedView>;
+  updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../shared/types.js").SavedView>;
+  deleteSavedView(viewId: string): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -1715,6 +1721,67 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { cleaned: number };
       return { cleaned: data.cleaned };
+    },
+
+    // ─── Saved Views ─────────────────────────────────────────────────────
+
+    async listSavedViews(createdBy?: string): Promise<import("../shared/types.js").SavedView[]> {
+      const params = new URLSearchParams();
+      if (createdBy) params.set("createdBy", createdBy);
+      const url = `${serverBaseUrl}/api/saved-views${params.toString() ? `?${params.toString()}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list saved views: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { views: import("../shared/types.js").SavedView[] };
+      return data.views;
+    },
+
+    async getSavedView(viewId: string): Promise<import("../shared/types.js").SavedView> {
+      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as import("../shared/types.js").SavedView;
+    },
+
+    async createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../shared/types.js").SavedView> {
+      const response = await fetch(`${serverBaseUrl}/api/saved-views`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name, filters }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as import("../shared/types.js").SavedView;
+    },
+
+    async updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../shared/types.js").SavedView> {
+      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as import("../shared/types.js").SavedView;
+    },
+
+    async deleteSavedView(viewId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
   };
 }

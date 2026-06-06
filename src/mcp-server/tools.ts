@@ -4076,4 +4076,187 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ─── Saved Views tools ────────────────────────────────────────────────
+
+  // list_saved_views tool
+  server.registerTool(
+    "list_saved_views",
+    {
+      description:
+        "List all saved filter views. Saved views let you save filter combinations (status, priority, tags, device, date range, query) as named presets for quick access. Optionally filter by creator.",
+      inputSchema: {
+        createdBy: z.string().optional().describe("Filter views by creator username. Omit to list all views."),
+      },
+    },
+    async (args) => {
+      try {
+        const views = await client.listSavedViews(args.createdBy);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ views, count: views.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_saved_view tool
+  server.registerTool(
+    "get_saved_view",
+    {
+      description:
+        "Get the details of a saved view including its filter parameters. Use this to inspect what filters a saved view contains before applying them.",
+      inputSchema: {
+        viewId: z.string().describe("The ID of the saved view to retrieve"),
+      },
+    },
+    async (args) => {
+      try {
+        const view = await client.getSavedView(args.viewId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(view, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_saved_view tool
+  server.registerTool(
+    "create_saved_view",
+    {
+      description:
+        "Create a new saved view with a name and filter parameters. Filters can include: status (pending/picked/running/done/failed), priority (low/normal/high/urgent), deviceId, tags (array), fromDate, toDate, query (full-text search). The view is saved for quick reuse.",
+      inputSchema: {
+        name: z.string().describe("A descriptive name for the saved view (e.g., 'My urgent tasks', 'Failed jobs today')"),
+        filters: z
+          .object({
+            status: z.enum(["pending", "picked", "running", "done", "failed"]).optional().describe("Filter by task status"),
+            priority: z.enum(["low", "normal", "high", "urgent"]).optional().describe("Filter by priority"),
+            deviceId: z.string().optional().describe("Filter by assigned device ID"),
+            tags: z.array(z.string()).optional().describe("Filter by tags (tasks must have ALL listed tags)"),
+            fromDate: z.string().optional().describe("Only show tasks created after this ISO date"),
+            toDate: z.string().optional().describe("Only show tasks created before this ISO date"),
+            query: z.string().optional().describe("Full-text search query"),
+          })
+          .describe("The filter parameters to save"),
+      },
+    },
+    async (args) => {
+      try {
+        const view = await client.createSavedView(args.name, args.filters);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Saved view '${view.name}' created`, view }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_saved_view tool
+  server.registerTool(
+    "update_saved_view",
+    {
+      description:
+        "Update an existing saved view's name or filter parameters. You can update one or both fields.",
+      inputSchema: {
+        viewId: z.string().describe("The ID of the saved view to update"),
+        name: z.string().optional().describe("New name for the view"),
+        filters: z
+          .object({
+            status: z.enum(["pending", "picked", "running", "done", "failed"]).optional(),
+            priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+            deviceId: z.string().optional(),
+            tags: z.array(z.string()).optional(),
+            fromDate: z.string().optional(),
+            toDate: z.string().optional(),
+            query: z.string().optional(),
+          })
+          .optional()
+          .describe("New filter parameters (replaces existing filters entirely)"),
+      },
+    },
+    async (args) => {
+      try {
+        const updates: { name?: string; filters?: Record<string, unknown> } = {};
+        if (args.name !== undefined) updates.name = args.name;
+        if (args.filters !== undefined) updates.filters = args.filters;
+        const view = await client.updateSavedView(args.viewId, updates);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Saved view '${view.name}' updated`, view }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_saved_view tool
+  server.registerTool(
+    "delete_saved_view",
+    {
+      description: "Permanently delete a saved view. This cannot be undone.",
+      inputSchema: {
+        viewId: z.string().describe("The ID of the saved view to delete"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteSavedView(args.viewId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Saved view '${args.viewId}' deleted` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

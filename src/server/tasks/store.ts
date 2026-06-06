@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { Task, TaskStatus, TaskPriority, Attachment } from "../../shared/types.js";
 import type { TaskComment, TaskNote, AuditLogEntry, TaskTemplate, ScheduledTask } from "../../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaBreachType, SlaStatus, SlaSummary } from "../../shared/types.js";
+import type { SavedView, SavedViewFilters } from "../../shared/types.js";
 
 /** Full export payload for backup/restore across instances */
 export interface TaskExportPayload {
@@ -155,6 +156,12 @@ export interface TaskStore {
   escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }>;
   // Kanban board view
   getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../../shared/types.js").KanbanBoard>;
+  // Saved views (custom filter presets)
+  createSavedView(name: string, createdBy: string, filters: SavedViewFilters): Promise<SavedView>;
+  listSavedViews(createdBy?: string): Promise<SavedView[]>;
+  getSavedView(id: string): Promise<SavedView | undefined>;
+  updateSavedView(id: string, updates: Partial<Pick<SavedView, "name" | "filters">>): Promise<SavedView>;
+  deleteSavedView(id: string): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -533,6 +540,12 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE TABLE IF NOT EXISTS task_subtasks (\n      id TEXT PRIMARY KEY,\n      parent_task_id TEXT NOT NULL,\n      title TEXT NOT NULL,\n      command_text TEXT NOT NULL,\n      status TEXT NOT NULL DEFAULT 'pending',\n      result_summary TEXT,\n      result_details TEXT,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent\n      ON task_subtasks(parent_task_id)\n  `);
+
+  // Saved views table (custom filter presets)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS saved_views (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      created_by TEXT NOT NULL,\n      filters TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_saved_views_created_by\n      ON saved_views(created_by)\n  `);
+
   // Prepare statements
   const insertTask = db.prepare(`
     INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at)
@@ -2932,6 +2945,82 @@ export function createTaskStore(storagePath: string): TaskStore {
       }
 
       return { columns, totalTasks };
+    },
+
+    // ─── Saved Views ─────────────────────────────────────────────────────
+    async createSavedView(name: string, createdBy: string, filters: SavedViewFilters): Promise<SavedView> {
+      const id = `view_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO saved_views (id, name, created_by, filters, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(id, name, createdBy, JSON.stringify(filters), now, now);
+      return { id, name, createdBy, filters, createdAt: now, updatedAt: now };
+    },
+
+    async listSavedViews(createdBy?: string): Promise<SavedView[]> {
+      let sql = `SELECT * FROM saved_views`;
+      const params: (string | number | null)[] = [];
+      if (createdBy) {
+        sql += ` WHERE created_by = ?`;
+        params.push(createdBy);
+      }
+      sql += ` ORDER BY created_at DESC`;
+      const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        id: row["id"] as string,
+        name: row["name"] as string,
+        createdBy: row["created_by"] as string,
+        filters: JSON.parse(row["filters"] as string) as SavedViewFilters,
+        createdAt: row["created_at"] as string,
+        updatedAt: row["updated_at"] as string,
+      }));
+    },
+
+    async getSavedView(id: string): Promise<SavedView | undefined> {
+      const row = db.prepare(`SELECT * FROM saved_views WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      if (!row) return undefined;
+      return {
+        id: row["id"] as string,
+        name: row["name"] as string,
+        createdBy: row["created_by"] as string,
+        filters: JSON.parse(row["filters"] as string) as SavedViewFilters,
+        createdAt: row["created_at"] as string,
+        updatedAt: row["updated_at"] as string,
+      };
+    },
+
+    async updateSavedView(id: string, updates: Partial<Pick<SavedView, "name" | "filters">>): Promise<SavedView> {
+      const existing = db.prepare(`SELECT * FROM saved_views WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
+      if (!existing) throw new Error(`Saved view not found: ${id}`);
+      const now = new Date().toISOString();
+      const sets: string[] = [];
+      const params: (string | number | null)[] = [];
+      if (updates.name !== undefined) {
+        sets.push(`name = ?`);
+        params.push(updates.name);
+      }
+      if (updates.filters !== undefined) {
+        sets.push(`filters = ?`);
+        params.push(JSON.stringify(updates.filters));
+      }
+      sets.push(`updated_at = ?`);
+      params.push(now);
+      params.push(id);
+      db.prepare(`UPDATE saved_views SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+      const row = db.prepare(`SELECT * FROM saved_views WHERE id = ?`).get(id) as Record<string, unknown>;
+      return {
+        id: row["id"] as string,
+        name: row["name"] as string,
+        createdBy: row["created_by"] as string,
+        filters: JSON.parse(row["filters"] as string) as SavedViewFilters,
+        createdAt: row["created_at"] as string,
+        updatedAt: row["updated_at"] as string,
+      };
+    },
+
+    async deleteSavedView(id: string): Promise<boolean> {
+      const result = db.prepare(`DELETE FROM saved_views WHERE id = ?`).run(id);
+      return Number(result.changes) > 0;
     },
   };
 }
