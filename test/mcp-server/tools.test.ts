@@ -378,6 +378,24 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
     },
 
+    async createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task> {
+      calls.push({ method: "createTaskFromTemplate", args: [templateId, overrides] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "task_from_tmpl_001",
+        source: "feishu",
+        feishuMessageId: `tmpl_${templateId}_${Date.now()}`,
+        feishuChatId: "template",
+        feishuUserId: "api",
+        commandText: overrides?.commandText ?? "Default template command",
+        status: "pending",
+        priority: (overrides?.priority as Task["priority"]) ?? "normal",
+        tags: overrides?.tags ?? [],
+        createdAt: "2026-06-06T22:00:00.000Z",
+        updatedAt: "2026-06-06T22:00:00.000Z",
+      };
+    },
+
     // Scheduled task mocks
     async listScheduledTasks(): Promise<ScheduledTask[]> {
       calls.push({ method: "listScheduledTasks", args: [] });
@@ -1208,8 +1226,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 76 tools", () => {
-        expect(mockServer.registrations).toHaveLength(76);
+      it("registers all 77 tools", () => {
+        expect(mockServer.registrations).toHaveLength(77);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -1923,6 +1941,59 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Connection refused");
+    });
+
+    // ── create_task_from_template tests ──────────────────────────────
+
+    it("registers create_task_from_template tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_task_from_template");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("template");
+    });
+
+    it("creates task from template with defaults", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_task_from_template")!;
+      const result = await tool.handler({ templateId: "tmpl_001" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("createTaskFromTemplate");
+      expect(mock.calls[0].args[0]).toBe("tmpl_001");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task).toBeDefined();
+      expect(parsed.task.id).toBe("task_from_tmpl_001");
+      expect(parsed.task.status).toBe("pending");
+      expect(parsed.message).toContain("created from template");
+    });
+
+    it("creates task from template with overrides", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_task_from_template")!;
+      const result = await tool.handler({
+        templateId: "tmpl_002",
+        commandText: "Custom command",
+        priority: "urgent",
+        tags: ["urgent", "ops"],
+      });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].args[0]).toBe("tmpl_002");
+      const overrides = mock.calls[0].args[1] as Record<string, unknown>;
+      expect(overrides.commandText).toBe("Custom command");
+      expect(overrides.priority).toBe("urgent");
+      expect(overrides.tags).toEqual(["urgent", "ops"]);
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("returns error when createTaskFromTemplate fails", async () => {
+      mock.failWith = "Template not found";
+      const tool = mockServer.registrations.find((r) => r.name === "create_task_from_template")!;
+      const result = await tool.handler({ templateId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Template not found");
     });
   });
 });

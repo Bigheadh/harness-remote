@@ -318,6 +318,79 @@ export function registerTaskRoutes(
     return reply.send({ ok: true });
   });
 
+  // POST /api/templates/:id/create-task - create a task from a template (requires tasks.write)
+  server.post<{ Params: { id: string } }>("/api/templates/:id/create-task", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const template = await store.getTemplate(req.params.id);
+    if (!template) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Template not found: ${req.params.id}` },
+      });
+    }
+
+    const body = req.body as {
+      commandText?: string;
+      description?: string;
+      priority?: string;
+      tags?: string[];
+      assignedDeviceId?: string;
+      dueDate?: string;
+      reminderAt?: string;
+    } | undefined;
+
+    const validPriorities = ["low", "normal", "high", "urgent"];
+    if (body?.priority && !validPriorities.includes(body.priority)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: `Invalid priority: ${body.priority}. Must be one of: ${validPriorities.join(", ")}` },
+      });
+    }
+
+    const now = new Date().toISOString();
+    const effectivePriority = body?.priority ?? template.priority ?? "normal";
+    const effectiveTags = body?.tags ?? template.tags ?? [];
+    const effectiveDeviceId = body?.assignedDeviceId ?? template.assignedDeviceId ?? undefined;
+    const effectiveDueDate = body?.dueDate
+      ? body.dueDate
+      : template.dueDateOffsetMs
+        ? new Date(Date.now() + template.dueDateOffsetMs).toISOString()
+        : undefined;
+    const effectiveReminderAt = body?.reminderAt
+      ? body.reminderAt
+      : template.reminderOffsetMs
+        ? new Date(Date.now() + template.reminderOffsetMs).toISOString()
+        : undefined;
+
+    const task = await store.createTask({
+      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      source: "feishu",
+      feishuMessageId: `tmpl_${template.id}_${Date.now()}`,
+      feishuChatId: "template",
+      feishuUserId: authCtx.user?.username ?? "api",
+      commandText: body?.commandText ?? template.commandText,
+      status: "pending",
+      priority: effectivePriority as "low" | "normal" | "high" | "urgent",
+      tags: effectiveTags,
+      assignedDeviceId: effectiveDeviceId,
+      dueDate: effectiveDueDate,
+      reminderAt: effectiveReminderAt,
+      description: body?.description ?? template.description ?? undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    log.info({ taskId: task.id, templateId: template.id }, "Task created from template");
+    return reply.code(201).send({ task });
+  });
+
   // GET /api/tasks - list tasks (requires tasks.read)
   server.get("/api/tasks", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;

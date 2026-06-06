@@ -1206,6 +1206,71 @@ export function registerMcpTools(
     },
   );
 
+  // create_task_from_template tool
+  server.registerTool(
+    "create_task_from_template",
+    {
+      description:
+        "Create a new task from an existing template. Templates define reusable task configurations (command text, priority, tags, device, due date offset, reminder offset). You can override any field when creating the task.",
+      inputSchema: {
+        templateId: z.string().describe("The template ID to use"),
+        commandText: z.string().optional().describe("Override the template's command text"),
+        description: z.string().optional().describe("Override the task description"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Override the template's default priority"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Override the template's default tags"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("Override the template's assigned device"),
+        dueDate: z
+          .string()
+          .optional()
+          .describe("Override due date (ISO string). If not set, uses template's dueDateOffsetMs from now"),
+        reminderAt: z
+          .string()
+          .optional()
+          .describe("Override reminder time (ISO string). If not set, uses template's reminderOffsetMs from now"),
+      },
+    },
+    async (args) => {
+      try {
+        const overrides: Record<string, unknown> = {};
+        if (args.commandText !== undefined) overrides.commandText = args.commandText;
+        if (args.description !== undefined) overrides.description = args.description;
+        if (args.priority !== undefined) overrides.priority = args.priority;
+        if (args.tags !== undefined) overrides.tags = args.tags;
+        if (args.assignedDeviceId !== undefined) overrides.assignedDeviceId = args.assignedDeviceId;
+        if (args.dueDate !== undefined) overrides.dueDate = args.dueDate;
+        if (args.reminderAt !== undefined) overrides.reminderAt = args.reminderAt;
+
+        const task = await client.createTaskFromTemplate(args.templateId, overrides);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task created from template (id: ${task.id}, status: ${task.status}, priority: ${task.priority})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // ── Scheduled Task Tools ──────────────────────────────────────────
 
   // list_scheduled_tasks tool

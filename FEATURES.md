@@ -285,3 +285,12 @@
 - [x] Store tests: 4 new tests for getKanbanBoard (column count, grouping, limit, archived exclusion)
 - [x] MCP tools tests: 4 new tests for get_kanban_board tool (registration, columns, params, errors)
 - [x] Updated tool count assertion (75 → 76)
+
+## Phase 41: Create Task from Template
+- [x] API route: POST /api/templates/:id/create-task (optional overrides for commandText, priority, tags, device, dueDate, reminderAt)
+- [x] MCP client: createTaskFromTemplate(templateId, overrides?) method
+- [x] MCP tool: create_task_from_template — create a task from a template with optional field overrides
+- [x] Template defaults: dueDateOffsetMs → computed due date, reminderOffsetMs → computed reminder time
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (76 → 77)
+- [x] Added 4 new tests for create_task_from_template tool

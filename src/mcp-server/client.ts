@@ -46,6 +46,7 @@ export interface TaskApiClient {
   createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate>;
   updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
+  createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task>;
   // Scheduled task methods
   listScheduledTasks(): Promise<ScheduledTask[]>;
   getScheduledTask(scheduledId: string): Promise<ScheduledTask>;
@@ -660,6 +661,20 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete template: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    async createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}/create-task`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(overrides ?? {}),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create task from template: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
     },
 
     // ── Scheduled Tasks ──────────────────────────────────────────────
