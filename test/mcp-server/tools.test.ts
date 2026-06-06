@@ -1204,6 +1204,55 @@ function createMockClient(): TaskApiClient & {
         totalTasks: 1,
       };
     },
+
+    async getProcessingStats(): Promise<Record<string, unknown>> {
+      calls.push({ method: "getProcessingStats", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        totalCompleted: 10,
+        avgDurationMs: 5000,
+        p50DurationMs: 4000,
+        p95DurationMs: 12000,
+        avgQueueWaitMs: 1000,
+        avgProcessingMs: 3000,
+        byStatus: { done: 8, failed: 2 },
+      };
+    },
+
+    async getTaskStatsSummary(): Promise<Record<string, unknown>> {
+      calls.push({ method: "getTaskStatsSummary", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        total: 25,
+        byStatus: { pending: 10, picked: 3, running: 2, done: 8, failed: 2 },
+        byPriority: { low: 5, normal: 15, high: 4, urgent: 1 },
+      };
+    },
+
+    async getUserStats(): Promise<Record<string, unknown>> {
+      calls.push({ method: "getUserStats", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        totalUsers: 3,
+        totalTasks: 25,
+        users: [
+          { userId: "user_001", total: 15, done: 10, avgResolutionMinutes: 30 },
+        ],
+      };
+    },
+
+    async getTaskTimeSeries(): Promise<Record<string, unknown>> {
+      calls.push({ method: "getTaskTimeSeries", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        interval: "day",
+        metric: "created",
+        data: [
+          { date: "2026-06-01", value: 5 },
+          { date: "2026-06-02", value: 3 },
+        ],
+      };
+    },
   };
   return mock;
 }
@@ -1259,8 +1308,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 80 tools", () => {
-        expect(mockServer.registrations).toHaveLength(80);
+      it("registers all 84 tools", () => {
+        expect(mockServer.registrations).toHaveLength(84);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2103,6 +2152,131 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Device not found");
+    });
+  });
+
+  describe("get_processing_stats", () => {
+    it("registers get_processing_stats tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_processing_stats");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("processing");
+    });
+
+    it("returns processing stats", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_processing_stats")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getProcessingStats");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.totalCompleted).toBe(10);
+      expect(parsed.avgDurationMs).toBe(5000);
+      expect(parsed.byStatus.done).toBe(8);
+    });
+
+    it("returns error when getProcessingStats fails", async () => {
+      mock.failWith = "Stats unavailable";
+      const tool = mockServer.registrations.find((r) => r.name === "get_processing_stats")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Stats unavailable");
+    });
+  });
+
+  describe("get_task_stats_summary", () => {
+    it("registers get_task_stats_summary tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_stats_summary");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("summary");
+    });
+
+    it("returns task stats summary", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_stats_summary")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getTaskStatsSummary");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.total).toBe(25);
+      expect(parsed.byStatus.pending).toBe(10);
+    });
+
+    it("returns error when getTaskStatsSummary fails", async () => {
+      mock.failWith = "Summary failed";
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_stats_summary")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Summary failed");
+    });
+  });
+
+  describe("get_user_stats", () => {
+    it("registers get_user_stats tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_user_stats");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("user");
+    });
+
+    it("returns user stats", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_user_stats")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getUserStats");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.totalUsers).toBe(3);
+      expect(parsed.users).toHaveLength(1);
+    });
+
+    it("returns error when getUserStats fails", async () => {
+      mock.failWith = "User stats error";
+      const tool = mockServer.registrations.find((r) => r.name === "get_user_stats")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("User stats error");
+    });
+  });
+
+  describe("get_task_timeseries", () => {
+    it("registers get_task_timeseries tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_timeseries");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("time-series");
+    });
+
+    it("returns timeseries data", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_timeseries")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getTaskTimeSeries");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.interval).toBe("day");
+      expect(parsed.data).toHaveLength(2);
+    });
+
+    it("passes filter parameters", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_timeseries")!;
+      await tool.handler({ from: "2026-06-01", to: "2026-06-30", interval: "week", metric: "completed" });
+
+      expect(mock.calls[0].method).toBe("getTaskTimeSeries");
+    });
+
+    it("returns error when getTaskTimeSeries fails", async () => {
+      mock.failWith = "Timeseries error";
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_timeseries")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Timeseries error");
     });
   });
 });

@@ -123,6 +123,11 @@ export interface TaskApiClient {
   listDevices(): Promise<Device[]>;
   getDevice(deviceId: string): Promise<Device>;
   deleteDevice(deviceId: string): Promise<void>;
+  // Stats & analytics methods
+  getProcessingStats(): Promise<Record<string, unknown>>;
+  getTaskStatsSummary(): Promise<Record<string, unknown>>;
+  getUserStats(): Promise<Record<string, unknown>>;
+  getTaskTimeSeries(from?: string, to?: string, interval?: string, metric?: string): Promise<Record<string, unknown>>;
 }
 
 export function createTaskApiClient(
@@ -1454,6 +1459,59 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { deliveries: WebhookDelivery[] };
       return data.deliveries;
+    },
+
+    // ── Stats & Analytics ────────────────────────────────────────
+
+    async getProcessingStats(): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/stats/processing`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get processing stats: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
+    },
+
+    async getTaskStatsSummary(): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/stats/summary`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get task stats summary: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
+    },
+
+    async getUserStats(): Promise<Record<string, unknown>> {
+      const response = await fetch(`${serverBaseUrl}/api/stats/users`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get user stats: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
+    },
+
+    async getTaskTimeSeries(from?: string, to?: string, interval?: string, metric?: string): Promise<Record<string, unknown>> {
+      const params = new URLSearchParams();
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      if (interval) params.set("interval", interval);
+      if (metric) params.set("metric", metric);
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/stats/timeseries${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get task timeseries: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
     },
   };
 }

@@ -304,3 +304,14 @@
 - [x] Updated mock client in tests for 3 new interface methods
 - [x] Updated tool count assertion (77 → 80)
 - [x] Added 9 new tests for device MCP tools (registration, listing, details, deletion, error cases)
+
+## Phase 43: Stats & Analytics MCP Tools
+- [x] Client interface: 4 new stats methods (getProcessingStats, getTaskStatsSummary, getUserStats, getTaskTimeSeries)
+- [x] Client implementation: HTTP client methods calling existing stats API routes
+- [x] MCP tool: get_processing_stats — task processing time analytics (avg, p50, p95, success/fail counts)
+- [x] MCP tool: get_task_stats_summary — comprehensive task statistics summary (status distribution, priority breakdown)
+- [x] MCP tool: get_user_stats — per-user task statistics (counts, resolution time, last activity)
+- [x] MCP tool: get_task_timeseries — time-series analytics with interval/metric filters for trend analysis
+- [x] Updated mock client in tests for 4 new interface methods
+- [x] Updated tool count assertion (80 → 84)
+- [x] Added 12 new tests for stats MCP tools (registration, data return, error cases)

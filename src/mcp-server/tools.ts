@@ -3485,4 +3485,138 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_processing_stats tool
+  server.registerTool(
+    "get_processing_stats",
+    {
+      description:
+        "Get task processing time analytics. Returns average/p50/p95 durations for queue wait, processing time, and total time. Includes success/failure counts. Useful for monitoring system performance and identifying bottlenecks.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const stats = await client.getProcessingStats();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(stats, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_task_stats_summary tool
+  server.registerTool(
+    "get_task_stats_summary",
+    {
+      description:
+        "Get a comprehensive summary of task statistics. Returns total tasks, status distribution (pending/picked/running/done/failed), priority breakdown, tag counts, and other aggregate metrics. Use for high-level system health checks.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const stats = await client.getTaskStatsSummary();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(stats, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_user_stats tool
+  server.registerTool(
+    "get_user_stats",
+    {
+      description:
+        "Get per-user task statistics. Returns a list of users (by Feishu user ID) with their task counts, status breakdown, average resolution time, and last activity. Useful for workload analysis and identifying power users.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const stats = await client.getUserStats();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(stats, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_task_timeseries tool
+  server.registerTool(
+    "get_task_timeseries",
+    {
+      description:
+        "Get time-series analytics data for task creation, completion, or resolution time. Returns data points grouped by interval (hour/day/week/month). Useful for trend analysis, capacity planning, and generating charts. Default: last 30 days, daily interval, created metric.",
+      inputSchema: {
+        from: z
+          .string()
+          .optional()
+          .describe("ISO 8601 start date. Default: 30 days ago"),
+        to: z
+          .string()
+          .optional()
+          .describe("ISO 8601 end date. Default: now"),
+        interval: z
+          .enum(["hour", "day", "week", "month"])
+          .optional()
+          .describe("Aggregation interval. Default: day"),
+        metric: z
+          .enum(["created", "completed", "resolution_time"])
+          .optional()
+          .describe("Which metric to chart. Default: created"),
+      },
+    },
+    async (args) => {
+      const { from, to, interval, metric } = args;
+      try {
+        const result = await client.getTaskTimeSeries(from, to, interval, metric);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
