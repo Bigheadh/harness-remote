@@ -3619,4 +3619,190 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_users tool
+  server.registerTool(
+    "list_users",
+    {
+      description: "List all registered users with their roles, tokens, and Feishu user IDs. Admin-only operation for user management.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const users = await client.listUsers();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ users, total: users.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_user tool
+  server.registerTool(
+    "get_user",
+    {
+      description: "Get detailed information about a specific user by ID, including their role, token, Feishu user ID, and timestamps.",
+      inputSchema: {
+        userId: z.string().describe("The user ID to look up"),
+      },
+    },
+    async (args) => {
+      const { userId } = args;
+      try {
+        const user = await client.getUser(userId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ user }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_user tool
+  server.registerTool(
+    "create_user",
+    {
+      description: "Create a new user account with a username, role, and optional Feishu user ID. Returns the new user with their generated token. Valid roles: admin, operator, viewer.",
+      inputSchema: {
+        username: z.string().describe("Unique username for the new user"),
+        role: z.enum(["admin", "operator", "viewer"]).optional().describe("User role. Default: viewer"),
+        feishuUserId: z.string().optional().describe("Optional Feishu user ID to link"),
+      },
+    },
+    async (args) => {
+      const { username, role, feishuUserId } = args;
+      try {
+        const user = await client.createUser(username, role as "admin" | "operator" | "viewer" | undefined, feishuUserId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ user, message: `User '${username}' created successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_user_role tool
+  server.registerTool(
+    "update_user_role",
+    {
+      description: "Change a user's role (admin, operator, viewer). This affects what operations the user can perform.",
+      inputSchema: {
+        userId: z.string().describe("The user ID to update"),
+        role: z.enum(["admin", "operator", "viewer"]).describe("New role to assign"),
+      },
+    },
+    async (args) => {
+      const { userId, role } = args;
+      try {
+        const user = await client.updateUserRole(userId, role as "admin" | "operator" | "viewer");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ user, message: `User role updated to '${role}'` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_user tool
+  server.registerTool(
+    "delete_user",
+    {
+      description: "Permanently delete a user account. This action cannot be undone.",
+      inputSchema: {
+        userId: z.string().describe("The user ID to delete"),
+      },
+    },
+    async (args) => {
+      const { userId } = args;
+      try {
+        await client.deleteUser(userId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `User '${userId}' deleted successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // regenerate_user_token tool
+  server.registerTool(
+    "regenerate_user_token",
+    {
+      description: "Generate a new authentication token for a user, invalidating the old one. Useful when a token is compromised or lost.",
+      inputSchema: {
+        userId: z.string().describe("The user ID to regenerate token for"),
+      },
+    },
+    async (args) => {
+      const { userId } = args;
+      try {
+        const user = await client.regenerateUserToken(userId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ user, message: `Token regenerated for user '${userId}'. New token: ${user.token}` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

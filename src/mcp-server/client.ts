@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions, Device } from "../shared/types.js";
+import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions, Device, User, UserRole } from "../shared/types.js";
 import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 import type { WebhookSubscription, WebhookDelivery } from "../shared/types.js";
@@ -128,6 +128,13 @@ export interface TaskApiClient {
   getTaskStatsSummary(): Promise<Record<string, unknown>>;
   getUserStats(): Promise<Record<string, unknown>>;
   getTaskTimeSeries(from?: string, to?: string, interval?: string, metric?: string): Promise<Record<string, unknown>>;
+  // User management methods
+  listUsers(): Promise<User[]>;
+  getUser(userId: string): Promise<User>;
+  createUser(username: string, role?: UserRole, feishuUserId?: string): Promise<User>;
+  updateUserRole(userId: string, role: UserRole): Promise<User>;
+  deleteUser(userId: string): Promise<void>;
+  regenerateUserToken(userId: string): Promise<User>;
 }
 
 export function createTaskApiClient(
@@ -1512,6 +1519,92 @@ export function createTaskApiClient(
         );
       }
       return (await response.json()) as Record<string, unknown>;
+    },
+
+    // ── User Management ────────────────────────────────────────
+
+    async listUsers(): Promise<User[]> {
+      const response = await fetch(`${serverBaseUrl}/api/users`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to list users: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { users: User[] };
+      return data.users;
+    },
+
+    async getUser(userId: string): Promise<User> {
+      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get user: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { user: User };
+      return data.user;
+    },
+
+    async createUser(username: string, role?: UserRole, feishuUserId?: string): Promise<User> {
+      const response = await fetch(`${serverBaseUrl}/api/users`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ username, role, feishuUserId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to create user: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { user: User };
+      return data.user;
+    },
+
+    async updateUserRole(userId: string, role: UserRole): Promise<User> {
+      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}/role`, {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to update user role: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { user: User };
+      return data.user;
+    },
+
+    async deleteUser(userId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to delete user: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+    },
+
+    async regenerateUserToken(userId: string): Promise<User> {
+      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}/token/regenerate`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to regenerate user token: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      const data = (await response.json()) as { user: User };
+      return data.user;
     },
   };
 }

@@ -325,3 +325,16 @@
 - [x] SLA check route: sends Feishu card notifications for each breach/warning with a feishuMessageId
 - [x] Updated mock client in tests for new return type
 - [x] Added 6 new tests for buildSlaBreachCard (breach/warning cards, task details, timing, tags)
+
+## Phase 45: User Management MCP Tools
+- [x] Client interface: 6 new user methods (listUsers, getUser, createUser, updateUserRole, deleteUser, regenerateUserToken)
+- [x] Client implementation: HTTP client methods calling existing user API routes
+- [x] MCP tool: list_users — list all registered users with roles and tokens
+- [x] MCP tool: get_user — get user details by ID
+- [x] MCP tool: create_user — create new user with username, role, and optional Feishu user ID
+- [x] MCP tool: update_user_role — change a user's role (admin/operator/viewer)
+- [x] MCP tool: delete_user — permanently remove a user account
+- [x] MCP tool: regenerate_user_token — generate a new auth token for a user
+- [x] Updated mock client in tests for 6 new interface methods
+- [x] Updated tool count assertion (84 → 90)
+- [x] Added 12 new tests for user management MCP tools (registration, CRUD, error cases)

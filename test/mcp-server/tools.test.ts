@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency, KanbanBoard } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency, KanbanBoard, User, UserRole } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -1253,6 +1253,79 @@ function createMockClient(): TaskApiClient & {
         ],
       };
     },
+
+    async listUsers(): Promise<User[]> {
+      calls.push({ method: "listUsers", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "usr_001",
+          username: "admin",
+          token: "utoken_abc123",
+          role: "admin",
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
+    async getUser(userId: string): Promise<User> {
+      calls.push({ method: "getUser", args: [userId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: userId,
+        username: "admin",
+        token: "utoken_abc123",
+        role: "admin",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async createUser(username: string, role?: UserRole, feishuUserId?: string): Promise<User> {
+      calls.push({ method: "createUser", args: [username, role, feishuUserId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "usr_002",
+        username,
+        token: "utoken_new123",
+        role: (role ?? "viewer") as UserRole,
+        feishuUserId,
+        createdAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async updateUserRole(userId: string, role: UserRole): Promise<User> {
+      calls.push({ method: "updateUserRole", args: [userId, role] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: userId,
+        username: "admin",
+        token: "utoken_abc123",
+        role,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async deleteUser(userId: string): Promise<void> {
+      calls.push({ method: "deleteUser", args: [userId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async regenerateUserToken(userId: string): Promise<User> {
+      calls.push({ method: "regenerateUserToken", args: [userId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: userId,
+        username: "admin",
+        token: "utoken_fresh456",
+        role: "admin",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
   };
   return mock;
 }
@@ -1308,8 +1381,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 84 tools", () => {
-        expect(mockServer.registrations).toHaveLength(84);
+      it("registers all 90 tools", () => {
+        expect(mockServer.registrations).toHaveLength(90);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2277,6 +2350,182 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Timeseries error");
+    });
+  });
+
+  // --- User management tools tests ---
+  describe("user management tools", () => {
+    it("registers list_users tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_users");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("user");
+    });
+
+    it("lists users", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_users")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("listUsers");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.users).toHaveLength(1);
+      expect(parsed.users[0].id).toBe("usr_001");
+      expect(parsed.users[0].username).toBe("admin");
+      expect(parsed.total).toBe(1);
+    });
+
+    it("returns error when listUsers fails", async () => {
+      mock.failWith = "Auth required";
+      const tool = mockServer.registrations.find((r) => r.name === "list_users")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Auth required");
+    });
+
+    it("registers get_user tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_user");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("user");
+    });
+
+    it("gets user details", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_user")!;
+      const result = await tool.handler({ userId: "usr_001" });
+
+      expect(mock.calls[0].method).toBe("getUser");
+      expect(mock.calls[0].args[0]).toBe("usr_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.user.id).toBe("usr_001");
+      expect(parsed.user.username).toBe("admin");
+      expect(parsed.user.role).toBe("admin");
+    });
+
+    it("returns error when getUser fails", async () => {
+      mock.failWith = "User not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_user")!;
+      const result = await tool.handler({ userId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("User not found");
+    });
+
+    it("registers create_user tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_user");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("user");
+    });
+
+    it("creates a user", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_user")!;
+      const result = await tool.handler({ username: "newuser", role: "operator", feishuUserId: "ou_123" });
+
+      expect(mock.calls[0].method).toBe("createUser");
+      expect(mock.calls[0].args[0]).toBe("newuser");
+      expect(mock.calls[0].args[1]).toBe("operator");
+      expect(mock.calls[0].args[2]).toBe("ou_123");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.user.username).toBe("newuser");
+      expect(parsed.user.role).toBe("operator");
+      expect(parsed.message).toContain("created successfully");
+    });
+
+    it("returns error when createUser fails", async () => {
+      mock.failWith = "Username already exists";
+      const tool = mockServer.registrations.find((r) => r.name === "create_user")!;
+      const result = await tool.handler({ username: "existing" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Username already exists");
+    });
+
+    it("registers update_user_role tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "update_user_role");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("role");
+    });
+
+    it("updates user role", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_user_role")!;
+      const result = await tool.handler({ userId: "usr_001", role: "viewer" });
+
+      expect(mock.calls[0].method).toBe("updateUserRole");
+      expect(mock.calls[0].args[0]).toBe("usr_001");
+      expect(mock.calls[0].args[1]).toBe("viewer");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.user.role).toBe("viewer");
+      expect(parsed.message).toContain("role updated");
+    });
+
+    it("returns error when updateUserRole fails", async () => {
+      mock.failWith = "User not found";
+      const tool = mockServer.registrations.find((r) => r.name === "update_user_role")!;
+      const result = await tool.handler({ userId: "nonexistent", role: "admin" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("User not found");
+    });
+
+    it("registers delete_user tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_user");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("delete");
+    });
+
+    it("deletes a user", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_user")!;
+      const result = await tool.handler({ userId: "usr_001" });
+
+      expect(mock.calls[0].method).toBe("deleteUser");
+      expect(mock.calls[0].args[0]).toBe("usr_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("deleted successfully");
+    });
+
+    it("returns error when deleteUser fails", async () => {
+      mock.failWith = "User not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_user")!;
+      const result = await tool.handler({ userId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("User not found");
+    });
+
+    it("registers regenerate_user_token tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "regenerate_user_token");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("token");
+    });
+
+    it("regenerates user token", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "regenerate_user_token")!;
+      const result = await tool.handler({ userId: "usr_001" });
+
+      expect(mock.calls[0].method).toBe("regenerateUserToken");
+      expect(mock.calls[0].args[0]).toBe("usr_001");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.user.token).toBe("utoken_fresh456");
+      expect(parsed.message).toContain("Token regenerated");
+    });
+
+    it("returns error when regenerateUserToken fails", async () => {
+      mock.failWith = "User not found";
+      const tool = mockServer.registrations.find((r) => r.name === "regenerate_user_token")!;
+      const result = await tool.handler({ userId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("User not found");
     });
   });
 });
