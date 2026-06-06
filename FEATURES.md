@@ -367,3 +367,12 @@
 - [x] Updated mock client in tests for 5 new interface methods
 - [x] Updated tool count assertion (98 → 103)
 - [x] Added 19 new tests for saved views MCP tools (registration, CRUD, filtering, error cases)
+
+## Phase 48: Maintenance MCP Tools (Stale Task Reset & Event Cleanup)
+- [x] Client interface: 2 new maintenance methods (resetStaleTasks, cleanupProcessedEvents)
+- [x] Client implementation: HTTP client methods calling existing API routes (/api/tasks/reset-stale, /api/tasks/cleanup-events)
+- [x] MCP tool: reset_stale_tasks — reset tasks stuck in picked/running state back to pending (configurable timeout)
+- [x] MCP tool: cleanup_processed_events — delete old Feishu dedup events (configurable retention period)
+- [x] Updated mock client in tests for 2 new interface methods
+- [x] Updated tool count assertion (103 → 105)
+- [x] Added 8 new tests for maintenance MCP tools (registration, default/custom params, error cases)

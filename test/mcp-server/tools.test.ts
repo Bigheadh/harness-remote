@@ -1494,6 +1494,18 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "deleteSavedView", args: [viewId] });
       if (mock.failWith) throw new Error(mock.failWith);
     },
+
+    async resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }> {
+      calls.push({ method: "resetStaleTasks", args: timeoutMs !== undefined ? [timeoutMs] : [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { resetCount: 3 };
+    },
+
+    async cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }> {
+      calls.push({ method: "cleanupProcessedEvents", args: retentionDays !== undefined ? [retentionDays] : [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { deletedCount: 15 };
+    },
   };
   return mock;
 }
@@ -1549,8 +1561,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 103 tools", () => {
-        expect(mockServer.registrations).toHaveLength(103);
+      it("registers all 105 tools", () => {
+        expect(mockServer.registrations).toHaveLength(105);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3044,6 +3056,86 @@ describe("MCP tools", () => {
       const result = await tool.handler({ viewId: "view_1" });
 
       expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("reset_stale_tasks", () => {
+    it("registers reset_stale_tasks with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "reset_stale_tasks");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("stale");
+    });
+
+    it("resets stale tasks with default timeout", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "reset_stale_tasks")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("resetStaleTasks");
+      expect(mock.calls[0].args).toEqual([]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.resetCount).toBe(3);
+    });
+
+    it("resets stale tasks with custom timeout", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "reset_stale_tasks")!;
+      const result = await tool.handler({ timeoutMs: 600000 });
+
+      expect(mock.calls[0].method).toBe("resetStaleTasks");
+      expect(mock.calls[0].args).toEqual([600000]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("3 stale");
+    });
+
+    it("returns error when resetStaleTasks fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "reset_stale_tasks")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("DB error");
+    });
+  });
+
+  describe("cleanup_processed_events", () => {
+    it("registers cleanup_processed_events with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_processed_events");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("processed");
+    });
+
+    it("cleans up events with default retention", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_processed_events")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("cleanupProcessedEvents");
+      expect(mock.calls[0].args).toEqual([]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deletedCount).toBe(15);
+    });
+
+    it("cleans up events with custom retention", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_processed_events")!;
+      const result = await tool.handler({ retentionDays: 30 });
+
+      expect(mock.calls[0].method).toBe("cleanupProcessedEvents");
+      expect(mock.calls[0].args).toEqual([30]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("15 old");
+    });
+
+    it("returns error when cleanupProcessedEvents fails", async () => {
+      mock.failWith = "Disk full";
+      const tool = mockServer.registrations.find((r) => r.name === "cleanup_processed_events")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Disk full");
     });
   });
 });

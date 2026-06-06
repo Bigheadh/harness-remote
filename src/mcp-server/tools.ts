@@ -4259,4 +4259,70 @@ export function registerMcpTools(
       }
     },
   );
+
+  // reset_stale_tasks tool
+  server.registerTool(
+    "reset_stale_tasks",
+    {
+      description: "Reset stale tasks that have been stuck in 'picked' or 'running' state for too long. Useful when a device crashed or lost connection while processing a task. The tasks are reset to 'pending' so they can be re-processed.",
+      inputSchema: {
+        timeoutMs: z
+          .number()
+          .optional()
+          .describe("Maximum time in milliseconds a task can remain in picked/running state before being considered stale. Default: 1800000 (30 minutes)"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.resetStaleTasks(args.timeoutMs as number | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Reset ${result.resetCount} stale task(s)`, resetCount: result.resetCount }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // cleanup_processed_events tool
+  server.registerTool(
+    "cleanup_processed_events",
+    {
+      description: "Clean up old processed Feishu events to keep the dedup database lean. Events older than the retention period are permanently deleted. Use this periodically to prevent unbounded database growth.",
+      inputSchema: {
+        retentionDays: z
+          .number()
+          .optional()
+          .describe("Keep events from the last N days. Events older than this are deleted. Default: 7"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.cleanupProcessedEvents(args.retentionDays as number | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Cleaned up ${result.deletedCount} old event(s)`, deletedCount: result.deletedCount }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

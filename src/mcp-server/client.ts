@@ -150,6 +150,9 @@ export interface TaskApiClient {
   createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../shared/types.js").SavedView>;
   updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../shared/types.js").SavedView>;
   deleteSavedView(viewId: string): Promise<void>;
+  // Maintenance methods
+  resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }>;
+  cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }>;
 }
 
 export function createTaskApiClient(
@@ -1782,6 +1785,32 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    async resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/reset-stale`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ timeoutMs }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to reset stale tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as { resetCount: number };
+    },
+
+    async cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/cleanup-events`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ retentionDays }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to cleanup processed events: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as { deletedCount: number };
     },
   };
 }
