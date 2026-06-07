@@ -1159,6 +1159,89 @@ export function registerMcpTools(
     },
   );
 
+  // assign_task tool
+  server.registerTool(
+    "assign_task",
+    {
+      description:
+        "Assign a single task to a specific device. The device must be registered. Returns the updated task with the new assignedDeviceId.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to assign"),
+        deviceId: z.string().describe("The ID of the device to assign the task to"),
+      },
+    },
+    async (args) => {
+      const { taskId, deviceId } = args;
+
+      try {
+        const task = await client.assignTask(taskId, deviceId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task '${task.commandText}' assigned to device '${deviceId}'`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // unassign_task tool
+  server.registerTool(
+    "unassign_task",
+    {
+      description:
+        "Unassign a task from its current device. Clears the assignedDeviceId field. Returns the updated task.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to unassign"),
+      },
+    },
+    async (args) => {
+      const { taskId } = args;
+
+      try {
+        const task = await client.unassignTask(taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task '${task.commandText}' unassigned from device`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // bulk_delete_tasks tool
   server.registerTool(
     "bulk_delete_tasks",

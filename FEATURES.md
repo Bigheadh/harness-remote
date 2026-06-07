@@ -490,3 +490,12 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (121 → 122)
 - [x] Added 3 new tests for bulk_update_priority tool (registration, batch update, error case)
+
+## Phase 62: Individual Task Assignment MCP Tools
+- [x] Client interface: 2 new methods (assignTask, unassignTask)
+- [x] Client implementation: HTTP client methods calling existing API routes (POST /api/tasks/:id/assign, POST /api/tasks/:id/unassign)
+- [x] MCP tool: assign_task — assign a single task to a specific device
+- [x] MCP tool: unassign_task — unassign a task from its current device
+- [x] Updated mock client in tests for 2 new interface methods
+- [x] Updated tool count assertion (122 → 124)
+- [x] Added 6 new tests for assignment MCP tools (registration, assign, unassign, error cases)

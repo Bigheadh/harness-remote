@@ -40,6 +40,8 @@ export interface TaskApiClient {
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
+  assignTask(taskId: string, deviceId: string): Promise<Task>;
+  unassignTask(taskId: string): Promise<Task>;
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
   bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
@@ -683,6 +685,47 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { updated: number; errors: string[] };
       return { updated: data.updated, errors: data.errors };
+    },
+
+    async assignTask(taskId: string, deviceId: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/assign`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ deviceId }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to assign task: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async unassignTask(taskId: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/unassign`,
+        {
+          method: "POST",
+          headers,
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to unassign task: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
     },
 
     async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {

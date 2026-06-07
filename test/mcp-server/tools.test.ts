@@ -353,6 +353,18 @@ function createMockClient(): TaskApiClient & {
       return { updated: ids.length, errors: [] };
     },
 
+    async assignTask(taskId: string, deviceId: string): Promise<Task> {
+      calls.push({ method: "assignTask", args: [taskId, deviceId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { id: taskId, commandText: "test task", status: "pending", priority: "normal", assignedDeviceId: deviceId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as Task;
+    },
+
+    async unassignTask(taskId: string): Promise<Task> {
+      calls.push({ method: "unassignTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { id: taskId, commandText: "test task", status: "pending", priority: "normal", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } as Task;
+    },
+
     async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
       calls.push({ method: "bulkDelete", args: [ids] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1700,8 +1712,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 122 tools", () => {
-        expect(mockServer.registrations).toHaveLength(122);
+      it("registers all 124 tools", () => {
+        expect(mockServer.registrations).toHaveLength(124);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3397,6 +3409,67 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe("Disk full");
+    });
+  });
+
+  // ===== Individual Task Assignment Tests =====
+
+  describe("assign_task", () => {
+    it("registers assign_task with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "assign_task");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("assign");
+    });
+
+    it("assigns a task to a device", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "assign_task")!;
+      const result = await tool.handler({ taskId: "task_001", deviceId: "device_A" });
+
+      expect(mock.calls[0].method).toBe("assignTask");
+      expect(mock.calls[0].args).toEqual(["task_001", "device_A"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.assignedDeviceId).toBe("device_A");
+      expect(parsed.message).toContain("assigned to device");
+    });
+
+    it("returns error when assignTask fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "assign_task")!;
+      const result = await tool.handler({ taskId: "task_nonexistent", deviceId: "device_A" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Task not found");
+    });
+  });
+
+  describe("unassign_task", () => {
+    it("registers unassign_task with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "unassign_task");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("unassign");
+    });
+
+    it("unassigns a task from its device", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "unassign_task")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(mock.calls[0].method).toBe("unassignTask");
+      expect(mock.calls[0].args).toEqual(["task_001"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("unassigned from device");
+    });
+
+    it("returns error when unassignTask fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "unassign_task")!;
+      const result = await tool.handler({ taskId: "task_nonexistent" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Task not found");
     });
   });
 
