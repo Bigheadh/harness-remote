@@ -34,6 +34,7 @@ export interface TaskApiClient {
   setReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   setPriority(taskId: string, priority: TaskPriority): Promise<Task>;
+  setEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
@@ -558,6 +559,27 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to set priority: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async setEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/estimated-minutes`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ estimatedMinutes: minutes }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set estimated minutes: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 

@@ -3823,4 +3823,51 @@ export function registerTaskRoutes(
       error: { code: "internal_error", message: "Internal server error" },
     });
   });
+
+  // POST /api/tasks/:id/estimated-minutes - set estimated minutes (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { estimatedMinutes: number | null };
+  }>("/api/tasks/:id/estimated-minutes", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { estimatedMinutes?: number | null };
+
+    if (body.estimatedMinutes !== null && body.estimatedMinutes !== undefined) {
+      if (typeof body.estimatedMinutes !== "number" || body.estimatedMinutes < 0) {
+        return reply.code(400).send({
+          error: {
+            code: "invalid_request",
+            message: "'estimatedMinutes' must be a non-negative number or null",
+          },
+        });
+      }
+    }
+
+    try {
+      const task = await store.setTaskEstimatedMinutes(id, body.estimatedMinutes ?? null);
+      log.info({ taskId: id, estimatedMinutes: body.estimatedMinutes }, "Task estimated minutes updated");
+      return reply.send({ task });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message },
+        });
+      }
+      log.error({ err: e, taskId: id }, "Failed to update estimated minutes");
+      return reply.code(500).send({
+        error: { code: "internal_error", message: "Internal server error" },
+      });
+    }
+  });
 }

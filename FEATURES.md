@@ -472,3 +472,12 @@
 - [x] Audit logging for card action status changes and archivals
 - [x] Webhook dispatch and SSE broadcast on card-triggered status changes
 - [x] Added "task.archived" to AuditAction union type in shared/types.ts
+
+## Phase 60: Task Time Estimate Setter
+- [x] Store layer: setTaskEstimatedMinutes(taskId, minutes) method with validation
+- [x] API route: POST /api/tasks/:id/estimated-minutes endpoint with auth and validation
+- [x] MCP client: setEstimatedMinutes(taskId, minutes) HTTP client method
+- [x] MCP tool: set_task_estimated_minutes — AI agents can set/clear task time estimates
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (120 → 121)
+- [x] Added 4 new tests for set_task_estimated_minutes tool (registration, set value, clear, error)

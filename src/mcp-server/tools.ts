@@ -733,6 +733,54 @@ export function registerMcpTools(
     },
   );
 
+  // set_task_estimated_minutes tool
+  server.registerTool(
+    "set_task_estimated_minutes",
+    {
+      description:
+        "Set the estimated time in minutes for a task. This helps with time planning and can be compared against actual time spent (from time entries). Pass null to clear the estimate.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set the estimate for"),
+        estimatedMinutes: z
+          .number()
+          .min(0)
+          .nullable()
+          .describe("Estimated time in minutes (non-negative number), or null to clear"),
+      },
+    },
+    async (args) => {
+      const { taskId, estimatedMinutes } = args;
+
+      try {
+        const task = await client.setEstimatedMinutes(taskId, estimatedMinutes);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: estimatedMinutes !== null
+                  ? `Estimated time set to ${estimatedMinutes} minutes`
+                  : "Estimated time cleared",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // list_overdue_tasks tool
   server.registerTool(
     "list_overdue_tasks",

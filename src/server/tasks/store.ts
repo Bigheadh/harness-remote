@@ -65,6 +65,7 @@ export interface TaskStore {
   setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   setTaskPriority(taskId: string, priority: TaskPriority): Promise<Task>;
+  setTaskEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
   listComments(taskId: string): Promise<TaskComment[]>;
@@ -1268,6 +1269,29 @@ export function createTaskStore(storagePath: string): TaskStore {
       const now = new Date().toISOString();
       db.prepare(`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?`).run(
         priority,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async setTaskEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task> {
+      if (minutes !== null && (typeof minutes !== "number" || minutes < 0)) {
+        throw new Error(`Invalid estimated minutes: ${minutes}. Must be a non-negative number or null`);
+      }
+
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET estimated_minutes = ?, updated_at = ? WHERE id = ?`).run(
+        minutes,
         now,
         taskId,
       );

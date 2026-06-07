@@ -232,6 +232,23 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async setEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task> {
+      calls.push({ method: "setEstimatedMinutes", args: [taskId, minutes] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_estimated",
+        feishuChatId: "oc_estimated",
+        feishuUserId: "ou_estimated",
+        commandText: "估算任务",
+        status: "pending",
+        estimatedMinutes: minutes ?? undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
     async listOverdueTasks(): Promise<Task[]> {
       calls.push({ method: "listOverdueTasks", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1677,8 +1694,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 120 tools", () => {
-        expect(mockServer.registrations).toHaveLength(120);
+      it("registers all 121 tools", () => {
+        expect(mockServer.registrations).toHaveLength(121);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2259,6 +2276,50 @@ describe("MCP tools", () => {
       mock.failWith = "Task not found";
       const tool = mockServer.registrations.find((r) => r.name === "set_task_priority")!;
       const result = await tool.handler({ taskId: "task_nonexistent", priority: "high" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Task not found");
+    });
+
+    // --- set_task_estimated_minutes tool tests ---
+
+    it("registers set_task_estimated_minutes tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_estimated_minutes");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("estimated");
+    });
+
+    it("sets task estimated minutes to 30", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_estimated_minutes")!;
+      const result = await tool.handler({ taskId: "task_001", estimatedMinutes: 30 });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("setEstimatedMinutes");
+      expect(mock.calls[0].args).toEqual(["task_001", 30]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.estimatedMinutes).toBe(30);
+      expect(parsed.message).toContain("30");
+    });
+
+    it("clears task estimated minutes with null", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_estimated_minutes")!;
+      const result = await tool.handler({ taskId: "task_001", estimatedMinutes: null });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].args).toEqual(["task_001", null]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("cleared");
+    });
+
+    it("returns error when set_estimated_minutes fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_estimated_minutes")!;
+      const result = await tool.handler({ taskId: "task_nonexistent", estimatedMinutes: 60 });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
