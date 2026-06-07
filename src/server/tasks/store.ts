@@ -82,6 +82,8 @@ export interface TaskStore {
   getTemplate(id: string): Promise<TaskTemplate | undefined>;
   updateTemplate(id: string, updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>): Promise<TaskTemplate>;
   deleteTemplate(id: string): Promise<boolean>;
+  incrementTemplateUsage(id: string): Promise<void>;
+  getTemplateUsageStats(): Promise<{ templateId: string; name: string; usageCount: number }[]>;
   // Scheduled task methods
   createScheduledTask(data: Omit<ScheduledTask, "id" | "createdAt" | "updatedAt">): Promise<ScheduledTask>;
   listScheduledTasks(): Promise<ScheduledTask[]>;
@@ -284,6 +286,7 @@ function rowToTemplate(row: Record<string, unknown>): TaskTemplate {
     dueDateOffsetMs: row["due_date_offset_ms"] != null ? Number(row["due_date_offset_ms"]) : undefined,
     reminderOffsetMs: row["reminder_offset_ms"] != null ? Number(row["reminder_offset_ms"]) : undefined,
     createdBy: row["created_by"] as string,
+    usageCount: row["usage_count"] != null ? Number(row["usage_count"]) : 0,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
   };
@@ -566,6 +569,11 @@ export function createTaskStore(storagePath: string): TaskStore {
     CREATE INDEX IF NOT EXISTS idx_task_templates_name
       ON task_templates(name)
   `);
+
+  // Phase 65: template usage_count column
+  try {
+    db.exec(`ALTER TABLE task_templates ADD COLUMN usage_count INTEGER DEFAULT 0`);
+  } catch {}
 
   // Scheduled tasks table
   db.exec(`
@@ -1627,6 +1635,24 @@ export function createTaskStore(storagePath: string): TaskStore {
     async deleteTemplate(id: string): Promise<boolean> {
       const result = db.prepare(`DELETE FROM task_templates WHERE id = ?`).run(id);
       return Number(result.changes) > 0;
+    },
+
+    async incrementTemplateUsage(id: string): Promise<void> {
+      db.prepare(`UPDATE task_templates SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?`).run(
+        new Date().toISOString(),
+        id,
+      );
+    },
+
+    async getTemplateUsageStats(): Promise<{ templateId: string; name: string; usageCount: number }[]> {
+      const rows = db.prepare(
+        `SELECT id as templateId, name, usage_count as usageCount FROM task_templates ORDER BY usage_count DESC`,
+      ).all() as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        templateId: r["templateId"] as string,
+        name: r["name"] as string,
+        usageCount: Number(r["usageCount"] ?? 0),
+      }));
     },
 
     // ── Scheduled Tasks ─────────────────────────────────────────────

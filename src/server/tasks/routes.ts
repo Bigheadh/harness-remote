@@ -166,6 +166,23 @@ export function registerTaskRoutes(
     return reply.send({ templates });
   });
 
+  // GET /api/templates/usage-stats - template usage statistics (requires tasks.read)
+  server.get("/api/templates/usage-stats", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const stats = await store.getTemplateUsageStats();
+    const totalUsage = stats.reduce((sum, s) => sum + s.usageCount, 0);
+    return reply.send({ stats, totalUsage, templateCount: stats.length });
+  });
+
   // GET /api/templates/:id - get a task template by ID (requires tasks.read)
   server.get<{ Params: { id: string } }>("/api/templates/:id", async (req, reply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
@@ -388,6 +405,8 @@ export function registerTaskRoutes(
     });
 
     log.info({ taskId: task.id, templateId: template.id }, "Task created from template");
+    // Track template usage
+    store.incrementTemplateUsage(template.id).catch(() => {});
     return reply.code(201).send({ task });
   });
 

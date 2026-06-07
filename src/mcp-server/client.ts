@@ -38,6 +38,7 @@ export interface TaskApiClient {
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
+  deleteTaskComment(taskId: string, commentId: number): Promise<void>;
   bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }>;
   bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }>;
   assignTask(taskId: string, deviceId: string): Promise<Task>;
@@ -53,6 +54,7 @@ export interface TaskApiClient {
   updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
   createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task>;
+  getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }>;
   // Scheduled task methods
   listScheduledTasks(): Promise<ScheduledTask[]>;
   getScheduledTask(scheduledId: string): Promise<ScheduledTask>;
@@ -99,6 +101,7 @@ export interface TaskApiClient {
   // Task notes (internal annotations)
   listNotes(taskId: string): Promise<TaskNote[]>;
   addNote(taskId: string, body: string): Promise<TaskNote>;
+  deleteTaskNote(taskId: string, noteId: number): Promise<void>;
   // Task user search
   listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
   // Task subtask methods
@@ -657,6 +660,20 @@ export function createTaskApiClient(
       return data.comment;
     },
 
+    async deleteTaskComment(taskId: string, commentId: number): Promise<void> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/comments/${commentId}`,
+        {
+          method: "DELETE",
+          headers,
+        },
+      );
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete comment: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
     async bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }> {
       const response = await fetch(
         `${serverBaseUrl}/api/tasks/bulk/status`,
@@ -897,6 +914,15 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { task: Task };
       return data.task;
+    },
+
+    async getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/templates/usage-stats`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get template usage stats: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as { stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number };
     },
 
     // ── Scheduled Tasks ──────────────────────────────────────────────
@@ -1331,6 +1357,17 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { note: TaskNote };
       return data.note;
+    },
+
+    async deleteTaskNote(taskId: string, noteId: number): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes/${noteId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete note: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
 
     // ── Task User Search ──────────────────────────────────────────

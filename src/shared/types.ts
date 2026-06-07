@@ -342,6 +342,8 @@ export interface TaskTemplate {
   /** Milliseconds offset from creation time for the reminder (e.g., 3600000 = +1 hour) */
   reminderOffsetMs?: number;
   createdBy: string;
+  /** Number of times this template has been used to create tasks */
+  usageCount?: number;
   createdAt: string;
   updatedAt: string;
 }

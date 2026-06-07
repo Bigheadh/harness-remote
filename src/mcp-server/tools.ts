@@ -1063,6 +1063,47 @@ export function registerMcpTools(
     },
   );
 
+  // delete_task_comment tool
+  server.registerTool(
+    "delete_task_comment",
+    {
+      description:
+        "Delete a comment from a task. This removes the comment permanently from the task's activity timeline. The comment is identified by its numeric ID (returned by list_task_comments).",
+      inputSchema: {
+        taskId: z.string().describe("The task ID that contains the comment"),
+        commentId: z.number().int().positive().describe("The numeric comment ID to delete (from list_task_comments)"),
+      },
+    },
+    async (args) => {
+      const { taskId, commentId } = args;
+
+      try {
+        await client.deleteTaskComment(taskId, commentId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                message: `Comment ${commentId} deleted from task ${taskId}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // bulk_update_status tool
   server.registerTool(
     "bulk_update_status",
@@ -1551,6 +1592,40 @@ export function registerMcpTools(
               text: JSON.stringify({
                 task,
                 message: `Task created from template (id: ${task.id}, status: ${task.status}, priority: ${task.priority})`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_template_usage_stats tool
+  server.registerTool(
+    "get_template_usage_stats",
+    {
+      description:
+        "Get usage statistics for all task templates. Shows how many times each template has been used to create tasks, sorted by most-used first. Useful for identifying which templates are most valuable and which are unused.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const result = await client.getTemplateUsageStats();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ...result,
+                message: result.templateCount === 0
+                  ? "No templates exist yet"
+                  : `Total: ${result.totalUsage} task(s) created from ${result.templateCount} template(s)`,
               }, null, 2),
             },
           ],
@@ -2889,6 +2964,47 @@ export function registerMcpTools(
               text: JSON.stringify({
                 note,
                 message: `Internal note added (id: ${note.id}). This note is NOT visible to the Feishu requester.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_task_note tool
+  server.registerTool(
+    "delete_task_note",
+    {
+      description:
+        "Delete an internal note from a task. Notes are internal annotations NOT shared back to the Feishu requester. The note is identified by its numeric ID (returned by list_task_notes).",
+      inputSchema: {
+        taskId: z.string().describe("The task ID that contains the note"),
+        noteId: z.number().int().positive().describe("The numeric note ID to delete (from list_task_notes)"),
+      },
+    },
+    async (args) => {
+      const { taskId, noteId } = args;
+
+      try {
+        await client.deleteTaskNote(taskId, noteId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                message: `Note ${noteId} deleted from task ${taskId}`,
               }, null, 2),
             },
           ],

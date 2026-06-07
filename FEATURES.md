@@ -512,3 +512,12 @@
 - [x] Updated mock client in tests for 8 new interface methods
 - [x] Updated tool count assertion (124 → 132)
 - [x] Added 25 new tests for cycle MCP tools (registration, CRUD, task assignment, error cases)
+
+## Phase 64: Comment & Note Deletion MCP Tools
+- [x] Client interface: 2 new methods (deleteTaskComment, deleteTaskNote)
+- [x] Client implementation: HTTP client methods calling existing API routes (DELETE /api/tasks/:id/comments/:commentId, DELETE /api/tasks/:id/notes/:noteId)
+- [x] MCP tool: delete_task_comment — permanently remove a comment from a task's activity timeline
+- [x] MCP tool: delete_task_note — permanently remove an internal note from a task
+- [x] Updated mock client in tests for 2 new interface methods
+- [x] Updated tool count assertion (135 → 137)
+- [x] Added 10 new tests (registration + success + error for both tools, plus add/list note tests)

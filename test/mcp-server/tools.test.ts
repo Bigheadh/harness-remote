@@ -296,6 +296,11 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async deleteTaskComment(taskId: string, commentId: number): Promise<void> {
+      calls.push({ method: "deleteTaskComment", args: [taskId, commentId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
     async registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }> {
       calls.push({ method: "registerDevice", args: [name, capabilities] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -478,6 +483,19 @@ function createMockClient(): TaskApiClient & {
         tags: overrides?.tags ?? [],
         createdAt: "2026-06-06T22:00:00.000Z",
         updatedAt: "2026-06-06T22:00:00.000Z",
+      };
+    },
+
+    async getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }> {
+      calls.push({ method: "getTemplateUsageStats", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        stats: [
+          { templateId: "tpl_001", name: "Deploy Template", usageCount: 5 },
+          { templateId: "tpl_002", name: "Bug Report Template", usageCount: 3 },
+        ],
+        totalUsage: 8,
+        templateCount: 2,
       };
     },
 
@@ -971,6 +989,11 @@ function createMockClient(): TaskApiClient & {
         body,
         createdAt: "2026-06-02T12:00:00.000Z",
       };
+    },
+
+    async deleteTaskNote(taskId: string, noteId: number): Promise<void> {
+      calls.push({ method: "deleteTaskNote", args: [taskId, noteId] });
+      if (mock.failWith) throw new Error(mock.failWith);
     },
 
     async listTasksByUser(userId: string, limit?: number): Promise<Task[]> {
@@ -1850,8 +1873,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 134 tools", () => {
-        expect(mockServer.registrations).toHaveLength(134);
+      it("registers all 137 tools", () => {
+        expect(mockServer.registrations).toHaveLength(137);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2268,6 +2291,100 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Server error");
+    });
+
+    it("registers delete_task_comment tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_comment");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("delete");
+      expect(tool!.description.toLowerCase()).toContain("comment");
+    });
+
+    it("deletes a comment from a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_comment")!;
+      const result = await tool.handler({ taskId: "task_001", commentId: 42 });
+
+      expect(mock.calls[0].method).toBe("deleteTaskComment");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe(42);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("Comment 42 deleted");
+    });
+
+    it("returns error when delete_task_comment fails", async () => {
+      mock.failWith = "Comment not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_comment")!;
+      const result = await tool.handler({ taskId: "task_001", commentId: 999 });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Comment not found");
+    });
+
+    it("registers add_task_note tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_note");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("note");
+    });
+
+    it("registers list_task_notes tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_notes");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("note");
+    });
+
+    it("registers delete_task_note tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_note");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("delete");
+      expect(tool!.description.toLowerCase()).toContain("note");
+    });
+
+    it("adds a note to a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_note")!;
+      const result = await tool.handler({ taskId: "task_001", body: "Internal note" });
+
+      expect(mock.calls[0].method).toBe("addNote");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe("Internal note");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.note).toBeDefined();
+      expect(parsed.note.id).toBe(99);
+    });
+
+    it("lists notes for a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_notes")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(mock.calls[0].method).toBe("listNotes");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.notes).toHaveLength(1);
+    });
+
+    it("deletes a note from a task", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_note")!;
+      const result = await tool.handler({ taskId: "task_001", noteId: 99 });
+
+      expect(mock.calls[0].method).toBe("deleteTaskNote");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe(99);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.message).toContain("Note 99 deleted");
+    });
+
+    it("returns error when delete_task_note fails", async () => {
+      mock.failWith = "Note not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_task_note")!;
+      const result = await tool.handler({ taskId: "task_001", noteId: 888 });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Note not found");
     });
 
     it("lists tasks by user", async () => {
@@ -2706,6 +2823,42 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Template not found");
+    });
+  });
+
+  // --- Template usage stats tests ---
+  describe("get_template_usage_stats", () => {
+    it("registers get_template_usage_stats tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_template_usage_stats");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("template");
+      expect(tool!.description.toLowerCase()).toContain("usage");
+    });
+
+    it("returns template usage statistics", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_template_usage_stats")!;
+      const result = await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getTemplateUsageStats");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.stats).toHaveLength(2);
+      expect(parsed.totalUsage).toBe(8);
+      expect(parsed.templateCount).toBe(2);
+      expect(parsed.stats[0].name).toBe("Deploy Template");
+      expect(parsed.stats[0].usageCount).toBe(5);
+    });
+
+    it("returns error when getTemplateUsageStats fails", async () => {
+      mock.failWith = "Service unavailable";
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_template_usage_stats")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Service unavailable");
+      mock.failWith = undefined;
     });
   });
 
