@@ -1858,6 +1858,146 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    // Module (epic) mock methods
+    async listModules(status?: import("../../src/shared/types.js").ModuleStatus): Promise<import("../../src/shared/types.js").ModuleWithProgress[]> {
+      calls.push({ method: "listModules", args: [status] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "module_test_001",
+          name: "Auth System",
+          description: "Authentication and authorization",
+          status: "active",
+          startDate: "2026-06-01",
+          endDate: "2026-06-30",
+          createdBy: "test_user",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+          totalTasks: 5,
+          completedTasks: 2,
+          completionPercent: 40,
+        },
+      ];
+    },
+
+    async getModule(moduleId: string): Promise<import("../../src/shared/types.js").ModuleWithProgress> {
+      calls.push({ method: "getModule", args: [moduleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: moduleId,
+        name: "Auth System",
+        description: "Authentication and authorization",
+        status: "active",
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        createdBy: "test_user",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+        totalTasks: 5,
+        completedTasks: 2,
+        completionPercent: 40,
+      };
+    },
+
+    async createModule(data: { name: string; description?: string; startDate?: string; endDate?: string }): Promise<import("../../src/shared/types.js").Module> {
+      calls.push({ method: "createModule", args: [data] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "module_test_new",
+        name: data.name,
+        description: data.description,
+        status: "planned",
+        startDate: data.startDate,
+        endDate: data.endDate,
+        createdBy: "test_user",
+        createdAt: "2026-06-08T00:00:00.000Z",
+        updatedAt: "2026-06-08T00:00:00.000Z",
+      };
+    },
+
+    async updateModule(moduleId: string, updates: Record<string, unknown>): Promise<import("../../src/shared/types.js").Module> {
+      calls.push({ method: "updateModule", args: [moduleId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: moduleId,
+        name: (updates.name as string) ?? "Auth System",
+        description: (updates.description as string) ?? undefined,
+        status: (updates.status as import("../../src/shared/types.js").ModuleStatus) ?? "active",
+        startDate: (updates.startDate as string) ?? undefined,
+        endDate: (updates.endDate as string) ?? undefined,
+        targetCompletionPercent: (updates.targetCompletionPercent as number) ?? undefined,
+        createdBy: "test_user",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-08T00:00:00.000Z",
+      };
+    },
+
+    async deleteModule(moduleId: string): Promise<void> {
+      calls.push({ method: "deleteModule", args: [moduleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async addTaskToModule(taskId: string, moduleId: string): Promise<import("../../src/shared/types.js").Task> {
+      calls.push({ method: "addTaskToModule", args: [taskId, moduleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "msg_001",
+        feishuChatId: "chat_001",
+        feishuUserId: "user_001",
+        commandText: "test task",
+        status: "pending",
+        priority: "normal",
+        tags: [],
+        description: undefined,
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-08T00:00:00.000Z",
+        moduleId,
+      };
+    },
+
+    async removeTaskFromModule(taskId: string): Promise<import("../../src/shared/types.js").Task> {
+      calls.push({ method: "removeTaskFromModule", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "msg_001",
+        feishuChatId: "chat_001",
+        feishuUserId: "user_001",
+        commandText: "test task",
+        status: "pending",
+        priority: "normal",
+        tags: [],
+        description: undefined,
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-08T00:00:00.000Z",
+      };
+    },
+
+    async listModuleTasks(moduleId: string): Promise<import("../../src/shared/types.js").Task[]> {
+      calls.push({ method: "listModuleTasks", args: [moduleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_test_001",
+          source: "feishu",
+          feishuMessageId: "msg_001",
+          feishuChatId: "chat_001",
+          feishuUserId: "user_001",
+          commandText: "test task in module",
+          status: "pending",
+          priority: "normal",
+          tags: [],
+          description: undefined,
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+          moduleId,
+        },
+      ];
+    },
+
     async getAuditCount(): Promise<number> {
       calls.push({ method: "getAuditCount", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1945,8 +2085,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 142 tools", () => {
-        expect(mockServer.registrations).toHaveLength(142);
+      it("registers all 150 tools", () => {
+        expect(mockServer.registrations).toHaveLength(150);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -4492,6 +4632,173 @@ describe("MCP tools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Can only reopen");
+    });
+  });
+
+  describe("list_modules", () => {
+    it("registers the tool with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_modules");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("list");
+      expect(tool!.description.toLowerCase()).toContain("module");
+    });
+
+    it("lists modules via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_modules")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.modules).toHaveLength(1);
+      expect(parsed.modules[0].name).toBe("Auth System");
+      expect(mock.calls[0].method).toBe("listModules");
+    });
+
+    it("returns error when listModules fails", async () => {
+      mock.failWith = "Database error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_modules")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Database error");
+    });
+  });
+
+  describe("get_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("moduleId");
+    });
+
+    it("gets module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_module")!;
+      const result = await tool.handler({ moduleId: "module_001" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.name).toBe("Auth System");
+      expect(parsed.completionPercent).toBe(40);
+      expect(mock.calls[0].method).toBe("getModule");
+    });
+  });
+
+  describe("create_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("name");
+    });
+
+    it("creates module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_module")!;
+      const result = await tool.handler({ name: "Payment Flow" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.module.name).toBe("Payment Flow");
+      expect(mock.calls[0].method).toBe("createModule");
+    });
+  });
+
+  describe("update_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "update_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("moduleId");
+    });
+
+    it("updates module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_module")!;
+      const result = await tool.handler({ moduleId: "module_001", status: "completed" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.module.status).toBe("completed");
+      expect(mock.calls[0].method).toBe("updateModule");
+    });
+  });
+
+  describe("delete_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("moduleId");
+    });
+
+    it("deletes module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_module")!;
+      const result = await tool.handler({ moduleId: "module_001" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.success).toBe(true);
+      expect(mock.calls[0].method).toBe("deleteModule");
+    });
+  });
+
+  describe("add_task_to_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_to_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+      expect(tool!.inputSchema).toHaveProperty("moduleId");
+    });
+
+    it("adds task to module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_to_module")!;
+      const result = await tool.handler({ taskId: "task_001", moduleId: "module_001" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.id).toBe("task_001");
+      expect(parsed.task.moduleId).toBe("module_001");
+      expect(mock.calls[0].method).toBe("addTaskToModule");
+    });
+  });
+
+  describe("remove_task_from_module", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_from_module");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+    });
+
+    it("removes task from module via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_from_module")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.id).toBe("task_001");
+      expect(mock.calls[0].method).toBe("removeTaskFromModule");
+    });
+  });
+
+  describe("list_module_tasks", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_module_tasks");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("moduleId");
+    });
+
+    it("lists module tasks via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_module_tasks")!;
+      const result = await tool.handler({ moduleId: "module_001" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.tasks).toHaveLength(1);
+      expect(parsed.tasks[0].moduleId).toBe("module_001");
+      expect(mock.calls[0].method).toBe("listModuleTasks");
     });
   });
 });

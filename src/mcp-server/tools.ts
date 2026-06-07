@@ -5704,4 +5704,283 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ─── Module (Epic) Tools ───
+
+  // list_modules tool
+  server.registerTool(
+    "list_modules",
+    {
+      description:
+        "List all modules (epics). Each module groups related tasks into a logical unit (e.g., 'Auth System', 'Payment Flow'). Returns module summaries with task counts and completion percentage. Optionally filter by status.",
+      inputSchema: {
+        status: z
+          .enum(["planned", "active", "completed", "archived"])
+          .optional()
+          .describe("Filter modules by status: planned, active, completed, or archived"),
+      },
+    },
+    async (args) => {
+      try {
+        const modules = await client.listModules(args.status as import("../shared/types.js").ModuleStatus | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ modules, count: modules.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_module tool
+  server.registerTool(
+    "get_module",
+    {
+      description:
+        "Get details of a specific module (epic) by ID. Returns the module name, description, status, date range, target completion, and actual task progress (total tasks, completed tasks, completion percentage).",
+      inputSchema: {
+        moduleId: z.string().describe("The ID of the module to retrieve"),
+      },
+    },
+    async (args) => {
+      try {
+        const mod = await client.getModule(args.moduleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(mod, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_module tool
+  server.registerTool(
+    "create_module",
+    {
+      description:
+        "Create a new module (epic) to group related tasks. A module represents a logical feature area or work stream. Tasks can be assigned to modules for organizational purposes.",
+      inputSchema: {
+        name: z.string().describe("Human-readable module name (e.g., 'Auth System', 'Payment Flow')"),
+        description: z.string().optional().describe("Description of the module's goals and scope"),
+        startDate: z.string().optional().describe("Planned start date (ISO 8601)"),
+        endDate: z.string().optional().describe("Planned end date (ISO 8601)"),
+      },
+    },
+    async (args) => {
+      try {
+        const mod = await client.createModule({
+          name: args.name as string,
+          description: args.description as string | undefined,
+          startDate: args.startDate as string | undefined,
+          endDate: args.endDate as string | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ module: mod, message: `Module "${mod.name}" created successfully` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_module tool
+  server.registerTool(
+    "update_module",
+    {
+      description:
+        "Update an existing module's properties. Can change name, description, status (planned/active/completed/archived), date range, or target completion percentage.",
+      inputSchema: {
+        moduleId: z.string().describe("The ID of the module to update"),
+        name: z.string().optional().describe("New module name"),
+        description: z.string().optional().describe("New description (pass null to clear)"),
+        status: z
+          .enum(["planned", "active", "completed", "archived"])
+          .optional()
+          .describe("New status"),
+        startDate: z.string().optional().describe("New start date (ISO 8601, pass null to clear)"),
+        endDate: z.string().optional().describe("New end date (ISO 8601, pass null to clear)"),
+        targetCompletionPercent: z.number().min(0).max(100).optional().describe("Target completion percentage (0-100, pass null to clear)"),
+      },
+    },
+    async (args) => {
+      try {
+        const updates: Record<string, unknown> = {};
+        if (args.name !== undefined) updates.name = args.name;
+        if (args.description !== undefined) updates.description = args.description;
+        if (args.status !== undefined) updates.status = args.status;
+        if (args.startDate !== undefined) updates.startDate = args.startDate;
+        if (args.endDate !== undefined) updates.endDate = args.endDate;
+        if (args.targetCompletionPercent !== undefined) updates.targetCompletionPercent = args.targetCompletionPercent;
+
+        const mod = await client.updateModule(args.moduleId as string, updates);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ module: mod, message: "Module updated successfully" }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_module tool
+  server.registerTool(
+    "delete_module",
+    {
+      description:
+        "Delete a module (epic). This removes the module and unassigns all its tasks (tasks are NOT deleted, only their module association is cleared).",
+      inputSchema: {
+        moduleId: z.string().describe("The ID of the module to delete"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteModule(args.moduleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, message: "Module deleted successfully. All tasks have been unassigned from this module." }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // add_task_to_module tool
+  server.registerTool(
+    "add_task_to_module",
+    {
+      description:
+        "Assign a task to a module (epic). This links the task to the specified module for organizational grouping. A task can belong to one module at a time.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to assign"),
+        moduleId: z.string().describe("The ID of the module to assign the task to"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.addTaskToModule(args.taskId as string, args.moduleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ task, message: `Task "${task.id}" assigned to module "${args.moduleId}"` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // remove_task_from_module tool
+  server.registerTool(
+    "remove_task_from_module",
+    {
+      description:
+        "Remove a task from its current module. The task is NOT deleted — it simply loses its module association. The task must currently be assigned to a module.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to unassign from its module"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.removeTaskFromModule(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ task, message: `Task "${task.id}" removed from its module` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_module_tasks tool
+  server.registerTool(
+    "list_module_tasks",
+    {
+      description:
+        "List all tasks belonging to a specific module (epic). Returns the tasks sorted by creation date (newest first). Useful for reviewing progress within a feature area.",
+      inputSchema: {
+        moduleId: z.string().describe("The ID of the module whose tasks to list"),
+      },
+    },
+    async (args) => {
+      try {
+        const tasks = await client.listModuleTasks(args.moduleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ tasks, count: tasks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

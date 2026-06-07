@@ -572,3 +572,19 @@
 - [x] Updated tool count assertion (141 → 142)
 - [x] Added 3 new tests for reopen_task tool (registration, success, error)
 - [x] Updated store tests: done/failed → pending transitions now succeed (reopen)
+
+## Phase 70: Modules (Epics)
+- [x] Shared types: Module, ModuleStatus, ModuleWithProgress interfaces
+- [x] Store layer: modules table migration, module_id column on tasks, 8 store methods (CRUD + task linking)
+- [x] Row parsers: rowToModule, updated rowToTask with moduleId, updated rowToTemplate with variables
+- [x] Template variables: variables field on TaskTemplate, applyTemplateVariables helper
+- [x] API routes: 8 module endpoints (CRUD + task linking: GET/POST/PUT/DELETE /api/modules, POST/DELETE/GET /api/modules/:id/tasks)
+- [x] Template variables in routes: variable substitution in createTaskFromTemplate endpoint
+- [x] MCP client interface: 8 module methods (listModules, getModule, createModule, updateModule, deleteModule, addTaskToModule, removeTaskFromModule, listModuleTasks)
+- [x] MCP client implementation: HTTP client methods for all module endpoints
+- [x] MCP tools: 8 module tools (list_modules, get_module, create_module, update_module, delete_module, add_task_to_module, remove_task_from_module, list_module_tasks)
+- [x] Template variables in tools: variables parameter on create_template, update_template, create_task_from_template
+- [x] Updated mock client in tests for all new interface methods
+- [x] Updated tool count assertion (142 → 150)
+- [x] Added 17 new tests for module tools (registration, success, error cases)
+

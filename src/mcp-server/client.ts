@@ -195,6 +195,15 @@ export interface TaskApiClient {
   getCycleProgress(cycleId: string): Promise<import("../shared/types.js").CycleProgress>;
   // Global activity feed
   getGlobalActivity(limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]>;
+  // Module (epic) methods
+  listModules(status?: import("../shared/types.js").ModuleStatus): Promise<import("../shared/types.js").ModuleWithProgress[]>;
+  getModule(moduleId: string): Promise<import("../shared/types.js").ModuleWithProgress>;
+  createModule(data: { name: string; description?: string; startDate?: string; endDate?: string }): Promise<import("../shared/types.js").Module>;
+  updateModule(moduleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Module>;
+  deleteModule(moduleId: string): Promise<void>;
+  addTaskToModule(taskId: string, moduleId: string): Promise<import("../shared/types.js").Task>;
+  removeTaskFromModule(taskId: string): Promise<import("../shared/types.js").Task>;
+  listModuleTasks(moduleId: string): Promise<import("../shared/types.js").Task[]>;
   // Audit management methods
   getAuditCount(): Promise<number>;
   cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
@@ -2345,6 +2354,115 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
       return data.items;
+    },
+
+    // Module (epic) methods
+    async listModules(status?: import("../shared/types.js").ModuleStatus): Promise<import("../shared/types.js").ModuleWithProgress[]> {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      const qs = params.toString();
+      const response = await fetch(`${serverBaseUrl}/api/modules${qs ? "?" + qs : ""}`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list modules: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { modules: import("../shared/types.js").ModuleWithProgress[] };
+      return data.modules;
+    },
+
+    async getModule(moduleId: string): Promise<import("../shared/types.js").ModuleWithProgress> {
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { module: import("../shared/types.js").ModuleWithProgress };
+      return data.module;
+    },
+
+    async createModule(data: { name: string; description?: string; startDate?: string; endDate?: string }): Promise<import("../shared/types.js").Module> {
+      const response = await fetch(`${serverBaseUrl}/api/modules`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { module: import("../shared/types.js").Module };
+      return result.module;
+    },
+
+    async updateModule(moduleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Module> {
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { module: import("../shared/types.js").Module };
+      return result.module;
+    },
+
+    async deleteModule(moduleId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, { method: "DELETE", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async addTaskToModule(taskId: string, moduleId: string): Promise<import("../shared/types.js").Task> {
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ taskId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to add task to module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      return data.task;
+    },
+
+    async removeTaskFromModule(taskId: string): Promise<import("../shared/types.js").Task> {
+      // Need to find the module for this task — use listModuleTasks or a dedicated endpoint
+      // For simplicity, the route uses DELETE /api/modules/:id/tasks/:taskId
+      // The client needs the moduleId, but we can use a placeholder approach
+      // Actually, let's use a different approach — the route expects moduleId
+      // We'll fetch the task first to find its moduleId
+      const taskResponse = await fetch(`${serverBaseUrl}/api/tasks/${taskId}`, { method: "GET", headers });
+      if (!taskResponse.ok) {
+        const body = (await taskResponse.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get task: ${taskResponse.status} ${body.error?.message ?? taskResponse.statusText}`);
+      }
+      const taskData = (await taskResponse.json()) as { task: import("../shared/types.js").Task };
+      const moduleId = taskData.task.moduleId;
+      if (!moduleId) {
+        throw new Error("Task is not assigned to any module");
+      }
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks/${taskId}`, { method: "DELETE", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to remove task from module: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      return data.task;
+    },
+
+    async listModuleTasks(moduleId: string): Promise<import("../shared/types.js").Task[]> {
+      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list module tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
+      return data.tasks;
     },
 
     async getAuditCount(): Promise<number> {
