@@ -754,6 +754,12 @@ function createMockClient(): TaskApiClient & {
       return { imported: 0, skipped: 0, errors: [] };
     },
 
+    async importTasksFromCsv(csv: string, options?: { columnMap?: Record<string, string>; defaultPriority?: string; defaultTags?: string[]; delimiter?: string }): Promise<{ imported: number; errors: string[]; taskIds: string[] }> {
+      calls.push({ method: "importTasksFromCsv", args: [csv, options] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { imported: 0, errors: [], taskIds: [] };
+    },
+
     // SLA mocks
     async listSlaPolicies(): Promise<import("../../src/shared/types.js").SlaPolicy[]> {
       calls.push({ method: "listSlaPolicies", args: [] });
@@ -1879,8 +1885,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 138 tools", () => {
-        expect(mockServer.registrations).toHaveLength(138);
+      it("registers all 139 tools", () => {
+        expect(mockServer.registrations).toHaveLength(139);
     });
 
     it("registers list_tasks with correct description", () => {

@@ -2396,6 +2396,67 @@ export function registerMcpTools(
     },
   );
 
+  // import_tasks_csv tool
+  server.registerTool(
+    "import_tasks_csv",
+    {
+      description:
+        "Import tasks from CSV text with column mapping. Accepts CSV data with a header row and maps columns to task fields (commandText/title, priority, tags, dueDate, description). Use columnMap to rename CSV headers to task field names. Returns the count of imported tasks and any row-level errors.",
+      inputSchema: {
+        csv: z.string().describe("CSV text with header row and data rows"),
+        columnMap: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe('Mapping from CSV column header to task field name, e.g. {"Title": "commandText", "Due Date": "dueDate"}'),
+        defaultPriority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Default priority for tasks without a priority column. Default: normal"),
+        defaultTags: z
+          .array(z.string())
+          .optional()
+          .describe("Default tags to apply to all imported tasks"),
+        delimiter: z
+          .string()
+          .optional()
+          .describe("CSV delimiter character. Default: comma"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.importTasksFromCsv(args.csv, {
+          columnMap: args.columnMap,
+          defaultPriority: args.defaultPriority,
+          defaultTags: args.defaultTags,
+          delimiter: args.delimiter,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  imported: result.imported,
+                  errors: result.errors,
+                  taskIds: result.taskIds,
+                  message: `Imported ${result.imported} tasks from CSV${result.errors.length > 0 ? ` (${result.errors.length} errors)` : ""}`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // ── SLA Tools ──────────────────────────────────────────────────
 
   // list_sla_policies tool

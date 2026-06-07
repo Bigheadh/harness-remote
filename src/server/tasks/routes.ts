@@ -1175,6 +1175,118 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/import-csv - import tasks from CSV text with column mapping (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/import-csv", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as {
+      csv?: string;
+      columnMap?: Record<string, string>;
+      defaultPriority?: string;
+      defaultTags?: string[];
+      delimiter?: string;
+    } & Record<string, unknown>;
+
+    if (!body || typeof body.csv !== "string" || body.csv.trim().length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'csv' string with CSV data" },
+      });
+    }
+
+    try {
+      const delimiter = (body.delimiter as string) || ",";
+      const lines = body.csv.split("\n").filter((l: string) => l.trim().length > 0);
+      if (lines.length < 2) {
+        return reply.code(400).send({
+          error: { code: "invalid_request", message: "CSV must have a header row and at least one data row" },
+        });
+      }
+
+      // Parse CSV header
+      const headerLine = lines[0];
+      const headers = headerLine.split(delimiter).map((h: string) => h.trim().replace(/^"|"$/g, ""));
+
+      // Column mapping: CSV column name -> Task field name
+      const columnMap = body.columnMap ?? {};
+      const defaultPriority = (body.defaultPriority as string) || "normal";
+      const defaultTags = body.defaultTags ?? [];
+
+      const imported: string[] = [];
+      const errors: string[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const values = lines[i].split(delimiter).map((v: string) => v.trim().replace(/^"|"$/g, ""));
+          const row: Record<string, string> = {};
+          headers.forEach((h: string, idx: number) => {
+            row[h] = values[idx] ?? "";
+          });
+
+          // Map CSV columns to task fields
+          const commandText = row[columnMap["commandText"] ?? columnMap["title"] ?? columnMap["name"] ?? headers[0]] ?? "";
+          if (!commandText) {
+            errors.push(`Row ${i + 1}: empty commandText/title, skipped`);
+            continue;
+          }
+
+          const taskId = `task_csv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const priority = (row[columnMap["priority"] ?? "priority"] as string) || defaultPriority;
+          const tagsStr = row[columnMap["tags"] ?? "tags"] ?? "";
+          const tags = tagsStr ? tagsStr.split(/[;,]/).map((t: string) => t.trim()).filter(Boolean) : defaultTags;
+          const dueDate = row[columnMap["dueDate"] ?? columnMap["due_date"] ?? "dueDate"] ?? undefined;
+          const description = row[columnMap["description"] ?? "description"] ?? undefined;
+
+          const now = new Date().toISOString();
+          const task = {
+            id: taskId,
+            source: "mcp" as const,
+            feishuMessageId: `csv_${taskId}`,
+            feishuChatId: "",
+            feishuUserId: "",
+            commandText,
+            status: "pending" as const,
+            priority: (priority as TaskPriority) || "normal",
+            tags: tags.length > 0 ? tags : undefined,
+            dueDate: dueDate || undefined,
+            description: description || undefined,
+            createdAt: now,
+            updatedAt: now,
+          };
+
+          await store.createTask(task);
+          imported.push(taskId);
+        } catch (rowErr) {
+          errors.push(`Row ${i + 1}: ${rowErr instanceof Error ? rowErr.message : String(rowErr)}`);
+        }
+      }
+
+      log.info({ imported: imported.length, errors: errors.length }, "Tasks imported from CSV");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.created",
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "csv_import", imported: imported.length, errorCount: errors.length },
+        });
+      }
+      return reply.send({ ok: true, imported: imported.length, errors, taskIds: imported });
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(400).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+  });
+
   // GET /api/tasks/user/:userId - find tasks by Feishu user ID (requires tasks.read)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get<{ Params: { userId: string } }>("/api/tasks/user/:userId", async (req, reply) => {

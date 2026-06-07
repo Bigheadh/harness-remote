@@ -79,6 +79,7 @@ export interface TaskApiClient {
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
+  importTasksFromCsv(csv: string, options?: { columnMap?: Record<string, string>; defaultPriority?: string; defaultTags?: string[]; delimiter?: string }): Promise<{ imported: number; errors: string[]; taskIds: string[] }>;
   // SLA methods
   listSlaPolicies(): Promise<SlaPolicy[]>;
   getSlaPolicy(policyId: string): Promise<SlaPolicy>;
@@ -1165,6 +1166,25 @@ export function createTaskApiClient(
       }
       const result = (await response.json()) as { imported: number; skipped: number; errors: string[] };
       return { imported: result.imported, skipped: result.skipped, errors: result.errors };
+    },
+
+    async importTasksFromCsv(csv: string, options?: { columnMap?: Record<string, string>; defaultPriority?: string; defaultTags?: string[]; delimiter?: string }): Promise<{ imported: number; errors: string[]; taskIds: string[] }> {
+      const payload: Record<string, unknown> = { csv };
+      if (options?.columnMap) payload.columnMap = options.columnMap;
+      if (options?.defaultPriority) payload.defaultPriority = options.defaultPriority;
+      if (options?.defaultTags) payload.defaultTags = options.defaultTags;
+      if (options?.delimiter) payload.delimiter = options.delimiter;
+      const response = await fetch(`${serverBaseUrl}/api/tasks/import-csv`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to import CSV: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { imported: number; errors: string[]; taskIds: string[] };
+      return { imported: result.imported, errors: result.errors, taskIds: result.taskIds };
     },
 
     // ── SLA Methods ──────────────────────────────────────────────

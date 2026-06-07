@@ -531,3 +531,11 @@
 - [x] MCP tool: update_task_card — AI agents can update Feishu cards in real-time with markdown content
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (137 → 138)
+
+## Phase 66: CSV Import with Column Mapping
+- [x] API route: POST /api/tasks/import-csv — accepts CSV text with column mapping
+- [x] MCP client interface: importTasksFromCsv method
+- [x] MCP client implementation: HTTP POST to /api/tasks/import-csv
+- [x] MCP tool: import_tasks_csv — AI agents can import tasks from CSV with flexible column mapping
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (138 → 139)
