@@ -191,6 +191,8 @@ export interface TaskApiClient {
   removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task>;
   listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]>;
   getCycleProgress(cycleId: string): Promise<import("../shared/types.js").CycleProgress>;
+  // Global activity feed
+  getGlobalActivity(limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]>;
   // Audit management methods
   getAuditCount(): Promise<number>;
   cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
@@ -2315,6 +2317,19 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { progress: import("../shared/types.js").CycleProgress };
       return data.progress;
+    },
+
+    async getGlobalActivity(limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]> {
+      const params = new URLSearchParams();
+      if (limit !== undefined) params.set("limit", String(limit));
+      const qs = params.toString();
+      const response = await fetch(`${serverBaseUrl}/api/activity${qs ? "?" + qs : ""}`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get global activity: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
+      return data.items;
     },
 
     async getAuditCount(): Promise<number> {

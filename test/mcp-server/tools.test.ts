@@ -1858,6 +1858,21 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { success: true, messageId: "msg_001" };
     },
+
+    async getGlobalActivity(limit?: number): Promise<import("../../src/shared/types.js").ActivityFeedItem[]> {
+      calls.push({ method: "getGlobalActivity", args: [limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          type: "task.created",
+          timestamp: "2026-06-08T10:00:00.000Z",
+          actor: "ou_test",
+          actorType: "feishu",
+          summary: "Task created: test task",
+          details: { taskId: "task_001" },
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -1913,8 +1928,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 140 tools", () => {
-        expect(mockServer.registrations).toHaveLength(140);
+      it("registers all 141 tools", () => {
+        expect(mockServer.registrations).toHaveLength(141);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -4396,6 +4411,40 @@ describe("MCP tools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Cycle not found");
+    });
+  });
+
+  // --- get_global_activity tool tests ---
+  describe("get_global_activity", () => {
+    it("registers get_global_activity tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_global_activity");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("limit");
+    });
+
+    it("returns activity items from client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_global_activity")!;
+      const result = await tool.handler({ limit: 10 });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.items).toHaveLength(1);
+      expect(data.count).toBe(1);
+      expect(data.items[0].type).toBe("task.created");
+      expect(data.items[0].summary).toContain("test task");
+      expect(data.message).toContain("1 recent activity");
+      expect(mock.calls[0].method).toBe("getGlobalActivity");
+      expect(mock.calls[0].args[0]).toBe(10);
+    });
+
+    it("returns error when client fails", async () => {
+      mock.failWith = "Connection refused";
+      const tool = mockServer.registrations.find((r) => r.name === "get_global_activity")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Connection refused");
     });
   });
 });

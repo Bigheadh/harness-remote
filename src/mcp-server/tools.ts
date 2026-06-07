@@ -5622,4 +5622,39 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_global_activity tool
+  server.registerTool(
+    "get_global_activity",
+    {
+      description:
+        "Get a combined chronological activity feed across ALL tasks. Returns recent task creations, comments, notes, subtask events, and time entries sorted by recency. Useful for getting an overview of recent project activity.",
+      inputSchema: {
+        limit: z.number().optional().describe("Maximum number of activity items to return (default: 50, max: 200)"),
+      },
+    },
+    async (args) => {
+      try {
+        const items = await client.getGlobalActivity(args.limit as number | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                items,
+                count: items.length,
+                message: items.length === 0 ? "No recent activity found" : `Found ${items.length} recent activity item(s)`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

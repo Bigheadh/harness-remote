@@ -549,3 +549,12 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (139 → 140)
 - [x] Added 3 new tests for get_cycle_progress tool (registration, burndown data, error case)
+
+## Phase 68: Global Activity Feed
+- [x] Store layer: getGlobalActivity(limit) method — queries across tasks, comments, notes, subtasks, time entries
+- [x] API route: GET /api/activity endpoint with auth (tasks.read permission)
+- [x] MCP client: getGlobalActivity(limit?) HTTP client method
+- [x] MCP tool: get_global_activity — AI agents can get a combined chronological activity feed across all tasks
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (140 → 141)
+- [x] Added 3 new tests for get_global_activity tool (registration, data return, error case)

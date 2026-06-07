@@ -194,6 +194,8 @@ export interface TaskStore {
   removeTaskFromCycle(taskId: string): Promise<import("../../shared/types.js").Task>;
   listCycleTasks(cycleId: string): Promise<import("../../shared/types.js").Task[]>;
   getCycleProgress(cycleId: string): Promise<import("../../shared/types.js").CycleProgress>;
+  // Global activity feed — combined chronological timeline across all tasks
+  getGlobalActivity(limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -3588,6 +3590,92 @@ export function createTaskStore(storagePath: string): TaskStore {
         totalEstimatedMinutes,
         totalActualMinutes,
       };
+    },
+
+    // ── Global Activity Feed ─────────────────────────────────────
+
+    async getGlobalActivity(limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]> {
+      const effectiveLimit = Math.min(limit ?? 50, 200);
+      const items: import("../../shared/types.js").ActivityFeedItem[] = [];
+
+      // 1. Task creation events (most recent first)
+      const taskRows = db.prepare(
+        `SELECT id, feishu_user_id, command_text, created_at FROM tasks ORDER BY created_at DESC LIMIT ?`,
+      ).all(effectiveLimit) as Array<Record<string, unknown>>;
+      for (const row of taskRows) {
+        items.push({
+          type: "task.created",
+          timestamp: row["created_at"] as string,
+          actor: row["feishu_user_id"] as string,
+          actorType: "feishu",
+          summary: `Task created: ${(row["command_text"] as string).slice(0, 100)}`,
+          details: { taskId: row["id"], commandText: row["command_text"] as string },
+        });
+      }
+
+      // 2. Comments across all tasks
+      const commentRows = db.prepare(
+        `SELECT tc.*, t.command_text FROM task_comments tc JOIN tasks t ON tc.task_id = t.id ORDER BY tc.created_at DESC LIMIT ?`,
+      ).all(effectiveLimit) as Array<Record<string, unknown>>;
+      for (const row of commentRows) {
+        items.push({
+          type: "comment.added",
+          timestamp: row["created_at"] as string,
+          actor: row["author"] as string,
+          actorType: row["author_type"] as string,
+          summary: `Comment on "${(row["command_text"] as string).slice(0, 60)}": ${(row["body"] as string).slice(0, 80)}`,
+          details: { taskId: row["task_id"], commentId: row["id"] },
+        });
+      }
+
+      // 3. Notes across all tasks
+      const noteRows = db.prepare(
+        `SELECT tn.*, t.command_text FROM task_notes tn JOIN tasks t ON tn.task_id = t.id ORDER BY tn.created_at DESC LIMIT ?`,
+      ).all(effectiveLimit) as Array<Record<string, unknown>>;
+      for (const row of noteRows) {
+        items.push({
+          type: "note.added",
+          timestamp: row["created_at"] as string,
+          actor: row["author"] as string,
+          actorType: "api",
+          summary: `Note on "${(row["command_text"] as string).slice(0, 60)}": ${(row["body"] as string).slice(0, 80)}`,
+          details: { taskId: row["task_id"], noteId: row["id"] },
+        });
+      }
+
+      // 4. Subtask events across all tasks
+      const subtaskRows = db.prepare(
+        `SELECT ts.*, t.command_text FROM task_subtasks ts JOIN tasks t ON ts.parent_task_id = t.id ORDER BY ts.created_at DESC LIMIT ?`,
+      ).all(effectiveLimit) as Array<Record<string, unknown>>;
+      for (const row of subtaskRows) {
+        items.push({
+          type: "subtask.created",
+          timestamp: row["created_at"] as string,
+          actor: "system",
+          actorType: "system",
+          summary: `Subtask "${row["title"]}" on "${(row["command_text"] as string).slice(0, 60)}"`,
+          details: { taskId: row["parent_task_id"], subtaskId: row["id"], title: row["title"] as string },
+        });
+      }
+
+      // 5. Time entries across all tasks
+      const timeRows = db.prepare(
+        `SELECT te.*, t.command_text FROM time_entries te JOIN tasks t ON te.task_id = t.id ORDER BY te.created_at DESC LIMIT ?`,
+      ).all(effectiveLimit) as Array<Record<string, unknown>>;
+      for (const row of timeRows) {
+        items.push({
+          type: "time.logged",
+          timestamp: row["created_at"] as string,
+          actor: row["logged_by"] as string,
+          actorType: "api",
+          summary: `Time logged on "${(row["command_text"] as string).slice(0, 60)}": ${row["duration_minutes"]}min`,
+          details: { taskId: row["task_id"], entryId: row["id"], durationMinutes: row["duration_minutes"] },
+        });
+      }
+
+      // Sort all items by timestamp descending and return top N
+      items.sort((a, b) => (b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0));
+      return items.slice(0, effectiveLimit);
     },
   };
 }

@@ -4358,4 +4358,25 @@ export function registerTaskRoutes(
       return reply.code(500).send({ error: { code: "internal_error", message: "Internal server error" } });
     }
   });
+
+  // GET /api/activity - global activity feed across all tasks (requires tasks.read)
+  server.get("/api/activity", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+    const { limit } = req.query as { limit?: number };
+    try {
+      const items = await store.getGlobalActivity(limit);
+      return reply.send({ items, count: items.length });
+    } catch (e) {
+      log.error({ err: e }, "Failed to get global activity");
+      return reply.code(500).send({ error: { code: "internal_error", message: "Internal server error" } });
+    }
+  });
 }
