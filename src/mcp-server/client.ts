@@ -158,6 +158,12 @@ export interface TaskApiClient {
   watchTask(taskId: string): Promise<TaskWatcher>;
   unwatchTask(taskId: string): Promise<{ removed: boolean }>;
   listTaskWatchers(taskId: string): Promise<TaskWatcher[]>;
+  // Time entry methods
+  listTimeEntries(taskId: string): Promise<import("../shared/types.js").TimeEntry[]>;
+  createTimeEntry(taskId: string, opts: { startedAt?: string; endedAt?: string; durationMinutes?: number; description?: string; loggedBy?: string }): Promise<import("../shared/types.js").TimeEntry>;
+  startTimeEntry(taskId: string, description?: string): Promise<import("../shared/types.js").TimeEntry>;
+  stopTimeEntry(taskId: string, entryId: string): Promise<import("../shared/types.js").TimeEntry>;
+  deleteTimeEntry(taskId: string, entryId: string): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -1854,6 +1860,73 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { watchers: TaskWatcher[] };
       return data.watchers;
+    },
+
+    // Time entry methods
+    async listTimeEntries(taskId: string): Promise<import("../shared/types.js").TimeEntry[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries`, {
+        method: "GET",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list time entries: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { entries: import("../shared/types.js").TimeEntry[] };
+      return data.entries;
+    },
+
+    async createTimeEntry(taskId: string, opts: { startedAt?: string; endedAt?: string; durationMinutes?: number; description?: string; loggedBy?: string }): Promise<import("../shared/types.js").TimeEntry> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(opts),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create time entry: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      return data.entry;
+    },
+
+    async startTimeEntry(taskId: string, description?: string): Promise<import("../shared/types.js").TimeEntry> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/start`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ description }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to start time tracking: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      return data.entry;
+    },
+
+    async stopTimeEntry(taskId: string, entryId: string): Promise<import("../shared/types.js").TimeEntry> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/stop`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ entryId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to stop time tracking: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      return data.entry;
+    },
+
+    async deleteTimeEntry(taskId: string, entryId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/${entryId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete time entry: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
   };
 }

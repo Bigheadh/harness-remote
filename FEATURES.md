@@ -399,3 +399,12 @@
 - [x] Webhook dispatcher: recordWebhookDelivery(true/false) after successful/failed webhook delivery
 - [x] SLA check route: recordSlaEvent("warning"/"breach") for each detected SLA event
 - [x] API key routes: recordApiKeyOp("create"/"rotate"/"revoke"/"enable"/"disable"/"cleanup") after each operation
+
+## Phase 52: Time Entry Management
+- [x] Store layer: createTimeEntry, listTimeEntries, getTimeEntry, deleteTimeEntry, stopTimeEntry with duration auto-computation
+- [x] API routes: GET/POST /api/tasks/:id/time-entries, POST start/stop, DELETE /api/tasks/:id/time-entries/:entryId
+- [x] MCP client: 5 new methods (listTimeEntries, createTimeEntry, startTimeEntry, stopTimeEntry, deleteTimeEntry)
+- [x] MCP tools: list_time_entries, log_time_entry, start_time_tracking, stop_time_tracking, delete_time_entry
+- [x] Updated mock client in tests for 5 new interface methods
+- [x] Updated tool count assertion (108 → 113)
+- [x] Added 15 new tests for time entry MCP tools (registration, CRUD, timers, errors)

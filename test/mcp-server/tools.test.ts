@@ -1524,6 +1524,38 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return [{ taskId, userId: "user_1", createdAt: new Date().toISOString() }];
     },
+
+    async listTimeEntries(taskId: string): Promise<import("../../src/shared/types.js").TimeEntry[]> {
+      calls.push({ method: "listTimeEntries", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [{ id: "1", taskId, startedAt: "2026-06-07T10:00:00.000Z", endedAt: "2026-06-07T10:30:00.000Z", durationMinutes: 30, description: "Test work", loggedBy: "user_1", createdAt: "2026-06-07T10:00:00.000Z", updatedAt: "2026-06-07T10:30:00.000Z" }];
+    },
+
+    async createTimeEntry(taskId: string, opts: { startedAt?: string; endedAt?: string; durationMinutes?: number; description?: string; loggedBy?: string }): Promise<import("../../src/shared/types.js").TimeEntry> {
+      calls.push({ method: "createTimeEntry", args: [taskId, opts] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      const now = new Date().toISOString();
+      return { id: "1", taskId, startedAt: opts.startedAt ?? now, endedAt: opts.endedAt, durationMinutes: opts.durationMinutes ?? 0, description: opts.description, loggedBy: opts.loggedBy ?? "user_1", createdAt: now, updatedAt: now };
+    },
+
+    async startTimeEntry(taskId: string, description?: string): Promise<import("../../src/shared/types.js").TimeEntry> {
+      calls.push({ method: "startTimeEntry", args: [taskId, description] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      const now = new Date().toISOString();
+      return { id: "1", taskId, startedAt: now, durationMinutes: 0, description, loggedBy: "user_1", createdAt: now, updatedAt: now };
+    },
+
+    async stopTimeEntry(taskId: string, entryId: string): Promise<import("../../src/shared/types.js").TimeEntry> {
+      calls.push({ method: "stopTimeEntry", args: [taskId, entryId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      const now = new Date().toISOString();
+      return { id: entryId, taskId, startedAt: "2026-06-07T10:00:00.000Z", endedAt: now, durationMinutes: 30, loggedBy: "user_1", createdAt: "2026-06-07T10:00:00.000Z", updatedAt: now };
+    },
+
+    async deleteTimeEntry(taskId: string, entryId: string): Promise<void> {
+      calls.push({ method: "deleteTimeEntry", args: [taskId, entryId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
   };
   return mock;
 }
@@ -1579,8 +1611,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 108 tools", () => {
-        expect(mockServer.registrations).toHaveLength(108);
+      it("registers all 113 tools", () => {
+        expect(mockServer.registrations).toHaveLength(113);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3154,6 +3186,163 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe("Disk full");
+    });
+  });
+
+  // ===== Time Entry Tests =====
+
+  describe("list_time_entries", () => {
+    it("registers list_time_entries with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_time_entries");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("time entries");
+    });
+
+    it("lists time entries for a task", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_time_entries")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(mock.calls[0].method).toBe("listTimeEntries");
+      expect(mock.calls[0].args).toEqual(["task_001"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.entries).toHaveLength(1);
+      expect(parsed.totalMinutes).toBe(30);
+    });
+
+    it("returns error when listTimeEntries fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_time_entries")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("DB error");
+    });
+  });
+
+  describe("log_time_entry", () => {
+    it("registers log_time_entry with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "log_time_entry");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("time entry");
+    });
+
+    it("logs a time entry with timestamps", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "log_time_entry")!;
+      const result = await tool.handler({ taskId: "task_001", startedAt: "2026-06-07T10:00:00Z", endedAt: "2026-06-07T10:45:00Z", description: "Code review" });
+
+      expect(mock.calls[0].method).toBe("createTimeEntry");
+      const opts = mock.calls[0].args[1] as Record<string, unknown>;
+      expect(opts.startedAt).toBe("2026-06-07T10:00:00Z");
+      expect(opts.endedAt).toBe("2026-06-07T10:45:00Z");
+      expect(opts.description).toBe("Code review");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.entry).toBeDefined();
+    });
+
+    it("logs a time entry with manual duration", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "log_time_entry")!;
+      const result = await tool.handler({ taskId: "task_001", durationMinutes: 15, description: "Quick fix" });
+
+      expect(mock.calls[0].method).toBe("createTimeEntry");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.entry).toBeDefined();
+    });
+
+    it("returns error when createTimeEntry fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "log_time_entry")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Task not found");
+    });
+  });
+
+  describe("start_time_tracking", () => {
+    it("registers start_time_tracking with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "start_time_tracking");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("timer");
+    });
+
+    it("starts a timer for a task", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "start_time_tracking")!;
+      const result = await tool.handler({ taskId: "task_001", description: "Working on feature" });
+
+      expect(mock.calls[0].method).toBe("startTimeEntry");
+      expect(mock.calls[0].args).toEqual(["task_001", "Working on feature"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.entry).toBeDefined();
+      expect(parsed.message).toContain("Timer started");
+    });
+
+    it("returns error when startTimeEntry fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "start_time_tracking")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("stop_time_tracking", () => {
+    it("registers stop_time_tracking with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "stop_time_tracking");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Stop");
+    });
+
+    it("stops a running timer", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "stop_time_tracking")!;
+      const result = await tool.handler({ taskId: "task_001", entryId: "1" });
+
+      expect(mock.calls[0].method).toBe("stopTimeEntry");
+      expect(mock.calls[0].args).toEqual(["task_001", "1"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.entry).toBeDefined();
+      expect(parsed.message).toContain("30 minutes");
+    });
+
+    it("returns error when stopTimeEntry fails", async () => {
+      mock.failWith = "Entry not found";
+      const tool = mockServer.registrations.find((r) => r.name === "stop_time_tracking")!;
+      const result = await tool.handler({ taskId: "task_001", entryId: "999" });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("delete_time_entry", () => {
+    it("registers delete_time_entry with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_time_entry");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("Delete");
+    });
+
+    it("deletes a time entry", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_time_entry")!;
+      const result = await tool.handler({ taskId: "task_001", entryId: "1" });
+
+      expect(mock.calls[0].method).toBe("deleteTimeEntry");
+      expect(mock.calls[0].args).toEqual(["task_001", "1"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.deleted).toBe(true);
+    });
+
+    it("returns error when deleteTimeEntry fails", async () => {
+      mock.failWith = "Entry not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_time_entry")!;
+      const result = await tool.handler({ taskId: "task_001", entryId: "999" });
+
+      expect(result.isError).toBe(true);
     });
   });
 });

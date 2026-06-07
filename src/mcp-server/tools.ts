@@ -4415,4 +4415,171 @@ export function registerMcpTools(
       }
     },
   );
+
+  // ===== Time Entry Tools =====
+
+  // list_time_entries tool
+  server.registerTool(
+    "list_time_entries",
+    {
+      description: "List all time entries (manual logs + timer sessions) for a task. Shows start/end times, duration, and description.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to list time entries for"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const entries = await client.listTimeEntries(args.taskId as string);
+        const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ entries, count: entries.length, totalMinutes }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // log_time_entry tool
+  server.registerTool(
+    "log_time_entry",
+    {
+      description: "Log a time entry for a task. Can be a manual log (with both start and end times) or a timer start (without end time). Duration is auto-computed from timestamps if both are provided.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to log time for"),
+        startedAt: z.string().optional().describe("ISO 8601 start timestamp (defaults to now)"),
+        endedAt: z.string().optional().describe("ISO 8601 end timestamp (omit for running timer)"),
+        durationMinutes: z.number().optional().describe("Manual duration in minutes (overrides timestamp computation)"),
+        description: z.string().optional().describe("Description of what was done during this time"),
+        loggedBy: z.string().optional().describe("Who logged this entry (defaults to authenticated user)"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const entry = await client.createTimeEntry(args.taskId as string, {
+          startedAt: args.startedAt as string | undefined,
+          endedAt: args.endedAt as string | undefined,
+          durationMinutes: args.durationMinutes as number | undefined,
+          description: args.description as string | undefined,
+          loggedBy: args.loggedBy as string | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ entry, message: `Time entry logged: ${entry.durationMinutes} minutes` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // start_time_tracking tool
+  server.registerTool(
+    "start_time_tracking",
+    {
+      description: "Start a timer for a task. Creates a running time entry with no end time. Use stop_time_tracking to stop it.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to start tracking time for"),
+        description: z.string().optional().describe("Optional description of what work is being done"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const entry = await client.startTimeEntry(args.taskId as string, args.description as string | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ entry, message: `Timer started at ${entry.startedAt}` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // stop_time_tracking tool
+  server.registerTool(
+    "stop_time_tracking",
+    {
+      description: "Stop a running time entry timer. Computes duration from start time to now.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task"),
+        entryId: z.string().describe("The ID of the running time entry to stop"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        const entry = await client.stopTimeEntry(args.taskId as string, args.entryId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ entry, message: `Timer stopped: ${entry.durationMinutes} minutes logged` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_time_entry tool
+  server.registerTool(
+    "delete_time_entry",
+    {
+      description: "Delete a time entry from a task. Use this to remove incorrect or duplicate time logs.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task"),
+        entryId: z.string().describe("The ID of the time entry to delete"),
+      },
+    },
+    async (args: Record<string, unknown>) => {
+      try {
+        await client.deleteTimeEntry(args.taskId as string, args.entryId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ deleted: true, message: "Time entry deleted" }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

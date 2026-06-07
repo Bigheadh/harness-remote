@@ -167,6 +167,12 @@ export interface TaskStore {
   removeWatcher(taskId: string, userId: string): Promise<boolean>;
   listWatchers(taskId: string): Promise<import("../../shared/types.js").TaskWatcher[]>;
   isWatching(taskId: string, userId: string): Promise<boolean>;
+  // Time entry methods
+  createTimeEntry(taskId: string, startedAt: string, endedAt: string | undefined, durationMinutes: number, description: string | null, loggedBy: string): Promise<import("../../shared/types.js").TimeEntry>;
+  listTimeEntries(taskId: string): Promise<import("../../shared/types.js").TimeEntry[]>;
+  getTimeEntry(taskId: string, entryId: string): Promise<import("../../shared/types.js").TimeEntry | undefined>;
+  deleteTimeEntry(taskId: string, entryId: string): Promise<boolean>;
+  stopTimeEntry(taskId: string, entryId: string, endedAt: string): Promise<import("../../shared/types.js").TimeEntry>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -305,6 +311,20 @@ function rowToSlaBreachLog(row: Record<string, unknown>): SlaBreachLog {
     actualMinutes: row["actual_minutes"] as number,
     detectedAt: row["detected_at"] as string,
     resolvedAt: (row["resolved_at"] as string) ?? undefined,
+  };
+}
+
+function rowToTimeEntry(row: Record<string, unknown>): import("../../shared/types.js").TimeEntry {
+  return {
+    id: String(row["id"]),
+    taskId: row["task_id"] as string,
+    startedAt: row["started_at"] as string,
+    endedAt: (row["ended_at"] as string) ?? undefined,
+    durationMinutes: row["duration_minutes"] as number,
+    description: (row["description"] as string) ?? undefined,
+    loggedBy: row["logged_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
   };
 }
 
@@ -3080,6 +3100,43 @@ export function createTaskStore(storagePath: string): TaskStore {
     async isWatching(taskId: string, userId: string): Promise<boolean> {
       const row = db.prepare(`SELECT 1 FROM task_watchers WHERE task_id = ? AND user_id = ?`).get(taskId, userId);
       return row !== undefined;
+    },
+
+    // Time entry methods
+    async createTimeEntry(taskId: string, startedAt: string, endedAt: string | undefined, durationMinutes: number, description: string | null, loggedBy: string): Promise<import("../../shared/types.js").TimeEntry> {
+      const now = new Date().toISOString();
+      const result = db.prepare(
+        `INSERT INTO time_entries (task_id, started_at, ended_at, duration_minutes, description, logged_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(taskId, startedAt, endedAt ?? null, durationMinutes, description ?? null, loggedBy, now, now);
+      const id = String(result.lastInsertRowid);
+      return { id, taskId, startedAt, endedAt, durationMinutes, description: description ?? undefined, loggedBy, createdAt: now, updatedAt: now };
+    },
+
+    async listTimeEntries(taskId: string): Promise<import("../../shared/types.js").TimeEntry[]> {
+      const rows = db.prepare(`SELECT * FROM time_entries WHERE task_id = ? ORDER BY started_at DESC`).all(taskId) as Record<string, unknown>[];
+      return rows.map(rowToTimeEntry);
+    },
+
+    async getTimeEntry(taskId: string, entryId: string): Promise<import("../../shared/types.js").TimeEntry | undefined> {
+      const row = db.prepare(`SELECT * FROM time_entries WHERE task_id = ? AND id = ?`).get(taskId, entryId) as Record<string, unknown> | undefined;
+      return row ? rowToTimeEntry(row) : undefined;
+    },
+
+    async deleteTimeEntry(taskId: string, entryId: string): Promise<boolean> {
+      const result = db.prepare(`DELETE FROM time_entries WHERE task_id = ? AND id = ?`).run(taskId, entryId);
+      return Number(result.changes) > 0;
+    },
+
+    async stopTimeEntry(taskId: string, entryId: string, endedAt: string): Promise<import("../../shared/types.js").TimeEntry> {
+      const existing = db.prepare(`SELECT * FROM time_entries WHERE task_id = ? AND id = ?`).get(taskId, entryId) as Record<string, unknown> | undefined;
+      if (!existing) throw new Error("Time entry not found");
+      if (existing["ended_at"]) throw new Error("Time entry already stopped");
+      const startedAt = new Date(existing["started_at"] as string).getTime();
+      const endMs = new Date(endedAt).getTime();
+      const durationMinutes = Math.round((endMs - startedAt) / 60000);
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE time_entries SET ended_at = ?, duration_minutes = ?, updated_at = ? WHERE task_id = ? AND id = ?`).run(endedAt, durationMinutes, now, taskId, entryId);
+      return { id: entryId, taskId, startedAt: existing["started_at"] as string, endedAt, durationMinutes, description: (existing["description"] as string) ?? undefined, loggedBy: existing["logged_by"] as string, createdAt: existing["created_at"] as string, updatedAt: now };
     },
   };
 }
