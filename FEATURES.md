@@ -426,3 +426,11 @@
 - [x] Updated mock client in test for 1 new interface method
 - [x] Updated tool count assertion (114 → 115)
 - [x] Added 4 new tests for get_task_activity tool (registration, data return, client call, error handling)
+
+## Phase 55: Keyword-Based Auto-Detection
+- [x] Priority auto-detection from natural language keywords (urgent, important, minor, etc.)
+- [x] Tag auto-detection from natural language keywords (bug, feature, question, etc.)
+- [x] Due date auto-detection from natural language (today, tomorrow, next week, etc.)
+- [x] Chinese language support for all detection patterns
+- [x] Explicit #priority:/#tag:/#due: markers take precedence over keyword detection
+- [x] 14 new tests for keyword detection (priority, tags, due dates, precedence)

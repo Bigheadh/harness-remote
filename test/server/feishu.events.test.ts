@@ -489,4 +489,237 @@ describe("createTaskFromFeishuEvent", () => {
     expect(task.description).toBeUndefined();
     expect(task.commandText).toBe("普通消息没有描述");
   });
+
+  // ── Keyword-based auto-detection ────────────────────────────────────────
+
+  it("auto-detects urgent priority from keyword 'urgent'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_1",
+      messageId: "msg_kw_1",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "urgent: fix the login bug",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("urgent");
+  });
+
+  it("auto-detects urgent priority from Chinese keyword '紧急'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_2",
+      messageId: "msg_kw_2",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "紧急修复生产环境问题",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("urgent");
+  });
+
+  it("auto-detects high priority from keyword 'important'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_3",
+      messageId: "msg_kw_3",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "important: review the PR",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("high");
+  });
+
+  it("auto-detects low priority from keyword 'minor'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_4",
+      messageId: "msg_kw_4",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "minor: update the README",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("low");
+  });
+
+  it("auto-detects bug tag from keyword 'bug'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_5",
+      messageId: "msg_kw_5",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "bug: login page broken",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toContain("bug");
+  });
+
+  it("auto-detects feature tag from keyword 'feature'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_6",
+      messageId: "msg_kw_6",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "feature request: add dark mode",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toContain("feature");
+  });
+
+  it("auto-detects multiple tags from keywords", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_7",
+      messageId: "msg_kw_7",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "urgent security vulnerability found in auth module",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("urgent");
+    expect(task.tags).toContain("security");
+  });
+
+  it("does not auto-detect tags when explicit #tag: markers are present", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_8",
+      messageId: "msg_kw_8",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#tag:custom bug report for login",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toEqual(["custom"]);
+  });
+
+  it("explicit #priority: marker takes precedence over keyword detection", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_9",
+      messageId: "msg_kw_9",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#priority:low urgent task that is actually low priority",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.priority).toBe("low");
+  });
+
+  it("auto-detects due date from 'tomorrow'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_10",
+      messageId: "msg_kw_10",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "deploy the fix tomorrow",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.dueDate).toBeTruthy();
+    // Should be tomorrow's date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    expect(task.dueDate).toContain(tomorrow.toISOString().slice(0, 10));
+  });
+
+  it("auto-detects due date from Chinese '今天'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_11",
+      messageId: "msg_kw_11",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "今天完成代码审查",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.dueDate).toBeTruthy();
+    const today = new Date();
+    expect(task.dueDate).toContain(today.toISOString().slice(0, 10));
+  });
+
+  it("explicit #due: marker takes precedence over keyword detection", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_12",
+      messageId: "msg_kw_12",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "#due:2026-12-31 deploy tomorrow",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.dueDate).toBe("2026-12-31");
+  });
+
+  it("auto-detects performance tag from keyword 'slow'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_13",
+      messageId: "msg_kw_13",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "API response is very slow",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toContain("performance");
+  });
+
+  it("auto-detects question tag from keyword 'how to'", () => {
+    const event: FeishuEventContext = {
+      eventId: "ev_kw_14",
+      messageId: "msg_kw_14",
+      chatId: "oc_1",
+      userId: "ou_1",
+      text: "how to configure the MCP server",
+      chatType: "p2p",
+      mentionedBot: false,
+      messageType: "text",
+      attachments: [],
+    };
+    const task = createTaskFromFeishuEvent(event);
+    expect(task.tags).toContain("question");
+  });
 });

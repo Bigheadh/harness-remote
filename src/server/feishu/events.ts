@@ -13,7 +13,57 @@ import { isCommand, parseCommand, executeCommand } from "./commands.js";
 
 const log = createLogger({ level: "info" });
 
-/** Parse priority from message text. Looks for #priority:urgent, #priority:high, etc. */
+/** Keyword patterns for automatic priority detection from natural language */
+const PRIORITY_KEYWORDS: Record<TaskPriority, RegExp[]> = {
+  urgent: [
+    /\b(urgent|asap|emergency|critical|immediately|right\s*away|p0|p1)\b/i,
+    /紧急|加急|立即|马上|尽快|急/,
+  ],
+  high: [
+    /\b(high\s+priority|important|p2|as\s+soon\s+as\s+possible)\b/i,
+    /重要|优先/,
+  ],
+  normal: [],
+  low: [
+    /\b(low\s+priority|minor|trivial|p4|when\s+you\s+can|nice\s+to\s+have)\b/i,
+    /低优先级|不急|有空再/,
+  ],
+};
+
+/** Keyword patterns for automatic tag detection from natural language */
+const TAG_KEYWORDS: Record<string, RegExp[]> = {
+  bug: [/\b(bug|defect|error|broken|crash|issue|problem|fault|regression)\b/i, /bug|缺陷|错误|崩溃|故障/],
+  feature: [/\b(feature|enhancement|improvement|add|implement|new|create)\b/i, /功能|特性|新增|实现/],
+  question: [/\b(question|how\s+to|what\s+is|why|explain|help)\b/i, /问题|怎么|如何|为什么|帮忙/],
+  documentation: [/\b(docs?|documentation|readme|wiki|guide|tutorial)\b/i, /文档|说明|教程/],
+  performance: [/\b(performance|slow|speed|optimize|latency|timeout)\b/i, /性能|慢|优化|超时/],
+  security: [/\b(security|vulnerability|exploit|auth|permission|access)\b/i, /安全|漏洞|权限/],
+  "tech-debt": [/\b(refactor|cleanup|debt|legacy|migration|upgrade)\b/i, /重构|清理|技术债|迁移/],
+  "ui/ux": [/\b(ui|ux|design|layout|styling|css|responsive|mobile)\b/i, /界面|样式|设计|布局/],
+};
+
+/** Detect priority from natural language keywords (fallback when no explicit marker) */
+export function detectPriorityFromKeywords(text: string): TaskPriority {
+  for (const [priority, patterns] of Object.entries(PRIORITY_KEYWORDS) as [TaskPriority, RegExp[]][]) {
+    if (patterns.some((p) => p.test(text))) {
+      return priority;
+    }
+  }
+  return "normal";
+}
+
+/** Detect tags from natural language keywords (fallback when no explicit #tag: marker) */
+export function detectTagsFromKeywords(text: string): string[] {
+  const tags: string[] = [];
+  for (const [tag, patterns] of Object.entries(TAG_KEYWORDS)) {
+    if (patterns.some((p) => p.test(text))) {
+      tags.push(tag);
+    }
+  }
+  return tags;
+}
+
+/** Parse priority from message text. Looks for #priority:urgent, #priority:high, etc. Falls back to keyword detection. */
 function parsePriority(text: string): TaskPriority {
   const match = text.match(/#priority:(urgent|high|normal|low)/i);
   if (match) {
@@ -22,7 +72,8 @@ function parsePriority(text: string): TaskPriority {
   // Also support shorthand: !urgent, !high
   if (text.includes("!urgent")) return "urgent";
   if (text.includes("!high")) return "high";
-  return "normal";
+  // Keyword-based auto-detection fallback
+  return detectPriorityFromKeywords(text);
 }
 
 /** Strip priority markers from text */
@@ -33,7 +84,7 @@ function stripPriorityMarkers(text: string): string {
     .trim();
 }
 
-/** Parse tags from message text. Looks for #tag:name patterns. */
+/** Parse tags from message text. Looks for #tag:name patterns. Falls back to keyword detection. */
 function parseTagsFromText(text: string): string[] {
   const tags: string[] = [];
   const regex = /#tag:(\S+)/gi;
@@ -44,6 +95,15 @@ function parseTagsFromText(text: string): string[] {
       tags.push(tag);
     }
   }
+  // Keyword-based auto-detection fallback (only if no explicit tags found)
+  if (tags.length === 0) {
+    const detected = detectTagsFromKeywords(text);
+    for (const tag of detected) {
+      if (!tags.includes(tag)) {
+        tags.push(tag);
+      }
+    }
+  }
   return tags;
 }
 
@@ -52,7 +112,78 @@ function stripTagMarkers(text: string): string {
   return text.replace(/#tag:\S+/gi, "").replace(/\s+/g, " ").trim();
 }
 
-/** Parse due date from message text. Looks for #due:YYYY-MM-DD or #due:YYYY-MM-DDTHH:mm */
+/** Detect due date from natural language patterns */
+function detectDueDateFromText(text: string): string | undefined {
+  const now = new Date();
+  const lower = text.toLowerCase();
+
+  // Today / tonight
+  if (/(today|tonight|今天|今晚)/.test(lower)) {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+  }
+
+  // Tomorrow
+  if (/(tomorrow|明天)/.test(lower)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  // Day after tomorrow
+  if (/(day\s+after\s+tomorrow|后天)/.test(lower)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 2);
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  // Next week
+  if (/(next\s+week|下周)/.test(lower)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 7);
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  // Next month
+  if (/(next\s+month|下个月)/.test(lower)) {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() + 1);
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  // End of week (Friday)
+  if (/(end\s+of\s+(the\s+)?week|本周[五六日末]|周末)/.test(lower)) {
+    const d = new Date(now);
+    const daysUntilFriday = (5 - d.getDay() + 7) % 7 || 7;
+    d.setDate(d.getDate() + daysUntilFriday);
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  // In N hours
+  const hoursMatch = lower.match(/\b(?:in\s+)?(\d+)\s*hours?\b/);
+  if (hoursMatch) {
+    const d = new Date(now);
+    d.setHours(d.getHours() + parseInt(hoursMatch[1], 10));
+    return d.toISOString();
+  }
+
+  // In N days
+  const daysMatch = lower.match(/\b(?:in\s+)?(\d+)\s*days?\b/);
+  if (daysMatch) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + parseInt(daysMatch[1], 10));
+    d.setHours(23, 59, 59, 0);
+    return d.toISOString();
+  }
+
+  return undefined;
+}
+
+/** Parse due date from message text. Looks for #due:YYYY-MM-DD or natural language patterns. Falls back to keyword detection. */
 function parseDueDate(text: string): string | undefined {
   const match = text.match(/#due:(\S+)/i);
   if (match) {
@@ -61,7 +192,8 @@ function parseDueDate(text: string): string | undefined {
       return dateStr;
     }
   }
-  return undefined;
+  // Natural language date detection fallback
+  return detectDueDateFromText(text);
 }
 
 /** Strip due date markers from text */
