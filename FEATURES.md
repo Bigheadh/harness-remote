@@ -440,3 +440,12 @@
 - [x] Added loadTimeEntries function - fetches and renders time tracking entries with duration totals
 - [x] Added loadWatchers function - fetches and renders task watcher list
 - [x] Wired all 3 new sections into showDetail flow (load after subtasks/comments/activity)
+
+## Phase 57: Set Task Priority MCP Tool
+- [x] Store layer: setTaskPriority(taskId, priority) method with validation
+- [x] API route: POST /api/tasks/:id/priority endpoint with auth and priority validation
+- [x] MCP client: setPriority(taskId, priority) HTTP client method
+- [x] MCP tool: set_task_priority — AI agents can change task priority (low/normal/high/urgent)
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (115 → 116)
+- [x] Added 4 new tests for set_task_priority tool (registration, urgent/low priority, error case)

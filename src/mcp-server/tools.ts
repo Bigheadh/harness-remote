@@ -689,6 +689,50 @@ export function registerMcpTools(
     },
   );
 
+  // set_task_priority tool
+  server.registerTool(
+    "set_task_priority",
+    {
+      description:
+        "Set the priority of a task. Priority affects task ordering in listings and can trigger auto-escalation for overdue tasks. Valid values: low, normal, high, urgent.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to set the priority for"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .describe("The new priority level: low, normal, high, or urgent"),
+      },
+    },
+    async (args) => {
+      const { taskId, priority } = args;
+
+      try {
+        const task = await client.setPriority(taskId, priority);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Priority set to ${priority}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // list_overdue_tasks tool
   server.registerTool(
     "list_overdue_tasks",

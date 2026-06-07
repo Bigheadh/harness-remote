@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { registerMcpTools } from "../../src/mcp-server/tools.js";
 import type { TaskApiClient } from "../../src/mcp-server/client.js";
-import type { Task, TaskStatus, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency, KanbanBoard, User, UserRole } from "../../src/shared/types.js";
+import type { Task, TaskStatus, TaskPriority, TaskComment, TaskNote, ScheduledTask, ScheduleFrequency, KanbanBoard, User, UserRole } from "../../src/shared/types.js";
 
 // --- Mock TaskApiClient ---
 function createMockClient(): TaskApiClient & {
@@ -210,6 +210,23 @@ function createMockClient(): TaskApiClient & {
         commandText: "描述任务",
         status: "pending",
         description: description ?? undefined,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async setPriority(taskId: string, priority: TaskPriority): Promise<Task> {
+      calls.push({ method: "setPriority", args: [taskId, priority] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_priority",
+        feishuChatId: "oc_priority",
+        feishuUserId: "ou_priority",
+        commandText: "优先级任务",
+        status: "pending",
+        priority,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
@@ -1636,8 +1653,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 115 tools", () => {
-        expect(mockServer.registrations).toHaveLength(115);
+      it("registers all 116 tools", () => {
+        expect(mockServer.registrations).toHaveLength(116);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2178,6 +2195,50 @@ describe("MCP tools", () => {
       expect(mock.calls).toHaveLength(1);
       expect(mock.calls[0].method).toBe("escalateOverduePriorities");
       expect(result.isError).toBeFalsy();
+    });
+
+    // --- set_task_priority tool tests ---
+
+    it("registers set_task_priority tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_priority");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("priority");
+    });
+
+    it("sets task priority to urgent", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_priority")!;
+      const result = await tool.handler({ taskId: "task_001", priority: "urgent" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("setPriority");
+      expect(mock.calls[0].args).toEqual(["task_001", "urgent"]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.priority).toBe("urgent");
+      expect(parsed.message).toContain("urgent");
+    });
+
+    it("sets task priority to low", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_priority")!;
+      const result = await tool.handler({ taskId: "task_001", priority: "low" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].args).toEqual(["task_001", "low"]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.priority).toBe("low");
+    });
+
+    it("returns error when set_priority fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_priority")!;
+      const result = await tool.handler({ taskId: "task_nonexistent", priority: "high" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Task not found");
     });
 
     // --- Webhook tools tests ---

@@ -64,6 +64,7 @@ export interface TaskStore {
   setTaskDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setTaskReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
+  setTaskPriority(taskId: string, priority: TaskPriority): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
   listComments(taskId: string): Promise<TaskComment[]>;
@@ -1235,6 +1236,30 @@ export function createTaskStore(storagePath: string): TaskStore {
       const now = new Date().toISOString();
       db.prepare(`UPDATE tasks SET description = ?, updated_at = ? WHERE id = ?`).run(
         description,
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
+    async setTaskPriority(taskId: string, priority: TaskPriority): Promise<Task> {
+      const VALID_PRIORITIES: TaskPriority[] = ["low", "normal", "high", "urgent"];
+      if (!VALID_PRIORITIES.includes(priority)) {
+        throw new Error(`Invalid priority: ${priority}. Must be one of: ${VALID_PRIORITIES.join(", ")}`);
+      }
+
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?`).run(
+        priority,
         now,
         taskId,
       );

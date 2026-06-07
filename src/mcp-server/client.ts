@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, AuditLogEntry, AuditLogSearchOptions, Device, User, UserRole } from "../shared/types.js";
+import type { Task, TaskStatus, TaskPriority, AuditLogEntry, AuditLogSearchOptions, Device, User, UserRole } from "../shared/types.js";
 import type { TaskComment, TaskNote, TaskTemplate, ScheduledTask, ScheduleFrequency } from "../shared/types.js";
 import type { SlaPolicy, SlaBreachLog, SlaSummary } from "../shared/types.js";
 import type { WebhookSubscription, WebhookDelivery } from "../shared/types.js";
@@ -33,6 +33,7 @@ export interface TaskApiClient {
   setDueDate(taskId: string, dueDate: string | null): Promise<Task>;
   setReminder(taskId: string, reminderAt: string | null): Promise<Task>;
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
+  setPriority(taskId: string, priority: TaskPriority): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
@@ -531,6 +532,27 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to set description: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async setPriority(taskId: string, priority: TaskPriority): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/priority`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ priority }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set priority: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 

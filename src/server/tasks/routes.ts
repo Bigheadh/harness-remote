@@ -1924,6 +1924,57 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/priority - set priority (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { priority: string };
+  }>("/api/tasks/:id/priority", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { priority?: string };
+    const VALID_PRIORITIES = ["low", "normal", "high", "urgent"];
+
+    if (!body?.priority || typeof body.priority !== "string") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "'priority' must be one of: low, normal, high, urgent",
+        },
+      });
+    }
+
+    if (!VALID_PRIORITIES.includes(body.priority)) {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: `Invalid priority: '${body.priority}'. Must be one of: ${VALID_PRIORITIES.join(", ")}`,
+        },
+      });
+    }
+
+    try {
+      const task = await store.setTaskPriority(id, body.priority as TaskPriority);
+      log.info({ taskId: id, priority: body.priority }, "Task priority updated");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/reset-stale - reset stale tasks (requires tasks.reset_stale)
   server.post("/api/tasks/reset-stale", async (req, reply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
