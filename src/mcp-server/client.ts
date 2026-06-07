@@ -165,6 +165,8 @@ export interface TaskApiClient {
   stopTimeEntry(taskId: string, entryId: string): Promise<import("../shared/types.js").TimeEntry>;
   deleteTimeEntry(taskId: string, entryId: string): Promise<void>;
   getTimeTrackingStats(): Promise<import("../shared/types.js").TimeTrackingSummary>;
+  // Task activity feed
+  getActivityFeed(taskId: string, limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]>;
 }
 
 export function createTaskApiClient(
@@ -1940,6 +1942,23 @@ export function createTaskApiClient(
         throw new Error(`Failed to get time tracking stats: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       return (await response.json()) as import("../shared/types.js").TimeTrackingSummary;
+    },
+
+    async getActivityFeed(taskId: string, limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/${taskId}/activity${qs ? "?" + qs : ""}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get activity feed: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
+      return data.items;
     },
   };
 }

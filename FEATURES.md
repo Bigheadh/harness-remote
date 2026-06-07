@@ -419,3 +419,10 @@
 - [x] Store tests: 4 new tests for getTimeTrackingSummary (zeroed state, aggregation, active timers, priority breakdown)
 - [x] MCP tools tests: 4 new tests for get_time_tracking_stats tool (registration, data return, client call, error handling)
 - [x] Updated tool count assertion (113 → 114)
+
+## Phase 54: Task Activity Feed MCP Tool
+- [x] MCP client: getActivityFeed method — calls GET /api/tasks/:id/activity endpoint
+- [x] MCP tool: get_task_activity — AI agents can query the full chronological activity timeline of a task (creation, status changes, comments, notes, subtask events, assignments, SLA events)
+- [x] Updated mock client in test for 1 new interface method
+- [x] Updated tool count assertion (114 → 115)
+- [x] Added 4 new tests for get_task_activity tool (registration, data return, client call, error handling)

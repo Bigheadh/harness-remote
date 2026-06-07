@@ -1572,6 +1572,15 @@ function createMockClient(): TaskApiClient & {
         recentDaily: [{ date: "2026-06-07", totalMinutes: 50, entryCount: 2 }],
       };
     },
+
+    async getActivityFeed(taskId: string, limit?: number): Promise<import("../../src/shared/types.js").ActivityFeedItem[]> {
+      calls.push({ method: "getActivityFeed", args: [taskId, limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        { type: "task.created", timestamp: "2026-06-07T00:00:00Z", summary: "Task created" },
+        { type: "task.status_changed", timestamp: "2026-06-07T01:00:00Z", actor: "user_1", summary: "Status changed to running" },
+      ];
+    },
   };
   return mock;
 }
@@ -1627,8 +1636,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 114 tools", () => {
-        expect(mockServer.registrations).toHaveLength(114);
+      it("registers all 115 tools", () => {
+        expect(mockServer.registrations).toHaveLength(115);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3394,6 +3403,46 @@ describe("MCP tools", () => {
       const result = await tool.handler({});
 
       expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("get_task_activity", () => {
+    it("registers get_task_activity with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_activity");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("activity feed");
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+      expect(tool!.inputSchema).toHaveProperty("limit");
+    });
+
+    it("returns activity feed items", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_activity")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.items).toHaveLength(2);
+      expect(data.count).toBe(2);
+      expect(data.items[0].type).toBe("task.created");
+      expect(data.items[1].type).toBe("task.status_changed");
+    });
+
+    it("calls getActivityFeed on client with correct args", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_activity")!;
+      await tool.handler({ taskId: "task_001", limit: 25 });
+
+      expect(mock.calls[0].method).toBe("getActivityFeed");
+      expect(mock.calls[0].args[0]).toBe("task_001");
+      expect(mock.calls[0].args[1]).toBe(25);
+    });
+
+    it("returns error when getActivityFeed fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_task_activity")!;
+      const result = await tool.handler({ taskId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Task not found");
     });
   });
 });

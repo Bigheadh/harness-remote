@@ -4611,4 +4611,40 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_task_activity tool
+  server.registerTool(
+    "get_task_activity",
+    {
+      description:
+        "Get the combined chronological activity feed for a task. Returns a merged timeline of all task events: creation, status changes, result reports, comments, notes, subtask events, assignments, dependency changes, SLA events, and more. Each entry includes the event type, timestamp, actor, and a human-readable summary. Use this to review the full history and audit trail of a task.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to get the activity feed for"),
+        limit: z
+          .number()
+          .optional()
+          .describe("Maximum number of activity entries to return (default: 50, max: 200)"),
+      },
+    },
+    async (args) => {
+      try {
+        const { taskId, limit } = args as { taskId: string; limit?: number };
+        const items = await client.getActivityFeed(taskId, limit);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ items, count: items.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
