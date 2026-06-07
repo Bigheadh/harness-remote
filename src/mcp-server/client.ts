@@ -186,6 +186,9 @@ export interface TaskApiClient {
   addTaskToCycle(taskId: string, cycleId: string): Promise<import("../shared/types.js").Task>;
   removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task>;
   listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]>;
+  // Audit management methods
+  getAuditCount(): Promise<number>;
+  cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
 }
 
 export function createTaskApiClient(
@@ -2242,6 +2245,30 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
       return data.tasks;
+    },
+
+    async getAuditCount(): Promise<number> {
+      const response = await fetch(`${serverBaseUrl}/api/audit/count`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get audit count: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { count: number };
+      return data.count;
+    },
+
+    async cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }> {
+      const response = await fetch(`${serverBaseUrl}/api/audit/cleanup`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ retentionDays }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to cleanup audit log: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { ok: boolean; deletedCount: number };
+      return { deletedCount: data.deletedCount };
     },
   };
 }

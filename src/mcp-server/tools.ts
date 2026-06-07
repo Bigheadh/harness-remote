@@ -5309,4 +5309,70 @@ export function registerMcpTools(
       }
     },
   );
+
+  // audit_count tool
+  server.registerTool(
+    "audit_count",
+    {
+      description:
+        "Get the total number of audit log entries. Useful for monitoring system activity volume and deciding when cleanup is needed.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const count = await client.getAuditCount();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ count, message: `Audit log contains ${count} entries` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // cleanup_audit_log tool
+  server.registerTool(
+    "cleanup_audit_log",
+    {
+      description:
+        "Delete old audit log entries to free up storage. Removes entries older than the specified retention period. Default retention is 30 days.",
+      inputSchema: {
+        retentionDays: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe("Number of days to retain audit logs. Entries older than this are deleted. Default: 30"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.cleanupAuditLog(args.retentionDays as number | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ message: `Cleaned up ${result.deletedCount} old audit log entry(ies)`, deletedCount: result.deletedCount }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

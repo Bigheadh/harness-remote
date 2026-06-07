@@ -1783,6 +1783,18 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    async getAuditCount(): Promise<number> {
+      calls.push({ method: "getAuditCount", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return 42;
+    },
+
+    async cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }> {
+      calls.push({ method: "cleanupAuditLog", args: [retentionDays] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { deletedCount: 5 };
+    },
   };
   return mock;
 }
@@ -1838,8 +1850,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 132 tools", () => {
-        expect(mockServer.registrations).toHaveLength(132);
+      it("registers all 134 tools", () => {
+        expect(mockServer.registrations).toHaveLength(134);
     });
 
     it("registers list_tasks with correct description", () => {
