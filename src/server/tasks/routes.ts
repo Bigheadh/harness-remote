@@ -1443,6 +1443,67 @@ export function registerTaskRoutes(
     }
   });
 
+  // PUT /api/tasks/:id/card - update the Feishu card for a task (requires tasks.write)
+  server.put<{
+    Params: { id: string };
+    Body: { markdown: string; title?: string; color?: string };
+  }>("/api/tasks/:id/card", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    if (!feishuClient) {
+      return reply.code(503).send({
+        error: { code: "not_configured", message: "Feishu client not configured" },
+      });
+    }
+
+    const { id } = req.params;
+    const { markdown, title, color } = req.body ?? {};
+
+    if (!markdown || typeof markdown !== "string") {
+      return reply.code(400).send({
+        error: { code: "bad_request", message: "markdown field is required and must be a string" },
+      });
+    }
+
+    try {
+      const task = await store.getTask(id);
+      if (!task) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (!task.feishuMessageId) {
+        return reply.code(400).send({
+          error: { code: "no_message", message: "Task has no associated Feishu message" },
+        });
+      }
+
+      const card = buildCustomCard(
+        title ?? `📝 ${task.commandText.slice(0, 50)}`,
+        markdown,
+        (color as "blue" | "green" | "red" | "orange" | "purple" | "indigo" | "turquoise" | "yellow" | "grey" | "wathet" | undefined) ?? "blue",
+      );
+      await feishuClient.updateCardMessage({ messageId: task.feishuMessageId, card });
+      log.info({ taskId: id }, "Feishu card updated");
+      return reply.send({ success: true, messageId: task.feishuMessageId });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/:id/retry - requeue a failed/done task back to pending (requires tasks.write)
   server.post<{
     Params: { id: string };

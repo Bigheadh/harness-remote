@@ -1818,6 +1818,12 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return { deletedCount: 5 };
     },
+
+    async updateTaskCard(taskId: string, markdown: string, title?: string, color?: string): Promise<{ success: boolean; messageId: string }> {
+      calls.push({ method: "updateTaskCard", args: [taskId, markdown, title, color] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { success: true, messageId: "msg_001" };
+    },
   };
   return mock;
 }
@@ -1873,8 +1879,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 137 tools", () => {
-        expect(mockServer.registrations).toHaveLength(137);
+      it("registers all 138 tools", () => {
+        expect(mockServer.registrations).toHaveLength(138);
     });
 
     it("registers list_tasks with correct description", () => {

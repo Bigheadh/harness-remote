@@ -521,3 +521,13 @@
 - [x] Updated mock client in tests for 2 new interface methods
 - [x] Updated tool count assertion (135 → 137)
 - [x] Added 10 new tests (registration + success + error for both tools, plus add/list note tests)
+
+## Phase 65: Feishu Card Update (Streaming Cards)
+- [x] FeishuReplyClient interface: added updateCardMessage method + FeishuUpdateCardInput type
+- [x] FeishuReplyClient implementation: PATCH /open-apis/im/v1/messages/:message_id with card content
+- [x] API route: PUT /api/tasks/:id/card — accepts markdown, optional title/color, updates Feishu card
+- [x] MCP client interface: updateTaskCard method
+- [x] MCP client implementation: HTTP PUT to /api/tasks/:id/card
+- [x] MCP tool: update_task_card — AI agents can update Feishu cards in real-time with markdown content
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (137 → 138)

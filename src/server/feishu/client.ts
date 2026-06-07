@@ -17,10 +17,16 @@ export interface FeishuDirectCardInput {
   card: FeishuCard;
 }
 
+export interface FeishuUpdateCardInput {
+  messageId: string;
+  card: FeishuCard;
+}
+
 export interface FeishuReplyClient {
   replyToMessage(input: FeishuReplyInput): Promise<void>;
   sendCardMessage(input: FeishuSendCardInput): Promise<void>;
   sendDirectCardMessage(input: FeishuDirectCardInput): Promise<void>;
+  updateCardMessage(input: FeishuUpdateCardInput): Promise<void>;
   downloadFile(messageId: string, fileKey: string, type: string): Promise<{ buffer: Buffer; contentType: string; fileName: string }>;
 }
 
@@ -168,6 +174,39 @@ export function createFeishuReplyClient(config: FeishuReplyConfig): FeishuReplyC
 
         if (data.code !== 0) {
           throw new Error(`Failed to send direct Feishu card message: ${data.msg}`);
+        }
+        recordFeishuReply(true);
+      } catch (err) {
+        recordFeishuReply(false);
+        throw err;
+      }
+    },
+
+    async updateCardMessage(input: FeishuUpdateCardInput): Promise<void> {
+      try {
+        const token = await getTenantAccessToken(config);
+
+        const response = await fetch(
+          `https://open.feishu.cn/open-apis/im/v1/messages/${input.messageId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              content: serializeCard(input.card),
+            }),
+          },
+        );
+
+        const data = (await response.json()) as {
+          code: number;
+          msg: string;
+        };
+
+        if (data.code !== 0) {
+          throw new Error(`Failed to update Feishu card message: ${data.msg}`);
         }
         recordFeishuReply(true);
       } catch (err) {

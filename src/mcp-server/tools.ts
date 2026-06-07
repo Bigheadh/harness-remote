@@ -5491,4 +5491,43 @@ export function registerMcpTools(
       }
     },
   );
+
+  // update_task_card tool
+  server.registerTool(
+    "update_task_card",
+    {
+      description:
+        "Update the Feishu interactive card for a task with new markdown content. This updates the existing card in real-time (streaming card pattern), useful for showing progress updates, intermediate results, or status changes without creating a new message.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task whose Feishu card to update"),
+        markdown: z.string().describe("Markdown content to display in the updated card"),
+        title: z.string().optional().describe("Optional card header title (default: task command text)"),
+        color: z.enum(["blue", "green", "red", "orange", "purple", "indigo", "turquoise", "yellow", "grey", "wathet"]).optional().describe("Optional card header color theme (default: blue)"),
+      },
+    },
+    async (args) => {
+      try {
+        const result = await client.updateTaskCard(
+          args.taskId as string,
+          args.markdown as string,
+          args.title as string | undefined,
+          args.color as string | undefined,
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

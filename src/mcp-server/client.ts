@@ -192,6 +192,8 @@ export interface TaskApiClient {
   // Audit management methods
   getAuditCount(): Promise<number>;
   cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
+  // Feishu card update
+  updateTaskCard(taskId: string, markdown: string, title?: string, color?: string): Promise<{ success: boolean; messageId: string }>;
 }
 
 export function createTaskApiClient(
@@ -2306,6 +2308,20 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { ok: boolean; deletedCount: number };
       return { deletedCount: data.deletedCount };
+    },
+
+    async updateTaskCard(taskId: string, markdown: string, title?: string, color?: string): Promise<{ success: boolean; messageId: string }> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/card`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ markdown, title, color }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update task card: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { success: boolean; messageId: string };
+      return { success: data.success, messageId: data.messageId };
     },
   };
 }
