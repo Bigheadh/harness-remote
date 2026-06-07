@@ -75,6 +75,7 @@ export interface TaskStore {
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
   bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
+  bulkUpdatePriority(ids: string[], priority: TaskPriority): Promise<{ updated: number; errors: string[] }>;
   // Task template methods
   createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
   listTemplates(): Promise<TaskTemplate[]>;
@@ -1477,6 +1478,27 @@ export function createTaskStore(storagePath: string): TaskStore {
           updated++;
         } catch (e) {
           errors.push(`Error removing tag from ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
+    },
+
+    async bulkUpdatePriority(ids: string[], priority: TaskPriority): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          db.prepare(`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?`).run(priority, now, id);
+          updated++;
+        } catch (e) {
+          errors.push(`Error updating priority for ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       return { updated, errors };

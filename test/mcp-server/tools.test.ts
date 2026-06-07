@@ -371,6 +371,12 @@ function createMockClient(): TaskApiClient & {
       return { updated: ids.length, errors: [] };
     },
 
+    async bulkUpdatePriority(ids: string[], priority: string): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkUpdatePriority", args: [ids, priority] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
     async listTemplates(): Promise<import("../../src/shared/types.js").TaskTemplate[]> {
       calls.push({ method: "listTemplates", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1694,8 +1700,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 121 tools", () => {
-        expect(mockServer.registrations).toHaveLength(121);
+      it("registers all 122 tools", () => {
+        expect(mockServer.registrations).toHaveLength(122);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3353,6 +3359,40 @@ describe("MCP tools", () => {
       mock.failWith = "Disk full";
       const tool = mockServer.registrations.find((r) => r.name === "cleanup_processed_events")!;
       const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Disk full");
+    });
+  });
+
+  // ===== Bulk Update Priority Tests =====
+
+  describe("bulk_update_priority", () => {
+    it("registers bulk_update_priority with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_priority");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("priority");
+    });
+
+    it("updates priority for multiple tasks", async () => {
+      mock.calls.length = 0;
+      mock.serverResponse = { updated: 3, errors: [] };
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_priority")!;
+      const result = await tool.handler({ ids: ["task_001", "task_002", "task_003"], priority: "urgent" });
+
+      expect(mock.calls[0].method).toBe("bulkUpdatePriority");
+      expect(mock.calls[0].args).toEqual([["task_001", "task_002", "task_003"], "urgent"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(3);
+      expect(parsed.priority).toBe("urgent");
+      expect(parsed.errors).toEqual([]);
+    });
+
+    it("returns error when bulkUpdatePriority fails", async () => {
+      mock.failWith = "Disk full";
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_priority")!;
+      const result = await tool.handler({ ids: ["task_001"], priority: "high" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);

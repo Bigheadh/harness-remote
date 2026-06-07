@@ -3341,6 +3341,57 @@ export function registerMcpTools(
     },
   );
 
+  // bulk_update_priority tool
+  server.registerTool(
+    "bulk_update_priority",
+    {
+      description:
+        "Update the priority of multiple tasks at once. Changes all specified tasks to the given priority level (low, normal, high, urgent). Returns the count of successfully updated tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to update (1-100 IDs)"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .describe("New priority for all specified tasks"),
+      },
+    },
+    async (args) => {
+      const { ids, priority } = args;
+      try {
+        const result = await client.bulkUpdatePriority(ids, priority);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                updated: result.updated,
+                errors: result.errors,
+                priority,
+                message: result.updated > 0
+                  ? `Updated ${result.updated} task(s) to ${priority} priority`
+                  : "No tasks were updated",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // escalate_overdue_priorities tool
   server.registerTool(
     "escalate_overdue_priorities",

@@ -948,6 +948,62 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, restored: restored.length, errors });
   });
 
+  // POST /api/tasks/bulk/priority - bulk update priority for multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/priority", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; priority?: TaskPriority };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+    if (!body?.priority) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Missing 'priority' in request body" },
+      });
+    }
+
+    const validPriorities: TaskPriority[] = ["low", "normal", "high", "urgent"];
+    if (!validPriorities.includes(body.priority)) {
+      return reply.code(400).send({
+        error: { code: "invalid_priority", message: `Invalid priority: ${body.priority}. Must be one of: low, normal, high, urgent` },
+      });
+    }
+
+    const result = await store.bulkUpdatePriority(body.ids, body.priority);
+    log.info({ count: result.updated, priority: body.priority, errors: result.errors.length }, "Bulk priority update completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, priority: body.priority, ids: body.ids, errors: result.errors },
+      });
+    }
+
+    // Broadcast SSE events for each updated task
+    for (const taskId of body.ids) {
+      if (result.errors.includes(taskId)) continue;
+      const task = await store.getTask(taskId);
+      if (task) {
+        broadcastTaskUpdated(task);
+      }
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
   // GET /api/tasks/ready - list tasks ready for processing (pending + all deps met)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get("/api/tasks/ready", async (req: FastifyRequest, reply: FastifyReply) => {

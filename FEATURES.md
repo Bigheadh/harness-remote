@@ -481,3 +481,12 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (120 → 121)
 - [x] Added 4 new tests for set_task_estimated_minutes tool (registration, set value, clear, error)
+
+## Phase 61: Bulk Priority Update MCP Tool
+- [x] Store layer: bulkUpdatePriority(ids, priority) method with per-task error handling
+- [x] API route: POST /api/tasks/bulk/priority endpoint with auth and priority validation
+- [x] MCP client: bulkUpdatePriority(ids, priority) HTTP client method
+- [x] MCP tool: bulk_update_priority — AI agents can update priority for multiple tasks at once
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (121 → 122)
+- [x] Added 3 new tests for bulk_update_priority tool (registration, batch update, error case)

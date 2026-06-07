@@ -43,6 +43,7 @@ export interface TaskApiClient {
   bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }>;
   bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
+  bulkUpdatePriority(ids: string[], priority: string): Promise<{ updated: number; errors: string[] }>;
   // Template methods
   listTemplates(): Promise<TaskTemplate[]>;
   getTemplate(templateId: string): Promise<TaskTemplate>;
@@ -740,6 +741,27 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to bulk remove tag: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { updated: number; errors: string[] };
+      return { updated: data.updated, errors: data.errors };
+    },
+
+    async bulkUpdatePriority(ids: string[], priority: string): Promise<{ updated: number; errors: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/priority`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids, priority }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk update priority: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 
