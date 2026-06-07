@@ -85,6 +85,8 @@ export interface Task {
   cycleId?: string;
   /** Number of times this task has been reopened from done/failed */
   reopenedCount?: number;
+  /** Optional: ID of the module (epic) this task belongs to */
+  moduleId?: string;
 }
 
 /** A time entry — a block of time logged against a task */
@@ -346,6 +348,8 @@ export interface TaskTemplate {
   createdBy: string;
   /** Number of times this template has been used to create tasks */
   usageCount?: number;
+  /** Variable placeholders for template text substitution (e.g., { "{{repo}}": "my-app" }) */
+  variables?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }
@@ -447,6 +451,36 @@ export interface CycleProgress {
   totalEstimatedMinutes: number;
   /** Total actual minutes spent (from time entries) */
   totalActualMinutes: number;
+}
+
+/** Module status — lifecycle of a module (epic/feature group) */
+export type ModuleStatus = "planned" | "active" | "completed" | "archived";
+
+/** A module (epic) — groups related tasks into a logical unit */
+export interface Module {
+  id: string;
+  /** Human-readable name (e.g., "Auth System", "Payment Flow") */
+  name: string;
+  /** Optional description of the module's goals */
+  description?: string;
+  /** Current status of the module */
+  status: ModuleStatus;
+  /** ISO 8601 — when the module is planned to start */
+  startDate?: string;
+  /** ISO 8601 — when the module is planned to end */
+  endDate?: string;
+  /** Optional: target completion percentage (0-100) */
+  targetCompletionPercent?: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Module with computed task counts */
+export interface ModuleWithProgress extends Module {
+  totalTasks: number;
+  completedTasks: number;
+  completionPercent: number;
 }
 
 /** SLA policy — defines resolution time targets per priority or tag */

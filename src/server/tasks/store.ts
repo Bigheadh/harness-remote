@@ -80,7 +80,7 @@ export interface TaskStore {
   createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
   listTemplates(): Promise<TaskTemplate[]>;
   getTemplate(id: string): Promise<TaskTemplate | undefined>;
-  updateTemplate(id: string, updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>): Promise<TaskTemplate>;
+  updateTemplate(id: string, updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs" | "variables">>): Promise<TaskTemplate>;
   deleteTemplate(id: string): Promise<boolean>;
   incrementTemplateUsage(id: string): Promise<void>;
   getTemplateUsageStats(): Promise<{ templateId: string; name: string; usageCount: number }[]>;
@@ -198,6 +198,15 @@ export interface TaskStore {
   getCycleProgress(cycleId: string): Promise<import("../../shared/types.js").CycleProgress>;
   // Global activity feed — combined chronological timeline across all tasks
   getGlobalActivity(limit?: number): Promise<import("../../shared/types.js").ActivityFeedItem[]>;
+  // Phase 70: Module (epic) methods
+  createModule(data: { name: string; description?: string; startDate?: string; endDate?: string; createdBy: string }): Promise<import("../../shared/types.js").Module>;
+  listModules(status?: import("../../shared/types.js").ModuleStatus): Promise<import("../../shared/types.js").ModuleWithProgress[]>;
+  getModule(id: string): Promise<import("../../shared/types.js").ModuleWithProgress | undefined>;
+  updateModule(id: string, updates: Partial<Pick<import("../../shared/types.js").Module, "name" | "description" | "status" | "startDate" | "endDate" | "targetCompletionPercent">>): Promise<import("../../shared/types.js").Module>;
+  deleteModule(id: string): Promise<boolean>;
+  addTaskToModule(taskId: string, moduleId: string): Promise<import("../../shared/types.js").Task>;
+  removeTaskFromModule(taskId: string): Promise<import("../../shared/types.js").Task>;
+  listModuleTasks(moduleId: string): Promise<import("../../shared/types.js").Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -263,6 +272,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     actualMinutes: row["actual_minutes"] != null ? Number(row["actual_minutes"]) : undefined,
     cycleId: (row["cycle_id"] as string) ?? undefined,
     reopenedCount: row["reopened_count"] != null ? Number(row["reopened_count"]) : undefined,
+    moduleId: (row["module_id"] as string) ?? undefined,
   };
 }
 
@@ -280,7 +290,34 @@ function rowToCycle(row: Record<string, unknown>): import("../../shared/types.js
   };
 }
 
+function rowToModule(row: Record<string, unknown>): import("../../shared/types.js").Module {
+  return {
+    id: row["id"] as string,
+    name: row["name"] as string,
+    description: (row["description"] as string) ?? undefined,
+    status: row["status"] as import("../../shared/types.js").ModuleStatus,
+    startDate: (row["start_date"] as string) ?? undefined,
+    endDate: (row["end_date"] as string) ?? undefined,
+    targetCompletionPercent: row["target_completion_percent"] != null ? Number(row["target_completion_percent"]) : undefined,
+    createdBy: row["created_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
+  };
+}
+
+/** Apply variable substitution to a template string. Replaces {var_name} with the corresponding value. */
+function applyTemplateVariables(text: string, variables: Record<string, string>): string {
+  return text.replace(/\{(\w+)\}/g, (_match, varName) => {
+    return variables[varName] !== undefined ? variables[varName] : `{${varName}}`;
+  });
+}
+
 function rowToTemplate(row: Record<string, unknown>): TaskTemplate {
+  const variablesRaw = row["variables"] as string | null;
+  let variables: Record<string, string> | undefined;
+  if (variablesRaw) {
+    try { variables = JSON.parse(variablesRaw); } catch { variables = undefined; }
+  }
   return {
     id: row["id"] as string,
     name: row["name"] as string,
@@ -293,6 +330,7 @@ function rowToTemplate(row: Record<string, unknown>): TaskTemplate {
     reminderOffsetMs: row["reminder_offset_ms"] != null ? Number(row["reminder_offset_ms"]) : undefined,
     createdBy: row["created_by"] as string,
     usageCount: row["usage_count"] != null ? Number(row["usage_count"]) : 0,
+    variables,
     createdAt: row["created_at"] as string,
     updatedAt: row["updated_at"] as string,
   };
@@ -581,6 +619,11 @@ export function createTaskStore(storagePath: string): TaskStore {
     db.exec(`ALTER TABLE task_templates ADD COLUMN usage_count INTEGER DEFAULT 0`);
   } catch {}
 
+  // Phase 70: template variables column
+  try {
+    db.exec(`ALTER TABLE task_templates ADD COLUMN variables TEXT`);
+  } catch {}
+
   // Scheduled tasks table
   db.exec(`
     CREATE TABLE IF NOT EXISTS scheduled_tasks (
@@ -658,6 +701,34 @@ export function createTaskStore(storagePath: string): TaskStore {
   // Phase 69: Task reopening support
   try { db.exec(`ALTER TABLE tasks ADD COLUMN reopened_count INTEGER DEFAULT 0`); } catch {}
 
+  // Phase 70: Modules (epics) — groups related tasks into logical units
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN module_id TEXT`); } catch {}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS modules (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'planned',
+      start_date TEXT,
+      end_date TEXT,
+      target_completion_percent INTEGER,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_modules_status
+      ON modules(status)
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_tasks_module_id
+      ON tasks(module_id)
+  `);
+
   db.exec(`\n    CREATE TABLE IF NOT EXISTS cycles (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      description TEXT,\n      start_date TEXT NOT NULL,\n      end_date TEXT NOT NULL,\n      status TEXT NOT NULL DEFAULT 'upcoming',\n      created_by TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_cycles_status\n      ON cycles(status)\n  `);
@@ -666,8 +737,8 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at, cycle_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at, cycle_id, module_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -774,6 +845,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.startedAt ?? null,
         task.completedAt ?? null,
         task.cycleId ?? null,
+        task.moduleId ?? null,
       );
 
       const row = selectTaskById.get(id) as Record<string, unknown>;
@@ -1028,6 +1100,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         null, // started_at
         null, // completed_at
         (row["cycle_id"] as string) ?? null, // cycle_id
+        null, // module_id
       ));
 
       const cloned = selectTaskById.get(newId) as Record<string, unknown>;
@@ -1596,10 +1669,14 @@ export function createTaskStore(storagePath: string): TaskStore {
         template.tags && template.tags.length > 0
           ? JSON.stringify(template.tags)
           : null;
+      const variablesJson =
+        template.variables && Object.keys(template.variables).length > 0
+          ? JSON.stringify(template.variables)
+          : null;
 
       db.prepare(`
-        INSERT INTO task_templates (id, name, description, command_text, priority, tags, assigned_device_id, due_date_offset_ms, reminder_offset_ms, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO task_templates (id, name, description, command_text, priority, tags, assigned_device_id, due_date_offset_ms, reminder_offset_ms, created_by, created_at, updated_at, variables)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         template.name,
@@ -1613,6 +1690,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         template.createdBy,
         now,
         now,
+        variablesJson,
       );
 
       const row = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown>;
@@ -1631,7 +1709,7 @@ export function createTaskStore(storagePath: string): TaskStore {
 
     async updateTemplate(
       id: string,
-      updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs">>,
+      updates: Partial<Pick<TaskTemplate, "name" | "description" | "commandText" | "priority" | "tags" | "assignedDeviceId" | "dueDateOffsetMs" | "reminderOffsetMs" | "variables">>,
     ): Promise<TaskTemplate> {
       const existing = db.prepare(`SELECT * FROM task_templates WHERE id = ?`).get(id) as Record<string, unknown> | undefined;
       if (!existing) {
@@ -1653,6 +1731,10 @@ export function createTaskStore(storagePath: string): TaskStore {
       if (updates.assignedDeviceId !== undefined) { setClauses.push("assigned_device_id = ?"); params.push(updates.assignedDeviceId ?? null); }
       if (updates.dueDateOffsetMs !== undefined) { setClauses.push("due_date_offset_ms = ?"); params.push(updates.dueDateOffsetMs ?? null); }
       if (updates.reminderOffsetMs !== undefined) { setClauses.push("reminder_offset_ms = ?"); params.push(updates.reminderOffsetMs ?? null); }
+      if (updates.variables !== undefined) {
+        setClauses.push("variables = ?");
+        params.push(updates.variables && Object.keys(updates.variables).length > 0 ? JSON.stringify(updates.variables) : null);
+      }
 
       if (setClauses.length === 0) {
         return rowToTemplate(existing);
@@ -2306,6 +2388,7 @@ export function createTaskStore(storagePath: string): TaskStore {
             task.startedAt ?? null,
             task.completedAt ?? null,
             task.cycleId ?? null,
+            task.moduleId ?? null,
           );
 
           // Restore result fields if present
@@ -3709,6 +3792,111 @@ export function createTaskStore(storagePath: string): TaskStore {
       // Sort all items by timestamp descending and return top N
       items.sort((a, b) => (b.timestamp > a.timestamp ? 1 : b.timestamp < a.timestamp ? -1 : 0));
       return items.slice(0, effectiveLimit);
+    },
+
+    // Phase 70: Module (epic) methods
+    async createModule(data: { name: string; description?: string; startDate?: string; endDate?: string; createdBy: string }): Promise<import("../../shared/types.js").Module> {
+      const id = `module_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO modules (id, name, description, status, start_date, end_date, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, 'planned', ?, ?, ?, ?, ?)
+      `).run(id, data.name, data.description ?? null, data.startDate ?? null, data.endDate ?? null, data.createdBy, now, now);
+      const row = db.prepare("SELECT * FROM modules WHERE id = ?").get(id) as Record<string, unknown>;
+      return rowToModule(row);
+    },
+
+    async listModules(status?: import("../../shared/types.js").ModuleStatus): Promise<import("../../shared/types.js").ModuleWithProgress[]> {
+      const rows = status
+        ? db.prepare("SELECT * FROM modules WHERE status = ? ORDER BY created_at DESC").all(status) as Array<Record<string, unknown>>
+        : db.prepare("SELECT * FROM modules ORDER BY created_at DESC").all() as Array<Record<string, unknown>>;
+      return rows.map(row => {
+        const module = rowToModule(row);
+        const counts = db.prepare(`
+          SELECT COUNT(*) as total,
+            SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed
+          FROM tasks WHERE module_id = ?
+        `).get(module.id) as Record<string, unknown>;
+        const total = Number(counts["total"] ?? 0);
+        const completed = Number(counts["completed"] ?? 0);
+        return {
+          ...module,
+          totalTasks: total,
+          completedTasks: completed,
+          completionPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+        } as import("../../shared/types.js").ModuleWithProgress;
+      });
+    },
+
+    async getModule(id: string): Promise<import("../../shared/types.js").ModuleWithProgress | undefined> {
+      const row = db.prepare("SELECT * FROM modules WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+      if (!row) return undefined;
+      const module = rowToModule(row);
+      const counts = db.prepare(`
+        SELECT COUNT(*) as total,
+          SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed
+        FROM tasks WHERE module_id = ?
+      `).get(id) as Record<string, unknown>;
+      const total = Number(counts["total"] ?? 0);
+      const completed = Number(counts["completed"] ?? 0);
+      return {
+        ...module,
+        totalTasks: total,
+        completedTasks: completed,
+        completionPercent: total > 0 ? Math.round((completed / total) * 100) : 0,
+      };
+    },
+
+    async updateModule(id: string, updates: Partial<Pick<import("../../shared/types.js").Module, "name" | "description" | "status" | "startDate" | "endDate" | "targetCompletionPercent">>): Promise<import("../../shared/types.js").Module> {
+      const existing = db.prepare("SELECT * FROM modules WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+      if (!existing) throw new Error("Module not found");
+      const now = new Date().toISOString();
+      const sets: string[] = [];
+      const params: (string | number | null)[] = [];
+      if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
+      if (updates.description !== undefined) { sets.push("description = ?"); params.push(updates.description ?? null); }
+      if (updates.status !== undefined) { sets.push("status = ?"); params.push(updates.status); }
+      if (updates.startDate !== undefined) { sets.push("start_date = ?"); params.push(updates.startDate ?? null); }
+      if (updates.endDate !== undefined) { sets.push("end_date = ?"); params.push(updates.endDate ?? null); }
+      if (updates.targetCompletionPercent !== undefined) { sets.push("target_completion_percent = ?"); params.push(updates.targetCompletionPercent ?? null); }
+      sets.push("updated_at = ?");
+      params.push(now);
+      params.push(id);
+      db.prepare(`UPDATE modules SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+      const row = db.prepare("SELECT * FROM modules WHERE id = ?").get(id) as Record<string, unknown>;
+      return rowToModule(row);
+    },
+
+    async deleteModule(id: string): Promise<boolean> {
+      // Remove module_id from all tasks in this module
+      db.prepare("UPDATE tasks SET module_id = NULL WHERE module_id = ?").run(id);
+      const result = db.prepare("DELETE FROM modules WHERE id = ?").run(id);
+      return Number(result.changes) > 0;
+    },
+
+    async addTaskToModule(taskId: string, moduleId: string): Promise<import("../../shared/types.js").Task> {
+      const taskRow = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) throw new Error("Task not found");
+      const moduleRow = db.prepare("SELECT * FROM modules WHERE id = ?").get(moduleId) as Record<string, unknown> | undefined;
+      if (!moduleRow) throw new Error("Module not found");
+      const now = new Date().toISOString();
+      db.prepare("UPDATE tasks SET module_id = ?, updated_at = ? WHERE id = ?").run(moduleId, now, taskId);
+      const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Record<string, unknown>;
+      return rowToTask(row);
+    },
+
+    async removeTaskFromModule(taskId: string): Promise<import("../../shared/types.js").Task> {
+      const taskRow = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) throw new Error("Task not found");
+      const now = new Date().toISOString();
+      db.prepare("UPDATE tasks SET module_id = NULL, updated_at = ? WHERE id = ?").run(now, taskId);
+      const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as Record<string, unknown>;
+      return rowToTask(row);
+    },
+
+    async listModuleTasks(moduleId: string): Promise<import("../../shared/types.js").Task[]> {
+      const rows = db.prepare("SELECT * FROM tasks WHERE module_id = ? AND archived_at IS NULL ORDER BY created_at DESC").all(moduleId) as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
   };
 }

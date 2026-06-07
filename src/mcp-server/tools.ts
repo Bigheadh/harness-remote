@@ -1421,6 +1421,10 @@ export function registerMcpTools(
           .int()
           .optional()
           .describe("Milliseconds offset from creation for the reminder (e.g., 3600000 = +1 hour)"),
+        variables: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Default variable values for template substitution. Use {var_name} in commandText/description to reference these variables."),
       },
     },
     async (args) => {
@@ -1479,6 +1483,10 @@ export function registerMcpTools(
           .int()
           .optional()
           .describe("New reminder offset in ms (pass null to clear)"),
+        variables: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Default variable values for template substitution (pass null to clear)"),
       },
     },
     async (args) => {
@@ -1571,6 +1579,10 @@ export function registerMcpTools(
           .string()
           .optional()
           .describe("Override reminder time (ISO string). If not set, uses template's reminderOffsetMs from now"),
+        variables: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe("Variable values for template substitution. Template text with {var_name} placeholders will be replaced with provided values."),
       },
     },
     async (args) => {
@@ -1583,6 +1595,7 @@ export function registerMcpTools(
         if (args.assignedDeviceId !== undefined) overrides.assignedDeviceId = args.assignedDeviceId;
         if (args.dueDate !== undefined) overrides.dueDate = args.dueDate;
         if (args.reminderAt !== undefined) overrides.reminderAt = args.reminderAt;
+        if (args.variables !== undefined) overrides.variables = args.variables;
 
         const task = await client.createTaskFromTemplate(args.templateId, overrides);
         return {

@@ -225,6 +225,7 @@ export function registerTaskRoutes(
       assignedDeviceId?: string;
       dueDateOffsetMs?: number;
       reminderOffsetMs?: number;
+      variables?: Record<string, string>;
     };
 
     if (typeof body?.name !== "string" || body.name.trim() === "") {
@@ -254,6 +255,7 @@ export function registerTaskRoutes(
       assignedDeviceId: body.assignedDeviceId,
       dueDateOffsetMs: body.dueDateOffsetMs,
       reminderOffsetMs: body.reminderOffsetMs,
+      variables: body.variables,
       createdBy: authCtx.user?.username ?? "api",
     });
     log.info({ templateId: template.id, name: template.name }, "Task template created");
@@ -281,6 +283,7 @@ export function registerTaskRoutes(
       assignedDeviceId?: string;
       dueDateOffsetMs?: number;
       reminderOffsetMs?: number;
+      variables?: Record<string, string>;
     };
 
     const validPriorities = ["low", "normal", "high", "urgent"];
@@ -300,6 +303,7 @@ export function registerTaskRoutes(
         assignedDeviceId: body.assignedDeviceId,
         dueDateOffsetMs: body.dueDateOffsetMs,
         reminderOffsetMs: body.reminderOffsetMs,
+        variables: body.variables,
       });
       log.info({ templateId: template.id }, "Task template updated");
       return reply.send({ template });
@@ -362,6 +366,7 @@ export function registerTaskRoutes(
       assignedDeviceId?: string;
       dueDate?: string;
       reminderAt?: string;
+      variables?: Record<string, string>;
     } | undefined;
 
     const validPriorities = ["low", "normal", "high", "urgent"];
@@ -370,6 +375,19 @@ export function registerTaskRoutes(
         error: { code: "invalid_request", message: `Invalid priority: ${body.priority}. Must be one of: ${validPriorities.join(", ")}` },
       });
     }
+
+    // Merge template default variables with request-provided variables
+    const effectiveVariables: Record<string, string> = {
+      ...(template.variables ?? {}),
+      ...(body?.variables ?? {}),
+    };
+    const hasVariables = Object.keys(effectiveVariables).length > 0;
+
+    /** Apply variable substitution: {var_name} → value */
+    const applyVars = (text: string): string =>
+      text.replace(/\{(\w+)\}/g, (_m, varName) =>
+        effectiveVariables[varName] !== undefined ? effectiveVariables[varName] : `{${varName}}`
+      );
 
     const now = new Date().toISOString();
     const effectivePriority = body?.priority ?? template.priority ?? "normal";
@@ -386,20 +404,23 @@ export function registerTaskRoutes(
         ? new Date(Date.now() + template.reminderOffsetMs).toISOString()
         : undefined;
 
+    const rawCommandText = body?.commandText ?? template.commandText;
+    const rawDescription = body?.description ?? template.description ?? undefined;
+
     const task = await store.createTask({
       id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       source: "feishu",
       feishuMessageId: `tmpl_${template.id}_${Date.now()}`,
       feishuChatId: "template",
       feishuUserId: authCtx.user?.username ?? "api",
-      commandText: body?.commandText ?? template.commandText,
+      commandText: hasVariables ? applyVars(rawCommandText) : rawCommandText,
       status: "pending",
       priority: effectivePriority as "low" | "normal" | "high" | "urgent",
       tags: effectiveTags,
       assignedDeviceId: effectiveDeviceId,
       dueDate: effectiveDueDate,
       reminderAt: effectiveReminderAt,
-      description: body?.description ?? template.description ?? undefined,
+      description: hasVariables && rawDescription ? applyVars(rawDescription) : rawDescription,
       createdAt: now,
       updatedAt: now,
     });

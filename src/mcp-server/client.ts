@@ -50,10 +50,10 @@ export interface TaskApiClient {
   // Template methods
   listTemplates(): Promise<TaskTemplate[]>;
   getTemplate(templateId: string): Promise<TaskTemplate>;
-  createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate>;
+  createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number; variables?: Record<string, string> }): Promise<TaskTemplate>;
   updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate>;
   deleteTemplate(templateId: string): Promise<void>;
-  createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task>;
+  createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string; variables?: Record<string, string> }): Promise<Task>;
   getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }>;
   // Scheduled task methods
   listScheduledTasks(): Promise<ScheduledTask[]>;
@@ -871,7 +871,7 @@ export function createTaskApiClient(
       return data.template;
     },
 
-    async createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number }): Promise<TaskTemplate> {
+    async createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number; variables?: Record<string, string> }): Promise<TaskTemplate> {
       const response = await fetch(`${serverBaseUrl}/api/templates`, {
         method: "POST",
         headers,
@@ -910,7 +910,7 @@ export function createTaskApiClient(
       }
     },
 
-    async createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string }): Promise<Task> {
+    async createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string; variables?: Record<string, string> }): Promise<Task> {
       const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}/create-task`, {
         method: "POST",
         headers,
