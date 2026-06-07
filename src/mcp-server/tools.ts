@@ -5035,4 +5035,278 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_cycles tool
+  server.registerTool(
+    "list_cycles",
+    {
+      description:
+        "List all cycles (sprints). Each cycle is a time-boxed work period with a name, start/end dates, and status (upcoming, active, completed). Returns cycle summaries with task counts. Optionally filter by status.",
+      inputSchema: {
+        status: z
+          .enum(["upcoming", "active", "completed"])
+          .optional()
+          .describe("Filter cycles by status: upcoming, active, or completed"),
+      },
+    },
+    async (args) => {
+      try {
+        const cycles = await client.listCycles(args.status as import("../shared/types.js").CycleStatus | undefined);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ cycles, count: cycles.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // get_cycle tool
+  server.registerTool(
+    "get_cycle",
+    {
+      description:
+        "Get details of a specific cycle (sprint) by ID. Returns the cycle name, description, start/end dates, status, and task counts.",
+      inputSchema: {
+        cycleId: z.string().describe("The ID of the cycle to retrieve"),
+      },
+    },
+    async (args) => {
+      try {
+        const cycle = await client.getCycle(args.cycleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(cycle, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // create_cycle tool
+  server.registerTool(
+    "create_cycle",
+    {
+      description:
+        "Create a new cycle (sprint). A cycle is a time-boxed work period for grouping tasks. Provide a name, start date, and end date. Optionally add a description of the cycle's goals.",
+      inputSchema: {
+        name: z.string().describe("Name of the cycle (e.g., 'Sprint 1', 'Week 24')"),
+        startDate: z.string().describe("Start date in ISO 8601 format (e.g., '2026-06-01')"),
+        endDate: z.string().describe("End date in ISO 8601 format (e.g., '2026-06-14')"),
+        description: z.string().optional().describe("Optional description of the cycle's goals"),
+      },
+    },
+    async (args) => {
+      try {
+        const cycle = await client.createCycle({
+          name: args.name as string,
+          startDate: args.startDate as string,
+          endDate: args.endDate as string,
+          description: args.description as string | undefined,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ cycle, message: `Cycle '${cycle.name}' created` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // update_cycle tool
+  server.registerTool(
+    "update_cycle",
+    {
+      description:
+        "Update a cycle's properties. You can change the name, description, start/end dates, or status. Only provide the fields you want to update.",
+      inputSchema: {
+        cycleId: z.string().describe("The ID of the cycle to update"),
+        name: z.string().optional().describe("New name for the cycle"),
+        description: z.string().optional().describe("New description of the cycle's goals"),
+        startDate: z.string().optional().describe("New start date in ISO 8601 format"),
+        endDate: z.string().optional().describe("New end date in ISO 8601 format"),
+        status: z
+          .enum(["upcoming", "active", "completed"])
+          .optional()
+          .describe("New status: upcoming, active, or completed"),
+      },
+    },
+    async (args) => {
+      try {
+        const updates: Record<string, unknown> = {};
+        if (args.name !== undefined) updates.name = args.name;
+        if (args.description !== undefined) updates.description = args.description;
+        if (args.startDate !== undefined) updates.startDate = args.startDate;
+        if (args.endDate !== undefined) updates.endDate = args.endDate;
+        if (args.status !== undefined) updates.status = args.status;
+        const cycle = await client.updateCycle(args.cycleId as string, updates);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ cycle, message: `Cycle '${cycle.name}' updated` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // delete_cycle tool
+  server.registerTool(
+    "delete_cycle",
+    {
+      description:
+        "Permanently delete a cycle (sprint). Tasks that were in the cycle are not deleted — they are simply unlinked from the cycle.",
+      inputSchema: {
+        cycleId: z.string().describe("The ID of the cycle to delete"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteCycle(args.cycleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ deleted: true, message: "Cycle deleted" }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // add_task_to_cycle tool
+  server.registerTool(
+    "add_task_to_cycle",
+    {
+      description:
+        "Assign a task to a cycle (sprint). This links the task to the specified time-boxed work period, enabling sprint planning and progress tracking.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to add to the cycle"),
+        cycleId: z.string().describe("The ID of the cycle to add the task to"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.addTaskToCycle(args.taskId as string, args.cycleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ task, message: `Task '${task.id}' added to cycle` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // remove_task_from_cycle tool
+  server.registerTool(
+    "remove_task_from_cycle",
+    {
+      description:
+        "Remove a task from its current cycle (sprint). The task is not deleted — it is simply unlinked from the cycle.",
+      inputSchema: {
+        taskId: z.string().describe("The ID of the task to remove from its cycle"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.removeTaskFromCycle(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ task, message: `Task '${task.id}' removed from cycle` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_cycle_tasks tool
+  server.registerTool(
+    "list_cycle_tasks",
+    {
+      description:
+        "List all tasks in a specific cycle (sprint). Returns the tasks with their current status, priority, and assignment. Useful for sprint reviews and progress tracking.",
+      inputSchema: {
+        cycleId: z.string().describe("The ID of the cycle to list tasks for"),
+      },
+    },
+    async (args) => {
+      try {
+        const tasks = await client.listCycleTasks(args.cycleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ tasks, count: tasks.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

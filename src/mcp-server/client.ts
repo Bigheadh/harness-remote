@@ -177,6 +177,15 @@ export interface TaskApiClient {
   getTimeTrackingStats(): Promise<import("../shared/types.js").TimeTrackingSummary>;
   // Task activity feed
   getActivityFeed(taskId: string, limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]>;
+  // Cycle (sprint) methods
+  listCycles(status?: import("../shared/types.js").CycleStatus): Promise<import("../shared/types.js").CycleSummary[]>;
+  getCycle(cycleId: string): Promise<import("../shared/types.js").CycleSummary>;
+  createCycle(data: { name: string; description?: string; startDate: string; endDate: string }): Promise<import("../shared/types.js").Cycle>;
+  updateCycle(cycleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Cycle>;
+  deleteCycle(cycleId: string): Promise<void>;
+  addTaskToCycle(taskId: string, cycleId: string): Promise<import("../shared/types.js").Task>;
+  removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task>;
+  listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]>;
 }
 
 export function createTaskApiClient(
@@ -2138,6 +2147,101 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
       return data.items;
+    },
+
+    // Cycle (sprint) methods
+    async listCycles(status?: import("../shared/types.js").CycleStatus): Promise<import("../shared/types.js").CycleSummary[]> {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/cycles${qs ? "?" + qs : ""}`;
+      const response = await fetch(url, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list cycles: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { cycles: import("../shared/types.js").CycleSummary[] };
+      return data.cycles;
+    },
+
+    async getCycle(cycleId: string): Promise<import("../shared/types.js").CycleSummary> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { cycle: import("../shared/types.js").CycleSummary };
+      return data.cycle;
+    },
+
+    async createCycle(data: { name: string; description?: string; startDate: string; endDate: string }): Promise<import("../shared/types.js").Cycle> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to create cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { cycle: import("../shared/types.js").Cycle };
+      return result.cycle;
+    },
+
+    async updateCycle(cycleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Cycle> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to update cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const result = (await response.json()) as { cycle: import("../shared/types.js").Cycle };
+      return result.cycle;
+    },
+
+    async deleteCycle(cycleId: string): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, { method: "DELETE", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async addTaskToCycle(taskId: string, cycleId: string): Promise<import("../shared/types.js").Task> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/tasks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ taskId }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to add task to cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      return data.task;
+    },
+
+    async removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/tasks/${taskId}`, { method: "DELETE", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to remove task from cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      return data.task;
+    },
+
+    async listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/tasks`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list cycle tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
+      return data.tasks;
     },
   };
 }

@@ -81,6 +81,8 @@ export interface Task {
   estimatedMinutes?: number;
   /** Actual total time spent in minutes (computed from time entries) */
   actualMinutes?: number;
+  /** Optional: ID of the cycle (sprint) this task belongs to */
+  cycleId?: string;
 }
 
 /** A time entry — a block of time logged against a task */
@@ -342,6 +344,36 @@ export interface TaskTemplate {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A cycle (sprint) — a time-boxed work period for grouping tasks */
+export type CycleStatus = "upcoming" | "active" | "completed";
+
+export interface Cycle {
+  id: string;
+  /** Human-readable name (e.g., "Sprint 1", "Week 24") */
+  name: string;
+  /** Optional description of the cycle's goals */
+  description?: string;
+  /** ISO 8601 — when the cycle starts */
+  startDate: string;
+  /** ISO 8601 — when the cycle ends */
+  endDate: string;
+  /** Current status of the cycle */
+  status: CycleStatus;
+  /** Optional: number of completed tasks (computed) */
+  completedTasks?: number;
+  /** Optional: total tasks in cycle (computed) */
+  totalTasks?: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Summary of a cycle with task counts */
+export interface CycleSummary extends Cycle {
+  completedTasks: number;
+  totalTasks: number;
 }
 
 /** SLA policy — defines resolution time targets per priority or tag */

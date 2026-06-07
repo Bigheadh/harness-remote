@@ -1657,6 +1657,132 @@ function createMockClient(): TaskApiClient & {
         { type: "task.status_changed", timestamp: "2026-06-07T01:00:00Z", actor: "user_1", summary: "Status changed to running" },
       ];
     },
+
+    async listCycles(status?: import("../../src/shared/types.js").CycleStatus): Promise<import("../../src/shared/types.js").CycleSummary[]> {
+      calls.push({ method: "listCycles", args: [status] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "cycle_001",
+          name: "Sprint 1",
+          startDate: "2026-06-01",
+          endDate: "2026-06-14",
+          status: status ?? "active",
+          completedTasks: 3,
+          totalTasks: 5,
+          createdBy: "user_1",
+          createdAt: "2026-06-01T00:00:00.000Z",
+          updatedAt: "2026-06-01T00:00:00.000Z",
+        },
+      ];
+    },
+
+    async getCycle(cycleId: string): Promise<import("../../src/shared/types.js").CycleSummary> {
+      calls.push({ method: "getCycle", args: [cycleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: cycleId,
+        name: "Sprint 1",
+        description: "First sprint",
+        startDate: "2026-06-01",
+        endDate: "2026-06-14",
+        status: "active",
+        completedTasks: 3,
+        totalTasks: 5,
+        createdBy: "user_1",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+      };
+    },
+
+    async createCycle(data: { name: string; description?: string; startDate: string; endDate: string }): Promise<import("../../src/shared/types.js").Cycle> {
+      calls.push({ method: "createCycle", args: [data] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "cycle_new",
+        name: data.name,
+        description: data.description,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        status: "upcoming",
+        createdBy: "user_1",
+        createdAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async updateCycle(cycleId: string, updates: Record<string, unknown>): Promise<import("../../src/shared/types.js").Cycle> {
+      calls.push({ method: "updateCycle", args: [cycleId, updates] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: cycleId,
+        name: (updates.name as string) ?? "Sprint 1",
+        description: updates.description as string | undefined,
+        startDate: (updates.startDate as string) ?? "2026-06-01",
+        endDate: (updates.endDate as string) ?? "2026-06-14",
+        status: (updates.status as import("../../src/shared/types.js").CycleStatus) ?? "active",
+        createdBy: "user_1",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async deleteCycle(cycleId: string): Promise<void> {
+      calls.push({ method: "deleteCycle", args: [cycleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async addTaskToCycle(taskId: string, cycleId: string): Promise<import("../../src/shared/types.js").Task> {
+      calls.push({ method: "addTaskToCycle", args: [taskId, cycleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_cycle",
+        feishuChatId: "oc_cycle",
+        feishuUserId: "ou_cycle",
+        commandText: "Cycle task",
+        status: "pending",
+        cycleId,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async removeTaskFromCycle(taskId: string): Promise<import("../../src/shared/types.js").Task> {
+      calls.push({ method: "removeTaskFromCycle", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_cycle",
+        feishuChatId: "oc_cycle",
+        feishuUserId: "ou_cycle",
+        commandText: "Cycle task",
+        status: "pending",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+      };
+    },
+
+    async listCycleTasks(cycleId: string): Promise<import("../../src/shared/types.js").Task[]> {
+      calls.push({ method: "listCycleTasks", args: [cycleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          id: "task_cycle_001",
+          source: "feishu",
+          feishuMessageId: "om_cycle_1",
+          feishuChatId: "oc_cycle_1",
+          feishuUserId: "ou_cycle_1",
+          commandText: "Sprint task 1",
+          status: "done",
+          cycleId,
+          createdAt: "2026-06-01T12:00:00.000Z",
+          updatedAt: "2026-06-07T00:00:00.000Z",
+        },
+      ];
+    },
   };
   return mock;
 }
@@ -1712,8 +1838,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 124 tools", () => {
-        expect(mockServer.registrations).toHaveLength(124);
+      it("registers all 132 tools", () => {
+        expect(mockServer.registrations).toHaveLength(132);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3790,6 +3916,246 @@ describe("MCP tools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Task not found");
+    });
+  });
+
+  describe("list_cycles", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycles");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("cycle");
+    });
+
+    it("returns cycles from client", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycles")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.cycles).toHaveLength(1);
+      expect(data.cycles[0].name).toBe("Sprint 1");
+      expect(mock.calls[0].method).toBe("listCycles");
+    });
+
+    it("passes status filter to client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycles")!;
+      await tool.handler({ status: "completed" });
+
+      expect(mock.calls[0].args[0]).toBe("completed");
+    });
+
+    it("returns error when listCycles fails", async () => {
+      mock.failWith = "DB error";
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycles")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("DB error");
+    });
+  });
+
+  describe("get_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("returns cycle details from client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle")!;
+      const result = await tool.handler({ cycleId: "cycle_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.id).toBe("cycle_001");
+      expect(data.name).toBe("Sprint 1");
+      expect(mock.calls[0].method).toBe("getCycle");
+    });
+
+    it("returns error when getCycle fails", async () => {
+      mock.failWith = "Cycle not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle")!;
+      const result = await tool.handler({ cycleId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Cycle not found");
+    });
+  });
+
+  describe("create_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("name");
+      expect(tool!.inputSchema).toHaveProperty("startDate");
+      expect(tool!.inputSchema).toHaveProperty("endDate");
+    });
+
+    it("creates cycle via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_cycle")!;
+      const result = await tool.handler({ name: "Sprint 2", startDate: "2026-06-15", endDate: "2026-06-28", description: "Goals" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.cycle.name).toBe("Sprint 2");
+      expect(mock.calls[0].method).toBe("createCycle");
+      expect(mock.calls[0].args[0]).toEqual({ name: "Sprint 2", startDate: "2026-06-15", endDate: "2026-06-28", description: "Goals" });
+    });
+
+    it("returns error when createCycle fails", async () => {
+      mock.failWith = "Invalid dates";
+      const tool = mockServer.registrations.find((r) => r.name === "create_cycle")!;
+      const result = await tool.handler({ name: "Sprint 3", startDate: "2026-06-15", endDate: "2026-06-28" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid dates");
+    });
+  });
+
+  describe("update_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "update_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("updates cycle via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "update_cycle")!;
+      const result = await tool.handler({ cycleId: "cycle_001", name: "Sprint 1 Updated", status: "completed" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.cycle.name).toBe("Sprint 1 Updated");
+      expect(mock.calls[0].method).toBe("updateCycle");
+      expect(mock.calls[0].args[1]).toEqual({ name: "Sprint 1 Updated", status: "completed" });
+    });
+
+    it("returns error when updateCycle fails", async () => {
+      mock.failWith = "Cycle not found";
+      const tool = mockServer.registrations.find((r) => r.name === "update_cycle")!;
+      const result = await tool.handler({ cycleId: "nonexistent", name: "Updated" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Cycle not found");
+    });
+  });
+
+  describe("delete_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "delete_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("deletes cycle via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "delete_cycle")!;
+      const result = await tool.handler({ cycleId: "cycle_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.deleted).toBe(true);
+      expect(mock.calls[0].method).toBe("deleteCycle");
+    });
+
+    it("returns error when deleteCycle fails", async () => {
+      mock.failWith = "Cycle not found";
+      const tool = mockServer.registrations.find((r) => r.name === "delete_cycle")!;
+      const result = await tool.handler({ cycleId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Cycle not found");
+    });
+  });
+
+  describe("add_task_to_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_to_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("adds task to cycle via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_to_cycle")!;
+      const result = await tool.handler({ taskId: "task_001", cycleId: "cycle_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.task.id).toBe("task_001");
+      expect(data.task.cycleId).toBe("cycle_001");
+      expect(mock.calls[0].method).toBe("addTaskToCycle");
+    });
+
+    it("returns error when addTaskToCycle fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_to_cycle")!;
+      const result = await tool.handler({ taskId: "nonexistent", cycleId: "cycle_001" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Task not found");
+    });
+  });
+
+  describe("remove_task_from_cycle", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_from_cycle");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+    });
+
+    it("removes task from cycle via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_from_cycle")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.task.id).toBe("task_001");
+      expect(mock.calls[0].method).toBe("removeTaskFromCycle");
+    });
+
+    it("returns error when removeTaskFromCycle fails", async () => {
+      mock.failWith = "Task not in any cycle";
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_from_cycle")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Task not in any cycle");
+    });
+  });
+
+  describe("list_cycle_tasks", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycle_tasks");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("returns tasks in cycle from client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycle_tasks")!;
+      const result = await tool.handler({ cycleId: "cycle_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.tasks).toHaveLength(1);
+      expect(data.tasks[0].cycleId).toBe("cycle_001");
+      expect(mock.calls[0].method).toBe("listCycleTasks");
+    });
+
+    it("returns error when listCycleTasks fails", async () => {
+      mock.failWith = "Cycle not found";
+      const tool = mockServer.registrations.find((r) => r.name === "list_cycle_tasks")!;
+      const result = await tool.handler({ cycleId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Cycle not found");
     });
   });
 });

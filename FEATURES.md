@@ -499,3 +499,16 @@
 - [x] Updated mock client in tests for 2 new interface methods
 - [x] Updated tool count assertion (122 → 124)
 - [x] Added 6 new tests for assignment MCP tools (registration, assign, unassign, error cases)
+
+## Phase 63: Cycle (Sprint) Management MCP Tools
+- [x] MCP tool: list_cycles — list all cycles (sprints) with optional status filter
+- [x] MCP tool: get_cycle — get cycle details by ID (name, description, dates, status, task counts)
+- [x] MCP tool: create_cycle — create new cycle with name, start/end dates, optional description
+- [x] MCP tool: update_cycle — update cycle name, description, dates, or status
+- [x] MCP tool: delete_cycle — permanently delete a cycle (tasks are unlinked, not deleted)
+- [x] MCP tool: add_task_to_cycle — assign a task to a cycle for sprint planning
+- [x] MCP tool: remove_task_from_cycle — unlink a task from its current cycle
+- [x] MCP tool: list_cycle_tasks — list all tasks in a specific cycle
+- [x] Updated mock client in tests for 8 new interface methods
+- [x] Updated tool count assertion (124 → 132)
+- [x] Added 25 new tests for cycle MCP tools (registration, CRUD, task assignment, error cases)

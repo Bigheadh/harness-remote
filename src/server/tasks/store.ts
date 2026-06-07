@@ -182,6 +182,15 @@ export interface TaskStore {
   stopTimeEntry(taskId: string, entryId: string, endedAt: string): Promise<import("../../shared/types.js").TimeEntry>;
   /** Get aggregated time tracking statistics across all tasks */
   getTimeTrackingSummary(): Promise<import("../../shared/types.js").TimeTrackingSummary>;
+  // Phase 63: Cycle (sprint) methods
+  createCycle(data: { name: string; description?: string; startDate: string; endDate: string; createdBy: string }): Promise<import("../../shared/types.js").Cycle>;
+  listCycles(status?: import("../../shared/types.js").CycleStatus): Promise<import("../../shared/types.js").CycleSummary[]>;
+  getCycle(id: string): Promise<import("../../shared/types.js").CycleSummary | undefined>;
+  updateCycle(id: string, updates: Partial<Pick<import("../../shared/types.js").Cycle, "name" | "description" | "startDate" | "endDate" | "status">>): Promise<import("../../shared/types.js").Cycle>;
+  deleteCycle(id: string): Promise<boolean>;
+  addTaskToCycle(taskId: string, cycleId: string): Promise<import("../../shared/types.js").Task>;
+  removeTaskFromCycle(taskId: string): Promise<import("../../shared/types.js").Task>;
+  listCycleTasks(cycleId: string): Promise<import("../../shared/types.js").Task[]>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -243,6 +252,23 @@ function rowToTask(row: Record<string, unknown>): Task {
     pickedAt: (row["picked_at"] as string) ?? undefined,
     startedAt: (row["started_at"] as string) ?? undefined,
     completedAt: (row["completed_at"] as string) ?? undefined,
+    estimatedMinutes: row["estimated_minutes"] != null ? Number(row["estimated_minutes"]) : undefined,
+    actualMinutes: row["actual_minutes"] != null ? Number(row["actual_minutes"]) : undefined,
+    cycleId: (row["cycle_id"] as string) ?? undefined,
+  };
+}
+
+function rowToCycle(row: Record<string, unknown>): import("../../shared/types.js").Cycle {
+  return {
+    id: row["id"] as string,
+    name: row["name"] as string,
+    description: (row["description"] as string) ?? undefined,
+    startDate: row["start_date"] as string,
+    endDate: row["end_date"] as string,
+    status: row["status"] as import("../../shared/types.js").CycleStatus,
+    createdBy: row["created_by"] as string,
+    createdAt: row["created_at"] as string,
+    updatedAt: row["updated_at"] as string,
   };
 }
 
@@ -612,10 +638,19 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_watchers_user_id\n      ON task_watchers(user_id)\n  `);
 
+  // Phase 63: Cycles (sprints) table
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN cycle_id TEXT`); } catch {}
+
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS cycles (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      description TEXT,\n      start_date TEXT NOT NULL,\n      end_date TEXT NOT NULL,\n      status TEXT NOT NULL DEFAULT 'upcoming',\n      created_by TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_cycles_status\n      ON cycles(status)\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_tasks_cycle_id\n      ON tasks(cycle_id)\n  `);
+
   // Prepare statements
   const insertTask = db.prepare(`
-    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (id, source, feishu_message_id, feishu_chat_id, feishu_user_id, command_text, status, priority, tags, attachments, assigned_device_id, due_date, reminder_at, description, created_at, updated_at, picked_at, started_at, completed_at, cycle_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const selectTaskById = db.prepare(`SELECT * FROM tasks WHERE id = ?`);
@@ -721,6 +756,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         task.pickedAt ?? null,
         task.startedAt ?? null,
         task.completedAt ?? null,
+        task.cycleId ?? null,
       );
 
       const row = selectTaskById.get(id) as Record<string, unknown>;
@@ -974,6 +1010,7 @@ export function createTaskStore(storagePath: string): TaskStore {
         null, // picked_at
         null, // started_at
         null, // completed_at
+        (row["cycle_id"] as string) ?? null, // cycle_id
       ));
 
       const cloned = selectTaskById.get(newId) as Record<string, unknown>;
@@ -2206,6 +2243,7 @@ export function createTaskStore(storagePath: string): TaskStore {
             task.pickedAt ?? null,
             task.startedAt ?? null,
             task.completedAt ?? null,
+            task.cycleId ?? null,
           );
 
           // Restore result fields if present
@@ -3328,6 +3366,113 @@ export function createTaskStore(storagePath: string): TaskStore {
         byPriority: Object.fromEntries(byPriorityRows.map(r => [r["priority"] as string, { totalMinutes: Number(r["total_minutes"]), entryCount: Number(r["entry_count"]) }])),
         recentDaily: dailyRows.map(r => ({ date: r["date"] as string, totalMinutes: Number(r["total_minutes"]), entryCount: Number(r["entry_count"]) })),
       };
+    },
+
+    // Phase 63: Cycle (sprint) methods
+    async createCycle(data: { name: string; description?: string; startDate: string; endDate: string; createdBy: string }): Promise<import("../../shared/types.js").Cycle> {
+      const id = `cycle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO cycles (id, name, description, start_date, end_date, status, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, data.name, data.description ?? null, data.startDate, data.endDate, "upcoming", data.createdBy, now, now);
+      const row = db.prepare("SELECT * FROM cycles WHERE id = ?").get(id) as Record<string, unknown>;
+      return rowToCycle(row);
+    },
+
+    async listCycles(status?: import("../../shared/types.js").CycleStatus): Promise<import("../../shared/types.js").CycleSummary[]> {
+      let query = "SELECT * FROM cycles";
+      const params: (string | number | null)[] = [];
+      if (status) {
+        query += " WHERE status = ?";
+        params.push(status);
+      }
+      query += " ORDER BY start_date DESC";
+      const rows = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
+      return rows.map(row => {
+        const cycle = rowToCycle(row);
+        const counts = db.prepare(`
+          SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status IN ('done', 'failed') THEN 1 ELSE 0 END) as completed
+          FROM tasks WHERE cycle_id = ?
+        `).get(cycle.id) as Record<string, unknown>;
+        return {
+          ...cycle,
+          completedTasks: Number(counts["completed"]) || 0,
+          totalTasks: Number(counts["total"]) || 0,
+        };
+      });
+    },
+
+    async getCycle(id: string): Promise<import("../../shared/types.js").CycleSummary | undefined> {
+      const row = db.prepare("SELECT * FROM cycles WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+      if (!row) return undefined;
+      const cycle = rowToCycle(row);
+      const counts = db.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status IN ('done', 'failed') THEN 1 ELSE 0 END) as completed
+        FROM tasks WHERE cycle_id = ?
+      `).get(cycle.id) as Record<string, unknown>;
+      return {
+        ...cycle,
+        completedTasks: Number(counts["completed"]) || 0,
+        totalTasks: Number(counts["total"]) || 0,
+      };
+    },
+
+    async updateCycle(id: string, updates: Partial<Pick<import("../../shared/types.js").Cycle, "name" | "description" | "startDate" | "endDate" | "status">>): Promise<import("../../shared/types.js").Cycle> {
+      const sets: string[] = [];
+      const params: (string | number | null)[] = [];
+      if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
+      if (updates.description !== undefined) { sets.push("description = ?"); params.push(updates.description); }
+      if (updates.startDate !== undefined) { sets.push("start_date = ?"); params.push(updates.startDate); }
+      if (updates.endDate !== undefined) { sets.push("end_date = ?"); params.push(updates.endDate); }
+      if (updates.status !== undefined) { sets.push("status = ?"); params.push(updates.status); }
+      if (sets.length === 0) throw new Error("No updates provided");
+      const now = new Date().toISOString();
+      sets.push("updated_at = ?");
+      params.push(now);
+      params.push(id);
+      Number(db.prepare(`UPDATE cycles SET ${sets.join(", ")} WHERE id = ?`).run(...params).changes);
+      const row = db.prepare("SELECT * FROM cycles WHERE id = ?").get(id) as Record<string, unknown>;
+      if (!row) throw new Error(`Cycle not found: ${id}`);
+      return rowToCycle(row);
+    },
+
+    async deleteCycle(id: string): Promise<boolean> {
+      // Remove cycle_id from tasks before deleting the cycle
+      db.prepare("UPDATE tasks SET cycle_id = NULL, updated_at = ? WHERE cycle_id = ?").run(new Date().toISOString(), id);
+      const result = db.prepare("DELETE FROM cycles WHERE id = ?").run(id);
+      return Number(result.changes) > 0;
+    },
+
+    async addTaskToCycle(taskId: string, cycleId: string): Promise<import("../../shared/types.js").Task> {
+      // Verify cycle exists
+      const cycle = db.prepare("SELECT id FROM cycles WHERE id = ?").get(cycleId);
+      if (!cycle) throw new Error(`Cycle not found: ${cycleId}`);
+      const now = new Date().toISOString();
+      Number(db.prepare("UPDATE tasks SET cycle_id = ?, updated_at = ? WHERE id = ?").run(cycleId, now, taskId).changes);
+      const row = selectTaskById.get(taskId) as Record<string, unknown>;
+      if (!row) throw new Error(`Task not found: ${taskId}`);
+      return rowToTask(row);
+    },
+
+    async removeTaskFromCycle(taskId: string): Promise<import("../../shared/types.js").Task> {
+      const now = new Date().toISOString();
+      Number(db.prepare("UPDATE tasks SET cycle_id = NULL, updated_at = ? WHERE id = ?").run(now, taskId).changes);
+      const row = selectTaskById.get(taskId) as Record<string, unknown>;
+      if (!row) throw new Error(`Task not found: ${taskId}`);
+      return rowToTask(row);
+    },
+
+    async listCycleTasks(cycleId: string): Promise<import("../../shared/types.js").Task[]> {
+      const rows = db.prepare(`
+        SELECT * FROM tasks WHERE cycle_id = ?
+        ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, created_at DESC
+      `).all(cycleId) as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
     },
   };
 }
