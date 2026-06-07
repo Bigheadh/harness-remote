@@ -15,7 +15,7 @@ import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
-import { recordTaskStatusChange, recordTaskCompleted } from "../metrics/collector.js";
+import { recordTaskStatusChange, recordTaskCompleted, recordSlaEvent } from "../metrics/collector.js";
 import {
   broadcastTaskUpdated,
   broadcastTaskStatusChanged,
@@ -2929,6 +2929,18 @@ export function registerTaskRoutes(
 
     const result = await store.checkAndRecordSlaBreaches();
     log.info({ warnings: result.warnings, breaches: result.breaches }, "SLA breach check completed");
+
+    // Record SLA metrics
+    if (result.warnings > 0) {
+      for (let i = 0; i < result.warnings; i++) {
+        recordSlaEvent("warning");
+      }
+    }
+    if (result.breaches > 0) {
+      for (let i = 0; i < result.breaches; i++) {
+        recordSlaEvent("breach");
+      }
+    }
 
     // Send Feishu notifications for SLA breaches and warnings
     if (feishuClient && result.details.length > 0) {

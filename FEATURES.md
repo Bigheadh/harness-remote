@@ -393,3 +393,9 @@
 - [x] Status update route: notify all task watchers via direct Feishu message when task status changes
 - [x] Bulk status update route: notify watchers for each updated task in bulk operations
 - [x] Card builder tests: 9 new tests for buildWatcherNotificationCard (info display, status transition, tags, description truncation, serialization)
+
+## Phase 51: Wire Up Unused Prometheus Metrics Recorders
+- [x] Feishu client: recordFeishuReply(true/false) after replyToMessage, sendCardMessage, sendDirectCardMessage
+- [x] Webhook dispatcher: recordWebhookDelivery(true/false) after successful/failed webhook delivery
+- [x] SLA check route: recordSlaEvent("warning"/"breach") for each detected SLA event
+- [x] API key routes: recordApiKeyOp("create"/"rotate"/"revoke"/"enable"/"disable"/"cleanup") after each operation

@@ -6,6 +6,7 @@ import { VALID_ROLES } from "../roles.js";
 import { AppError } from "../../../shared/errors.js";
 import { createLogger } from "../../../shared/logger.js";
 import type { AuditLogStore } from "../../audit/store.js";
+import { recordApiKeyOp } from "../../metrics/collector.js";
 
 const log = createLogger({ level: "info" });
 
@@ -68,6 +69,7 @@ export function registerApiKeyRoutes(
 
     const apiKey = await apiKeyStore.createApiKey(body.name.trim(), targetUserId, role);
     log.info({ apiKeyId: apiKey.id, name: apiKey.name, userId: targetUserId }, "API key created");
+    recordApiKeyOp("create");
 
     if (auditStore) {
       await auditStore.log({
@@ -121,6 +123,7 @@ export function registerApiKeyRoutes(
     try {
       const newKey = await apiKeyStore.rotateApiKey(req.params.id, gracePeriodMs);
       log.info({ apiKeyId: req.params.id, gracePeriodMs }, "API key rotated");
+      recordApiKeyOp("rotate");
 
       if (auditStore) {
         await auditStore.log({
@@ -162,6 +165,7 @@ export function registerApiKeyRoutes(
     }
 
     log.info({ apiKeyId: req.params.id }, "API key revoked");
+    recordApiKeyOp("revoke");
 
     if (auditStore) {
       await auditStore.log({
@@ -180,6 +184,7 @@ export function registerApiKeyRoutes(
     try {
       const key = await apiKeyStore.enableApiKey(req.params.id);
       log.info({ apiKeyId: req.params.id }, "API key enabled");
+      recordApiKeyOp("enable");
       return reply.send({ apiKey: key });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -196,6 +201,7 @@ export function registerApiKeyRoutes(
     try {
       const key = await apiKeyStore.disableApiKey(req.params.id);
       log.info({ apiKeyId: req.params.id }, "API key disabled");
+      recordApiKeyOp("disable");
       return reply.send({ apiKey: key });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
@@ -211,6 +217,7 @@ export function registerApiKeyRoutes(
   server.post("/api/keys/cleanup-expired", async (_req, reply) => {
     const cleaned = await apiKeyStore.deleteExpiredPreviousKeys();
     log.info({ cleaned }, "Expired previous API keys cleaned up");
+    recordApiKeyOp("cleanup");
     return reply.send({ ok: true, cleaned });
   });
 }

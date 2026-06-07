@@ -8,6 +8,7 @@ import type {
 } from "../../shared/types.js";
 import type { WebhookStore } from "./store.js";
 import { createLogger } from "../../shared/logger.js";
+import { recordWebhookDelivery } from "../metrics/collector.js";
 
 const log = createLogger({ level: "info" });
 
@@ -124,6 +125,7 @@ async function deliverToWebhook(
         { webhookId: sub.id, event, statusCode: response.status, durationMs, attempt },
         "Webhook delivered successfully",
       );
+      recordWebhookDelivery(true);
       return;
     }
 
@@ -144,6 +146,7 @@ async function deliverToWebhook(
         { webhookId: sub.id, event, statusCode: response.status },
         "Webhook delivery failed (non-retryable)",
       );
+      recordWebhookDelivery(false);
       return;
     }
 
