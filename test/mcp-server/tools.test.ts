@@ -1813,6 +1813,34 @@ function createMockClient(): TaskApiClient & {
       ];
     },
 
+    async getCycleProgress(cycleId: string): Promise<import("../../src/shared/types.js").CycleProgress> {
+      calls.push({ method: "getCycleProgress", args: [cycleId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        cycleId,
+        cycleName: "Sprint 1",
+        startDate: "2026-06-01",
+        endDate: "2026-06-14",
+        status: "active",
+        totalTasks: 10,
+        completedTasks: 4,
+        inProgressTasks: 2,
+        pendingTasks: 3,
+        failedTasks: 1,
+        completionPercent: 40,
+        velocityPerDay: 0.6,
+        estimatedDaysRemaining: 10,
+        burndown: [
+          { date: "2026-06-01", remaining: 10, completed: 0, ideal: 10 },
+          { date: "2026-06-08", remaining: 6, completed: 4, ideal: 5 },
+        ],
+        statusBreakdown: { pending: 3, picked: 1, running: 1, done: 4, failed: 1 },
+        priorityBreakdown: { low: 2, normal: 5, high: 2, urgent: 1 },
+        totalEstimatedMinutes: 600,
+        totalActualMinutes: 240,
+      };
+    },
+
     async getAuditCount(): Promise<number> {
       calls.push({ method: "getAuditCount", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1885,8 +1913,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 139 tools", () => {
-        expect(mockServer.registrations).toHaveLength(139);
+      it("registers all 140 tools", () => {
+        expect(mockServer.registrations).toHaveLength(140);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -4329,6 +4357,41 @@ describe("MCP tools", () => {
     it("returns error when listCycleTasks fails", async () => {
       mock.failWith = "Cycle not found";
       const tool = mockServer.registrations.find((r) => r.name === "list_cycle_tasks")!;
+      const result = await tool.handler({ cycleId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Cycle not found");
+    });
+  });
+
+  describe("get_cycle_progress", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle_progress");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("cycleId");
+    });
+
+    it("returns burndown data from client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle_progress")!;
+      const result = await tool.handler({ cycleId: "cycle_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.progress.cycleId).toBe("cycle_001");
+      expect(data.progress.totalTasks).toBe(10);
+      expect(data.progress.completedTasks).toBe(4);
+      expect(data.progress.completionPercent).toBe(40);
+      expect(data.progress.velocityPerDay).toBe(0.6);
+      expect(data.progress.burndown).toHaveLength(2);
+      expect(data.progress.statusBreakdown.done).toBe(4);
+      expect(data.progress.priorityBreakdown.urgent).toBe(1);
+      expect(mock.calls[0].method).toBe("getCycleProgress");
+    });
+
+    it("returns error when getCycleProgress fails", async () => {
+      mock.failWith = "Cycle not found";
+      const tool = mockServer.registrations.find((r) => r.name === "get_cycle_progress")!;
       const result = await tool.handler({ cycleId: "nonexistent" });
 
       expect(result.isError).toBe(true);

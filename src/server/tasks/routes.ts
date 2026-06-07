@@ -4337,4 +4337,25 @@ export function registerTaskRoutes(
       return reply.code(500).send({ error: { code: "internal_error", message: "Internal server error" } });
     }
   });
+
+  // GET /api/cycles/:id/progress — cycle burndown and progress data
+  server.get("/api/cycles/:id/progress", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "dashboard.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+    const { id } = req.params as { id: string };
+    try {
+      const progress = await store.getCycleProgress(id);
+      return reply.send({ progress });
+    } catch (e) {
+      log.error({ err: e, cycleId: id }, "Failed to get cycle progress");
+      return reply.code(500).send({ error: { code: "internal_error", message: "Internal server error" } });
+    }
+  });
 }

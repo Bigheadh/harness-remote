@@ -193,6 +193,7 @@ export interface TaskStore {
   addTaskToCycle(taskId: string, cycleId: string): Promise<import("../../shared/types.js").Task>;
   removeTaskFromCycle(taskId: string): Promise<import("../../shared/types.js").Task>;
   listCycleTasks(cycleId: string): Promise<import("../../shared/types.js").Task[]>;
+  getCycleProgress(cycleId: string): Promise<import("../../shared/types.js").CycleProgress>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -3499,6 +3500,94 @@ export function createTaskStore(storagePath: string): TaskStore {
         ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, created_at DESC
       `).all(cycleId) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
+    },
+
+    async getCycleProgress(cycleId: string): Promise<import("../../shared/types.js").CycleProgress> {
+      const cycleRow = db.prepare("SELECT * FROM cycles WHERE id = ?").get(cycleId) as Record<string, unknown> | undefined;
+      if (!cycleRow) throw new Error(`Cycle not found: ${cycleId}`);
+
+      const cycle = rowToCycle(cycleRow);
+      const startDate = new Date(cycle.startDate);
+      const endDate = new Date(cycle.endDate);
+
+      // Get all tasks in this cycle
+      const taskRows = db.prepare("SELECT * FROM tasks WHERE cycle_id = ?").all(cycleId) as Array<Record<string, unknown>>;
+      const tasks = taskRows.map(rowToTask);
+      const totalTasks = tasks.length;
+
+      // Status breakdown
+      const statusBreakdown = { pending: 0, picked: 0, running: 0, done: 0, failed: 0 };
+      const priorityBreakdown = { low: 0, normal: 0, high: 0, urgent: 0 };
+      let totalEstimatedMinutes = 0;
+      let totalActualMinutes = 0;
+
+      for (const task of tasks) {
+        statusBreakdown[task.status as keyof typeof statusBreakdown]++;
+        priorityBreakdown[task.priority as keyof typeof priorityBreakdown]++;
+        totalEstimatedMinutes += task.estimatedMinutes ?? 0;
+        totalActualMinutes += task.actualMinutes ?? 0;
+      }
+
+      const completedTasks = statusBreakdown.done;
+      const failedTasks = statusBreakdown.failed;
+      const inProgressTasks = statusBreakdown.picked + statusBreakdown.running;
+      const pendingTasks = statusBreakdown.pending;
+      const completionPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+      // Compute velocity (tasks completed per day)
+      const now = new Date();
+      const elapsedDays = Math.max(1, Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const velocityPerDay = completedTasks > 0 ? Math.round((completedTasks / elapsedDays) * 10) / 10 : 0;
+      const remainingTasks = totalTasks - completedTasks - failedTasks;
+      const estimatedDaysRemaining = velocityPerDay > 0 ? Math.round((remainingTasks / velocityPerDay) * 10) / 10 : -1;
+
+      // Build burndown data
+      const totalDays = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+      const burndown: import("../../shared/types.js").BurndownDataPoint[] = [];
+
+      // Get completion dates for tasks in this cycle
+      const completedDates: Record<string, number> = {};
+      for (const task of tasks) {
+        if (task.status === "done" && task.completedAt) {
+          const dateStr = task.completedAt.slice(0, 10);
+          completedDates[dateStr] = (completedDates[dateStr] || 0) + 1;
+        }
+      }
+
+      let cumulativeCompleted = 0;
+      for (let i = 0; i <= totalDays; i++) {
+        const dayDate = new Date(startDate);
+        dayDate.setDate(dayDate.getDate() + i);
+        const dateStr = dayDate.toISOString().slice(0, 10);
+
+        // Count tasks completed on this day
+        cumulativeCompleted += completedDates[dateStr] ?? 0;
+        const remaining = totalTasks - cumulativeCompleted;
+        const ideal = Math.round(totalTasks * (1 - i / totalDays));
+
+        burndown.push({ date: dateStr, remaining: Math.max(0, remaining), completed: cumulativeCompleted, ideal: Math.max(0, ideal) });
+      }
+
+      return {
+        cycleId: cycle.id,
+        cycleName: cycle.name,
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        status: cycle.status,
+        totalTasks,
+        completedTasks,
+        inProgressTasks,
+        pendingTasks,
+        failedTasks,
+        completionPercent,
+        velocityPerDay,
+        estimatedDaysRemaining,
+        burndown,
+        statusBreakdown,
+        priorityBreakdown,
+        totalEstimatedMinutes,
+        totalActualMinutes,
+      };
     },
   };
 }

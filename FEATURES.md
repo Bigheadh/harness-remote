@@ -539,3 +539,13 @@
 - [x] MCP tool: import_tasks_csv — AI agents can import tasks from CSV with flexible column mapping
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (138 → 139)
+
+## Phase 67: Cycle Progress / Burndown
+- [x] Shared types: BurndownDataPoint, CycleStatusBreakdown, CyclePriorityBreakdown, CycleProgress interfaces
+- [x] Store layer: getCycleProgress(cycleId) method with burndown computation, velocity, status/priority breakdowns
+- [x] API route: GET /api/cycles/:id/progress endpoint with auth
+- [x] MCP client: getCycleProgress(cycleId) HTTP client method
+- [x] MCP tool: get_cycle_progress — AI agents can get burndown data, velocity, and progress metrics for cycles
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (139 → 140)
+- [x] Added 3 new tests for get_cycle_progress tool (registration, burndown data, error case)

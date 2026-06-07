@@ -190,6 +190,7 @@ export interface TaskApiClient {
   addTaskToCycle(taskId: string, cycleId: string): Promise<import("../shared/types.js").Task>;
   removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task>;
   listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]>;
+  getCycleProgress(cycleId: string): Promise<import("../shared/types.js").CycleProgress>;
   // Audit management methods
   getAuditCount(): Promise<number>;
   cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
@@ -2304,6 +2305,16 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
       return data.tasks;
+    },
+
+    async getCycleProgress(cycleId: string): Promise<import("../shared/types.js").CycleProgress> {
+      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/progress`, { method: "GET", headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get cycle progress: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { progress: import("../shared/types.js").CycleProgress };
+      return data.progress;
     },
 
     async getAuditCount(): Promise<number> {

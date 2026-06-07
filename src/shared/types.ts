@@ -378,6 +378,75 @@ export interface CycleSummary extends Cycle {
   totalTasks: number;
 }
 
+/** A single data point in a cycle burndown chart */
+export interface BurndownDataPoint {
+  /** Date string (YYYY-MM-DD) */
+  date: string;
+  /** Number of tasks remaining (not done/failed) on this date */
+  remaining: number;
+  /** Number of tasks completed (done) on this date */
+  completed: number;
+  /** Ideal remaining count based on linear interpolation from total to 0 */
+  ideal: number;
+}
+
+/** Status breakdown for a cycle */
+export interface CycleStatusBreakdown {
+  pending: number;
+  picked: number;
+  running: number;
+  done: number;
+  failed: number;
+}
+
+/** Priority breakdown for a cycle */
+export interface CyclePriorityBreakdown {
+  low: number;
+  normal: number;
+  high: number;
+  urgent: number;
+}
+
+/** Full cycle progress/burndown data */
+export interface CycleProgress {
+  /** Cycle ID */
+  cycleId: string;
+  /** Cycle name */
+  cycleName: string;
+  /** Cycle start date */
+  startDate: string;
+  /** Cycle end date */
+  endDate: string;
+  /** Cycle status */
+  status: CycleStatus;
+  /** Total tasks in the cycle */
+  totalTasks: number;
+  /** Tasks completed (done status) */
+  completedTasks: number;
+  /** Tasks in progress (picked + running) */
+  inProgressTasks: number;
+  /** Tasks not yet started (pending) */
+  pendingTasks: number;
+  /** Tasks that failed */
+  failedTasks: number;
+  /** Completion percentage (0-100) */
+  completionPercent: number;
+  /** Tasks completed per day (average) */
+  velocityPerDay: number;
+  /** Estimated days to complete remaining tasks at current velocity */
+  estimatedDaysRemaining: number;
+  /** Burndown chart data points */
+  burndown: BurndownDataPoint[];
+  /** Status breakdown */
+  statusBreakdown: CycleStatusBreakdown;
+  /** Priority breakdown */
+  priorityBreakdown: CyclePriorityBreakdown;
+  /** Total estimated minutes across all tasks */
+  totalEstimatedMinutes: number;
+  /** Total actual minutes spent (from time entries) */
+  totalActualMinutes: number;
+}
+
 /** SLA policy — defines resolution time targets per priority or tag */
 export interface SlaPolicy {
   id: string;

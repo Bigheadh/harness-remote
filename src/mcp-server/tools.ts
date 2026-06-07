@@ -5487,6 +5487,37 @@ export function registerMcpTools(
     },
   );
 
+  // get_cycle_progress tool
+  server.registerTool(
+    "get_cycle_progress",
+    {
+      description:
+        "Get burndown and progress data for a cycle (sprint). Returns completion percentage, velocity (tasks/day), status breakdown, priority breakdown, burndown chart data (actual vs ideal), and time tracking summary (estimated vs actual minutes). Use this to track sprint health and generate burndown charts.",
+      inputSchema: {
+        cycleId: z.string().describe("The ID of the cycle to get progress data for"),
+      },
+    },
+    async (args) => {
+      try {
+        const progress = await client.getCycleProgress(args.cycleId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ progress }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // audit_count tool
   server.registerTool(
     "audit_count",
