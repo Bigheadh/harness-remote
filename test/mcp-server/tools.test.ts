@@ -937,6 +937,23 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async reopenTask(taskId: string): Promise<Task> {
+      calls.push({ method: "reopenTask", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_reopen",
+        feishuChatId: "oc_reopen",
+        feishuUserId: "ou_reopen",
+        commandText: "重新打开任务",
+        status: "pending",
+        reopenedCount: 1,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:05:00.000Z",
+      };
+    },
+
     async pinTask(taskId: string): Promise<Task> {
       calls.push({ method: "pinTask", args: [taskId] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1928,8 +1945,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 141 tools", () => {
-        expect(mockServer.registrations).toHaveLength(141);
+      it("registers all 142 tools", () => {
+        expect(mockServer.registrations).toHaveLength(142);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -4445,6 +4462,36 @@ describe("MCP tools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Connection refused");
+    });
+  });
+
+  describe("reopen_task", () => {
+    it("registers reopen_task tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "reopen_task");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("reopen");
+    });
+
+    it("reopens task via client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "reopen_task")!;
+      const result = await tool.handler({ taskId: "task_123" });
+
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.status).toBe("pending");
+      expect(parsed.task.reopenedCount).toBe(1);
+      expect(mock.calls[0].method).toBe("reopenTask");
+      expect(mock.calls[0].args[0]).toBe("task_123");
+    });
+
+    it("returns error when reopenTask fails", async () => {
+      mock.failWith = "Can only reopen done or failed tasks";
+      const tool = mockServer.registrations.find((r) => r.name === "reopen_task")!;
+      const result = await tool.handler({ taskId: "task_bad" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Can only reopen");
     });
   });
 });

@@ -183,18 +183,20 @@ describe("updateTaskStatus", () => {
     await expect(store.updateTaskStatus(task.id, "failed")).rejects.toThrow("Invalid status transition");
   });
 
-  it("rejects transition from done (terminal state)", async () => {
+  it("allows transition from done back to pending (reopen)", async () => {
     const task = await store.createTask(makeTask());
     await store.updateTaskStatus(task.id, "running");
     await store.updateTaskStatus(task.id, "done");
-    await expect(store.updateTaskStatus(task.id, "pending")).rejects.toThrow("Invalid status transition");
+    const reopened = await store.updateTaskStatus(task.id, "pending");
+    expect(reopened.status).toBe("pending");
   });
 
-  it("rejects transition from failed (terminal state)", async () => {
+  it("allows transition from failed back to pending (reopen)", async () => {
     const task = await store.createTask(makeTask());
     await store.updateTaskStatus(task.id, "running");
     await store.updateTaskStatus(task.id, "failed");
-    await expect(store.updateTaskStatus(task.id, "pending")).rejects.toThrow("Invalid status transition");
+    const reopened = await store.updateTaskStatus(task.id, "pending");
+    expect(reopened.status).toBe("pending");
   });
 
   it("throws for nonexistent task", async () => {

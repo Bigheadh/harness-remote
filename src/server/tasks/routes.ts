@@ -1702,6 +1702,51 @@ export function registerTaskRoutes(
     }
   });
 
+  // POST /api/tasks/:id/reopen - reopen a done/failed task back to pending (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+  }>("/api/tasks/:id/reopen", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+
+    try {
+      const reopenedTask = await store.reopenTask(id);
+      log.info({ taskId: id, reopenedCount: reopenedTask.reopenedCount }, "Task reopened");
+      if (auditStore) {
+        await auditStore.log({
+          action: "task.status_changed",
+          taskId: id,
+          actor: authCtx.user?.username ?? "api",
+          actorType: "api",
+          details: { action: "reopen", reopenedCount: reopenedTask.reopenedCount },
+        });
+      }
+      broadcastTaskUpdated(reopenedTask);
+      return reply.code(200).send({ task: reopenedTask });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      if (e instanceof Error && e.message.includes("Can only reopen")) {
+        return reply.code(400).send({
+          error: { code: "invalid_transition", message: e.message },
+        });
+      }
+      throw e;
+    }
+  });
+
   // POST /api/tasks/:id/pin - pin a task to top of listing (requires tasks.write)
   server.post<{
     Params: { id: string };

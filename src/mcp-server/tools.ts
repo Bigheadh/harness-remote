@@ -2849,6 +2849,40 @@ export function registerMcpTools(
     },
   );
 
+  // reopen_task tool
+  server.registerTool(
+    "reopen_task",
+    {
+      description:
+        "Reopen a done or failed task back to 'pending' status. Clears previous results, processing timestamps, and increments the reopen counter. Only works on tasks in 'done' or 'failed' status.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to reopen"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.reopenTask(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Task reopened successfully (reopen #${task.reopenedCount ?? 1}). Status is now pending.`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // pin_task tool
   server.registerTool(
     "pin_task",

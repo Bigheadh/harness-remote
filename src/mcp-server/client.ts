@@ -94,6 +94,8 @@ export interface TaskApiClient {
   retryTask(taskId: string): Promise<Task>;
   // Task clone
   cloneTask(taskId: string): Promise<Task>;
+  // Task reopen
+  reopenTask(taskId: string): Promise<Task>;
   // Task pinning
   pinTask(taskId: string): Promise<Task>;
   unpinTask(taskId: string): Promise<Task>;
@@ -1313,6 +1315,19 @@ export function createTaskApiClient(
       if (!response.ok) {
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to clone task: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async reopenTask(taskId: string): Promise<Task> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/reopen`, {
+        method: "POST",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to reopen task: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       const data = (await response.json()) as { task: Task };
       return data.task;

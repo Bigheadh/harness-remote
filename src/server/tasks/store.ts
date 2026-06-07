@@ -126,6 +126,8 @@ export interface TaskStore {
   retryTask(taskId: string): Promise<Task>;
   // Task cloning methods
   cloneTask(taskId: string): Promise<Task>;
+  // Task reopening — reopen a done/failed task back to pending
+  reopenTask(taskId: string): Promise<Task>;
   // Task pinning methods
   pinTask(taskId: string): Promise<Task>;
   unpinTask(taskId: string): Promise<Task>;
@@ -202,8 +204,8 @@ const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   pending: ["picked", "running"],
   picked: ["running"],
   running: ["done", "failed"],
-  done: [],
-  failed: [],
+  done: ["pending"],
+  failed: ["pending"],
 };
 
 function isValidTransition(current: TaskStatus, next: TaskStatus): boolean {
@@ -260,6 +262,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     estimatedMinutes: row["estimated_minutes"] != null ? Number(row["estimated_minutes"]) : undefined,
     actualMinutes: row["actual_minutes"] != null ? Number(row["actual_minutes"]) : undefined,
     cycleId: (row["cycle_id"] as string) ?? undefined,
+    reopenedCount: row["reopened_count"] != null ? Number(row["reopened_count"]) : undefined,
   };
 }
 
@@ -652,6 +655,9 @@ export function createTaskStore(storagePath: string): TaskStore {
   // Phase 63: Cycles (sprints) table
   try { db.exec(`ALTER TABLE tasks ADD COLUMN cycle_id TEXT`); } catch {}
 
+  // Phase 69: Task reopening support
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN reopened_count INTEGER DEFAULT 0`); } catch {}
+
   db.exec(`\n    CREATE TABLE IF NOT EXISTS cycles (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      description TEXT,\n      start_date TEXT NOT NULL,\n      end_date TEXT NOT NULL,\n      status TEXT NOT NULL DEFAULT 'upcoming',\n      created_by TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL\n    )\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_cycles_status\n      ON cycles(status)\n  `);
@@ -1026,6 +1032,33 @@ export function createTaskStore(storagePath: string): TaskStore {
 
       const cloned = selectTaskById.get(newId) as Record<string, unknown>;
       return rowToTask(cloned);
+    },
+
+    async reopenTask(taskId: string): Promise<Task> {
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const currentStatus = row["status"] as TaskStatus;
+      if (currentStatus !== "done" && currentStatus !== "failed") {
+        throw new Error(
+          `Can only reopen done or failed tasks, current status: ${currentStatus}`,
+        );
+      }
+
+      const now = new Date().toISOString();
+      const currentReopenCount = row["reopened_count"] as number ?? 0;
+
+      // Reset to pending, clear processing timestamps and results, increment reopen count
+      db.prepare(
+        `UPDATE tasks SET status = 'pending', updated_at = ?, completed_at = NULL, picked_at = NULL, started_at = NULL, result_summary = NULL, result_details = NULL, reopened_count = ? WHERE id = ?`,
+      ).run(now, currentReopenCount + 1, taskId);
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
     },
 
     async pinTask(taskId: string): Promise<Task> {

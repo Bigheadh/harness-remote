@@ -558,3 +558,17 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (140 → 141)
 - [x] Added 3 new tests for get_global_activity tool (registration, data return, error case)
+
+## Phase 69: Task Reopening
+- [x] Shared types: added reopenedCount field to Task interface
+- [x] Store layer: updated VALID_TRANSITIONS to allow done→pending and failed→pending
+- [x] Store layer: added reopened_count column migration
+- [x] Store layer: added reopenTask(taskId) method — resets status, clears timestamps, increments counter
+- [x] API route: POST /api/tasks/:id/reopen — reopens done/failed tasks with auth
+- [x] MCP client interface: reopenTask method
+- [x] MCP client implementation: HTTP POST to /api/tasks/:id/reopen
+- [x] MCP tool: reopen_task — AI agents can reopen completed or failed tasks back to pending
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (141 → 142)
+- [x] Added 3 new tests for reopen_task tool (registration, success, error)
+- [x] Updated store tests: done/failed → pending transitions now succeed (reopen)

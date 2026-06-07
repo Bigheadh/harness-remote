@@ -83,6 +83,8 @@ export interface Task {
   actualMinutes?: number;
   /** Optional: ID of the cycle (sprint) this task belongs to */
   cycleId?: string;
+  /** Number of times this task has been reopened from done/failed */
+  reopenedCount?: number;
 }
 
 /** A time entry — a block of time logged against a task */
