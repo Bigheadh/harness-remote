@@ -633,6 +633,30 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    // Phase 58: Task Relationships
+    async addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../../src/shared/types.js").TaskRelationshipType): Promise<void> {
+      calls.push({ method: "addRelationship", args: [taskId, relatedTaskId, relationshipType] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../../src/shared/types.js").TaskRelationshipType): Promise<void> {
+      calls.push({ method: "removeRelationship", args: [taskId, relatedTaskId, relationshipType] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
+    async listRelationships(taskId: string): Promise<import("../../src/shared/types.js").TaskRelationship[]> {
+      calls.push({ method: "listRelationships", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [
+        {
+          taskId,
+          relatedTaskId: "task_related_001",
+          relationshipType: "blocks",
+          createdAt: "2026-06-01T12:00:00.000Z",
+        },
+      ];
+    },
+
     async lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../../src/shared/types.js").TaskLock> {
       calls.push({ method: "lockTask", args: [taskId, deviceId, ttlMs] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -1653,8 +1677,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 116 tools", () => {
-        expect(mockServer.registrations).toHaveLength(116);
+      it("registers all 120 tools", () => {
+        expect(mockServer.registrations).toHaveLength(120);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3500,6 +3524,94 @@ describe("MCP tools", () => {
     it("returns error when getActivityFeed fails", async () => {
       mock.failWith = "Task not found";
       const tool = mockServer.registrations.find((r) => r.name === "get_task_activity")!;
+      const result = await tool.handler({ taskId: "nonexistent" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Task not found");
+    });
+  });
+
+  // Phase 58: Task Relationship Tools
+  describe("add_task_relationship", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_relationship");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+      expect(tool!.inputSchema).toHaveProperty("relatedTaskId");
+      expect(tool!.inputSchema).toHaveProperty("relationshipType");
+    });
+
+    it("calls addRelationship with correct args", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_relationship")!;
+      const result = await tool.handler({ taskId: "task_001", relatedTaskId: "task_002", relationshipType: "blocks" });
+
+      expect(result.isError).toBeUndefined();
+      expect(mock.calls[0].method).toBe("addRelationship");
+      expect(mock.calls[0].args).toEqual(["task_001", "task_002", "blocks"]);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.message).toContain("blocks");
+    });
+
+    it("returns error when addRelationship fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "add_task_relationship")!;
+      const result = await tool.handler({ taskId: "nonexistent", relatedTaskId: "task_002", relationshipType: "relates_to" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Task not found");
+    });
+  });
+
+  describe("remove_task_relationship", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_relationship");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+      expect(tool!.inputSchema).toHaveProperty("relatedTaskId");
+    });
+
+    it("calls removeRelationship with correct args", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_relationship")!;
+      const result = await tool.handler({ taskId: "task_001", relatedTaskId: "task_002", relationshipType: "duplicates" });
+
+      expect(result.isError).toBeUndefined();
+      expect(mock.calls[0].method).toBe("removeRelationship");
+      expect(mock.calls[0].args).toEqual(["task_001", "task_002", "duplicates"]);
+    });
+
+    it("returns error when removeRelationship fails", async () => {
+      mock.failWith = "Internal error";
+      const tool = mockServer.registrations.find((r) => r.name === "remove_task_relationship")!;
+      const result = await tool.handler({ taskId: "task_001", relatedTaskId: "task_002" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Internal error");
+    });
+  });
+
+  describe("list_task_relationships", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_relationships");
+      expect(tool).toBeDefined();
+      expect(tool!.inputSchema).toHaveProperty("taskId");
+    });
+
+    it("returns relationships from client", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_relationships")!;
+      const result = await tool.handler({ taskId: "task_001" });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.relationships).toHaveLength(1);
+      expect(data.relationships[0].relationshipType).toBe("blocks");
+      expect(mock.calls[0].method).toBe("listRelationships");
+    });
+
+    it("returns error when listRelationships fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "list_task_relationships")!;
       const result = await tool.handler({ taskId: "nonexistent" });
 
       expect(result.isError).toBe(true);

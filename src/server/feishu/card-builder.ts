@@ -56,11 +56,20 @@ export const STATUS_COLORS: Record<TaskStatus, CardTemplate> = {
   failed: "red",
 };
 
+/** Card action button element */
+interface CardButton {
+  tag: "button";
+  text: { content: string; tag: "plain_text" };
+  type: "primary" | "danger" | "default";
+  value: Record<string, string>;
+}
+
 interface CardElement {
   tag: string;
   text?: { content: string; tag: string };
   content?: string;
   elements?: Array<{ tag: string; content?: string }>;
+  actions?: CardButton[];
 }
 
 export interface FeishuCard {
@@ -123,6 +132,31 @@ export function buildTaskCreatedCard(task: Task): FeishuCard {
       },
     });
   }
+
+  // Action buttons
+  elements.push({
+    tag: "action",
+    actions: [
+      {
+        tag: "button",
+        text: { content: "👆 Pick Task", tag: "plain_text" },
+        type: "primary",
+        value: { action: "pick_task", taskId: task.id },
+      },
+      {
+        tag: "button",
+        text: { content: "✅ Mark Done", tag: "plain_text" },
+        type: "default",
+        value: { action: "complete_task", taskId: task.id },
+      },
+      {
+        tag: "button",
+        text: { content: "📦 Archive", tag: "plain_text" },
+        type: "danger",
+        value: { action: "archive_task", taskId: task.id },
+      },
+    ],
+  });
 
   // Separator
   elements.push({ tag: "hr" });

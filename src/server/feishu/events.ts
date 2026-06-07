@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import type { Task, TaskPriority, Attachment, FeishuFileType } from "../../shared/types.js";
+import type { Task, TaskPriority, TaskStatus, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
@@ -429,6 +429,132 @@ export function registerFeishuRoutes(
   webhookStore?: WebhookStore,
   feishuClient?: FeishuReplyClient,
 ): void {
+  // Card action callback endpoint (handles button clicks on Feishu cards)
+  server.post("/feishu/card-action", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as Record<string, unknown>;
+
+    // URL verification challenge
+    if (body && typeof body === "object" && "challenge" in body) {
+      const challenge = body["challenge"];
+      if (typeof challenge === "string") {
+        return reply.send({ challenge });
+      }
+      return reply.code(400).send({ error: "Invalid challenge" });
+    }
+
+    // Extract event info
+    const header = body?.["header"] as Record<string, unknown> | undefined;
+    const event = body?.["event"] as Record<string, unknown> | undefined;
+    if (!event) {
+      log.debug({}, "Card action: missing event");
+      return reply.send({ ok: true });
+    }
+
+    // Verify token
+    if (header?.["token"] && feishuConfig.verificationToken) {
+      if (header["token"] !== feishuConfig.verificationToken) {
+        log.warn({}, "Card action: invalid verification token");
+        return reply.code(401).send({ error: "Invalid verification token" });
+      }
+    }
+
+    // Extract action data
+    const action = event["action"] as Record<string, unknown> | undefined;
+    const value = action?.["value"] as Record<string, string> | undefined;
+    const operator = event["operator"] as Record<string, unknown> | undefined;
+
+    if (!value || !value["action"] || !value["taskId"]) {
+      log.debug({}, "Card action: missing action or taskId");
+      return reply.send({ ok: true });
+    }
+
+    const actionType = value["action"];
+    const taskId = value["taskId"];
+    const userId = (operator?.["open_id"] as string) || "unknown";
+
+    log.info({ actionType, taskId, userId }, "Card action received");
+
+    try {
+      const task = await store.getTask(taskId);
+      if (!task) {
+        log.warn({ taskId }, "Card action: task not found");
+        return reply.send({ toast: { type: "error", content: "Task " + taskId + " not found" } });
+      }
+
+      let newStatus: TaskStatus | null = null;
+      let toastMessage = "";
+
+      if (actionType === "pick_task") {
+        if (task.status !== "pending") {
+          toastMessage = "Cannot pick: task is already " + task.status;
+          return reply.send({ toast: { type: "warning", content: toastMessage } });
+        }
+        newStatus = "picked";
+        toastMessage = "Task picked! 👆";
+      } else if (actionType === "complete_task") {
+        if (task.status === "done" || task.status === "failed") {
+          toastMessage = "Task is already " + task.status;
+          return reply.send({ toast: { type: "warning", content: toastMessage } });
+        }
+        newStatus = "done";
+        toastMessage = "Task marked as done! ✅";
+      } else if (actionType === "archive_task") {
+        await store.archiveTask(taskId);
+        toastMessage = "Task archived! 📦";
+        if (auditStore) {
+          await auditStore.log({
+            action: "task.archived",
+            taskId,
+            actor: userId,
+            actorType: "feishu",
+            details: { source: "card_action" },
+          });
+        }
+        return reply.send({
+          toast: { type: "success", content: toastMessage },
+        });
+      } else {
+        log.warn({ actionType }, "Card action: unknown action type");
+        return reply.send({ ok: true });
+      }
+
+      if (newStatus) {
+        await store.updateTaskStatus(taskId, newStatus);
+        if (auditStore) {
+          await auditStore.log({
+            action: "task.status_changed",
+            taskId,
+            actor: userId,
+            actorType: "feishu",
+            details: { from: task.status, to: newStatus, source: "card_action" },
+          });
+        }
+        if (webhookStore) {
+          const updatedTask = await store.getTask(taskId);
+          if (updatedTask) {
+            dispatchWebhook(webhookStore, "task.status_changed", updatedTask, {
+              previousStatus: task.status,
+              source: "card_action",
+            }).catch(() => {});
+          }
+        }
+        const updatedTask = await store.getTask(taskId);
+        if (updatedTask) {
+          broadcastTaskCreated(updatedTask);
+        }
+      }
+
+      return reply.send({
+        toast: { type: "success", content: toastMessage },
+      });
+    } catch (err) {
+      log.error({ err: err instanceof Error ? err.message : String(err), taskId }, "Card action failed");
+      return reply.send({
+        toast: { type: "error", content: "Action failed. Please try again." },
+      });
+    }
+  });
+
   server.post("/feishu/events", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as Record<string, unknown>;
 

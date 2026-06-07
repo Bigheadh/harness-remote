@@ -135,6 +135,10 @@ export interface TaskStore {
   listTasksByUser(userId: string, limit?: number): Promise<Task[]>;
   // Task dependency graph — full recursive tree traversal
   getDependencyGraph(taskId: string): Promise<import("../../shared/types.js").DependencyGraph>;
+  // Task relationship methods (blocks, relates_to, duplicates, etc.)
+  addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../../shared/types.js").TaskRelationshipType): Promise<void>;
+  removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../../shared/types.js").TaskRelationshipType): Promise<void>;
+  listRelationships(taskId: string): Promise<import("../../shared/types.js").TaskRelationship[]>;
   // Task lock methods (TTL-based locks to prevent concurrent processing)
   lockTask(taskId: string, deviceId: string, ttlMs?: number): Promise<import("../../shared/types.js").TaskLock>;
   unlockTask(taskId: string, deviceId: string): Promise<boolean>;
@@ -459,6 +463,10 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   // Phase 49: estimated_minutes on tasks
   try { db.exec(`ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER`); } catch {}
+
+  // Phase 58: relationship_type and created_at on task_dependencies
+  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN relationship_type TEXT NOT NULL DEFAULT 'depends_on'`); } catch {}
+  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`); } catch {}
 
   // Time entries table (Phase 49: Task Time Tracking)
   db.exec(`
@@ -1853,6 +1861,56 @@ export function createTaskStore(storagePath: string): TaskStore {
         totalNodes,
         edges,
       };
+    },
+
+    // ── Task Relationships (Phase 58) ─────────────────────────
+
+    async addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../../shared/types.js").TaskRelationshipType): Promise<void> {
+      // Verify both tasks exist
+      const taskRow = selectTaskById.get(taskId) as Record<string, unknown> | undefined;
+      if (!taskRow) throw new Error(`Task not found: ${taskId}`);
+      const relatedRow = selectTaskById.get(relatedTaskId) as Record<string, unknown> | undefined;
+      if (!relatedRow) throw new Error(`Related task not found: ${relatedTaskId}`);
+      if (taskId === relatedTaskId) throw new Error(`Task cannot have a relationship with itself`);
+
+      const now = new Date().toISOString();
+      // Upsert: delete existing relationship of same type, then insert
+      db.prepare(
+        `DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ? AND relationship_type = ?`
+      ).run(taskId, relatedTaskId, relationshipType);
+      db.prepare(
+        `INSERT INTO task_dependencies (task_id, depends_on_task_id, relationship_type, created_at) VALUES (?, ?, ?, ?)`
+      ).run(taskId, relatedTaskId, relationshipType, now);
+      db.prepare(`UPDATE tasks SET updated_at = ? WHERE id = ?`).run(now, taskId);
+    },
+
+    async removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../../shared/types.js").TaskRelationshipType): Promise<void> {
+      const now = new Date().toISOString();
+      if (relationshipType) {
+        db.prepare(
+          `DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ? AND relationship_type = ?`
+        ).run(taskId, relatedTaskId, relationshipType);
+      } else {
+        db.prepare(
+          `DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ?`
+        ).run(taskId, relatedTaskId);
+      }
+      db.prepare(`UPDATE tasks SET updated_at = ? WHERE id = ?`).run(now, taskId);
+    },
+
+    async listRelationships(taskId: string): Promise<import("../../shared/types.js").TaskRelationship[]> {
+      const rows = db.prepare(
+        `SELECT task_id, depends_on_task_id, relationship_type, created_at
+         FROM task_dependencies
+         WHERE task_id = ? OR depends_on_task_id = ?
+         ORDER BY created_at DESC`
+      ).all(taskId, taskId) as Array<Record<string, unknown>>;
+      return rows.map((r) => ({
+        taskId: r["task_id"] as string,
+        relatedTaskId: r["depends_on_task_id"] as string,
+        relationshipType: r["relationship_type"] as import("../../shared/types.js").TaskRelationshipType,
+        createdAt: r["created_at"] as string,
+      }));
     },
 
     // ── Task Locks ───────────────────────────────────────────────

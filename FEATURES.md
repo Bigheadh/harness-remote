@@ -449,3 +449,26 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (115 → 116)
 - [x] Added 4 new tests for set_task_priority tool (registration, urgent/low priority, error case)
+
+## Phase 58: Task Relationship Types
+- [x] Shared types: TaskRelationshipType union (depends_on, blocks, relates_to, duplicates) and TaskRelationship interface
+- [x] Store migration: added relationship_type and created_at columns to task_dependencies table
+- [x] Store layer: addRelationship, removeRelationship, listRelationships methods
+- [x] API routes: GET/POST/DELETE /api/tasks/:id/relationships (auth via global hook)
+- [x] MCP client: 3 new methods (addRelationship, removeRelationship, listRelationships)
+- [x] MCP tools: add_task_relationship — create typed links between tasks (blocks, relates_to, duplicates)
+- [x] MCP tools: remove_task_relationship — remove specific or all relationships between tasks
+- [x] MCP tools: list_task_relationships — list all incoming/outgoing relationships for a task
+- [x] Updated mock client in tests for 3 new interface methods
+- [x] Updated tool count assertion (117 → 120)
+- [x] Added 9 new tests for relationship MCP tools (registration, CRUD, error cases)
+
+## Phase 59: Feishu Card Action Callbacks
+- [x] Added CardButton interface and action element types to card-builder.ts
+- [x] Added interactive action buttons (Pick Task, Mark Done, Archive) to task creation cards
+- [x] Added POST /api/feishu/card-action endpoint to handle card button callbacks
+- [x] Card action handler supports pick_task, complete_task, and archive_task actions
+- [x] Status transitions validated (e.g. can't pick a non-pending task)
+- [x] Audit logging for card action status changes and archivals
+- [x] Webhook dispatch and SSE broadcast on card-triggered status changes
+- [x] Added "task.archived" to AuditAction union type in shared/types.ts

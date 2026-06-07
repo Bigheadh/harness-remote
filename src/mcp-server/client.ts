@@ -62,6 +62,10 @@ export interface TaskApiClient {
   removeDependency(taskId: string, depId: string): Promise<Task>;
   listReadyTasks(limit?: number, deviceId?: string): Promise<Task[]>;
   getDependencyGraph(taskId: string): Promise<import("../shared/types.js").DependencyGraph>;
+  // Task relationship methods (Phase 58)
+  addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../shared/types.js").TaskRelationshipType): Promise<void>;
+  removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../shared/types.js").TaskRelationshipType): Promise<void>;
+  listRelationships(taskId: string): Promise<import("../shared/types.js").TaskRelationship[]>;
   // Task lock methods
   lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../shared/types.js").TaskLock>;
   unlockTask(taskId: string, deviceId?: string): Promise<void>;
@@ -152,6 +156,7 @@ export interface TaskApiClient {
   createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../shared/types.js").SavedView>;
   updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../shared/types.js").SavedView>;
   deleteSavedView(viewId: string): Promise<void>;
+  applySavedView(viewId: string): Promise<Task[]>;
   // Maintenance methods
   resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }>;
   cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }>;
@@ -932,6 +937,42 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { graph: import("../shared/types.js").DependencyGraph };
       return data.graph;
+    },
+
+    // ── Task Relationships (Phase 58) ─────────────────────────
+
+    async addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../shared/types.js").TaskRelationshipType): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ relatedTaskId, relationshipType }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to add relationship: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../shared/types.js").TaskRelationshipType): Promise<void> {
+      const params = relationshipType ? `?type=${relationshipType}` : "";
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships/${relatedTaskId}${params}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to remove relationship: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+    },
+
+    async listRelationships(taskId: string): Promise<import("../shared/types.js").TaskRelationship[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list relationships: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { relationships: import("../shared/types.js").TaskRelationship[] };
+      return data.relationships;
     },
 
     // ── Task Locks ──────────────────────────────────────────────
@@ -1821,6 +1862,35 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    async applySavedView(viewId: string): Promise<Task[]> {
+      // Step 1: Get the saved view and its filters
+      const viewResponse = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, { headers });
+      if (!viewResponse.ok) {
+        const body = (await viewResponse.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get saved view: ${viewResponse.status} ${body.error?.message ?? viewResponse.statusText}`);
+      }
+      const view = (await viewResponse.json()) as import("../shared/types.js").SavedView;
+      const filters = view.filters;
+      // Step 2: Search tasks using the saved view's filters
+      const params = new URLSearchParams();
+      if (filters.status) params.set("status", filters.status);
+      if (filters.priority) params.set("priority", filters.priority);
+      if (filters.deviceId) params.set("deviceId", filters.deviceId);
+      if (filters.tags && filters.tags.length > 0) params.set("tags", filters.tags.join(","));
+      if (filters.fromDate) params.set("from", filters.fromDate);
+      if (filters.toDate) params.set("to", filters.toDate);
+      if (filters.query) params.set("q", filters.query);
+      const qs = params.toString();
+      const searchUrl = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
+      const searchResponse = await fetch(searchUrl, { headers });
+      if (!searchResponse.ok) {
+        const body = (await searchResponse.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to search tasks: ${searchResponse.status} ${body.error?.message ?? searchResponse.statusText}`);
+      }
+      const data = (await searchResponse.json()) as { tasks: Task[] };
+      return data.tasks;
     },
 
     async resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }> {

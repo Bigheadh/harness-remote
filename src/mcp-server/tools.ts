@@ -1799,6 +1799,115 @@ export function registerMcpTools(
     },
   );
 
+  // ── Task Relationship Tools (Phase 58) ──────────────────────
+
+  // add_task_relationship tool
+  server.registerTool(
+    "add_task_relationship",
+    {
+      description:
+        "Add a typed relationship between two tasks. Relationship types: depends_on (prerequisite), blocks (prevents other from starting), relates_to (informational link), duplicates (marks as duplicate of another task).",
+      inputSchema: {
+        taskId: z.string().describe("The source task ID"),
+        relatedTaskId: z.string().describe("The target task ID to relate to"),
+        relationshipType: z.enum(["depends_on", "blocks", "relates_to", "duplicates"]).describe("The type of relationship"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.addRelationship(args.taskId, args.relatedTaskId, args.relationshipType);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                message: `Added '${args.relationshipType}' relationship: task ${args.taskId} → task ${args.relatedTaskId}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // remove_task_relationship tool
+  server.registerTool(
+    "remove_task_relationship",
+    {
+      description:
+        "Remove a relationship between two tasks. Optionally specify the relationship type to remove only that type; omit to remove all relationships between the tasks.",
+      inputSchema: {
+        taskId: z.string().describe("The source task ID"),
+        relatedTaskId: z.string().describe("The target task ID"),
+        relationshipType: z.enum(["depends_on", "blocks", "relates_to", "duplicates"]).optional().describe("Optional: remove only this relationship type. Omit to remove all."),
+      },
+    },
+    async (args) => {
+      try {
+        await client.removeRelationship(args.taskId, args.relatedTaskId, args.relationshipType);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                message: args.relationshipType
+                  ? `Removed '${args.relationshipType}' relationship: task ${args.taskId} ↔ task ${args.relatedTaskId}`
+                  : `Removed all relationships: task ${args.taskId} ↔ task ${args.relatedTaskId}`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // list_task_relationships tool
+  server.registerTool(
+    "list_task_relationships",
+    {
+      description:
+        "List all relationships for a task (both outgoing and incoming). Returns each related task with its relationship type (depends_on, blocks, relates_to, duplicates).",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to list relationships for"),
+      },
+    },
+    async (args) => {
+      try {
+        const relationships = await client.listRelationships(args.taskId);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                taskId: args.taskId,
+                totalRelationships: relationships.length,
+                relationships,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // list_ready_tasks tool
   server.registerTool(
     "list_ready_tasks",
@@ -4291,6 +4400,59 @@ export function registerMcpTools(
             {
               type: "text" as const,
               text: JSON.stringify({ message: `Saved view '${args.viewId}' deleted` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // apply_saved_view tool
+  server.registerTool(
+    "apply_saved_view",
+    {
+      description:
+        "Apply a saved view by executing its stored filters against the task database. Returns matching tasks. This is the primary way to use saved views — instead of manually extracting filters and calling search_tasks, use this tool to instantly get results from a named view.",
+      inputSchema: {
+        viewId: z.string().describe("The ID of the saved view to apply"),
+        limit: z
+          .number()
+          .optional()
+          .describe("Maximum number of tasks to return (default: 20, max: 100)"),
+      },
+    },
+    async (args) => {
+      try {
+        const tasks = await client.applySavedView(args.viewId);
+        const limited = args.limit ? tasks.slice(0, args.limit) : tasks.slice(0, 20);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  viewId: args.viewId,
+                  tasks: limited.map((t) => ({
+                    id: t.id,
+                    status: t.status,
+                    priority: t.priority,
+                    commandText: t.commandText.substring(0, 120),
+                    tags: t.tags,
+                    createdAt: t.createdAt,
+                  })),
+                  total: tasks.length,
+                  returned: limited.length,
+                  message: `Applied saved view: ${tasks.length} task(s) matched`,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };

@@ -2,6 +2,21 @@ export type TaskStatus = "pending" | "picked" | "running" | "done" | "failed";
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
+/** Types of relationships between tasks */
+export type TaskRelationshipType = "depends_on" | "blocks" | "relates_to" | "duplicates";
+
+/** A relationship between two tasks */
+export interface TaskRelationship {
+  /** The source task (the one that has the relationship) */
+  taskId: string;
+  /** The target task (the one being related to) */
+  relatedTaskId: string;
+  /** The type of relationship */
+  relationshipType: TaskRelationshipType;
+  /** When this relationship was created */
+  createdAt: string;
+}
+
 /** A lock on a task preventing concurrent processing */
 export interface TaskLock {
   taskId: string;
@@ -167,7 +182,8 @@ export type AuditAction =
   | "task.subtask_status_changed"
   | "task.subtask_result_reported"
   | "task.subtask_deleted"
-  | "task.priority_escalated";
+  | "task.priority_escalated"
+  | "task.archived";
 
 export interface AuditLogSearchOptions {
   action?: string;
