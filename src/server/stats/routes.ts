@@ -298,4 +298,33 @@ export function registerStatsRoutes(
       });
     }
   });
+
+  // GET /api/stats/time-tracking — aggregated time tracking statistics
+  server.get("/api/stats/time-tracking", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "dashboard.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    try {
+      const cached = summaryCache.get("time-tracking");
+      if (cached) {
+        return reply.send(cached);
+      }
+
+      const result = await store.getTimeTrackingSummary();
+      summaryCache.set("time-tracking", result);
+      return reply.send(result);
+    } catch (err) {
+      log.error({ err }, "Failed to compute time tracking stats");
+      return reply.code(500).send({
+        error: { code: "internal_error", message: "Failed to compute time tracking statistics" },
+      });
+    }
+  });
 }

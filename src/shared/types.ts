@@ -573,3 +573,25 @@ export interface TaskWatcher {
   userId: string;
   createdAt: string;
 }
+
+/** Aggregated time tracking statistics */
+export interface TimeTrackingSummary {
+  /** Total number of time entries across all tasks */
+  totalEntries: number;
+  /** Total tracked minutes across all entries */
+  totalMinutes: number;
+  /** Average minutes per entry */
+  avgMinutesPerEntry: number;
+  /** Average minutes per task (tasks that have at least one entry) */
+  avgMinutesPerTask: number;
+  /** Number of tasks that have time entries */
+  tasksWithEntries: number;
+  /** Number of active/running timers (entries without endedAt) */
+  activeTimers: number;
+  /** Breakdown by loggedBy (who logged the time) */
+  byUser: Array<{ userId: string; totalMinutes: number; entryCount: number }>;
+  /** Breakdown by task priority */
+  byPriority: Record<string, { totalMinutes: number; entryCount: number }>;
+  /** Time entries created in the last 7 days, grouped by day */
+  recentDaily: Array<{ date: string; totalMinutes: number; entryCount: number }>;
+}

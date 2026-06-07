@@ -1556,6 +1556,22 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "deleteTimeEntry", args: [taskId, entryId] });
       if (mock.failWith) throw new Error(mock.failWith);
     },
+
+    async getTimeTrackingStats(): Promise<import("../../src/shared/types.js").TimeTrackingSummary> {
+      calls.push({ method: "getTimeTrackingStats", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        totalEntries: 5,
+        totalMinutes: 120,
+        avgMinutesPerEntry: 24,
+        avgMinutesPerTask: 40,
+        tasksWithEntries: 3,
+        activeTimers: 0,
+        byUser: [{ userId: "user_1", totalMinutes: 80, entryCount: 3 }],
+        byPriority: { normal: { totalMinutes: 80, entryCount: 3 }, high: { totalMinutes: 40, entryCount: 2 } },
+        recentDaily: [{ date: "2026-06-07", totalMinutes: 50, entryCount: 2 }],
+      };
+    },
   };
   return mock;
 }
@@ -1611,8 +1627,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 113 tools", () => {
-        expect(mockServer.registrations).toHaveLength(113);
+      it("registers all 114 tools", () => {
+        expect(mockServer.registrations).toHaveLength(114);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3341,6 +3357,41 @@ describe("MCP tools", () => {
       mock.failWith = "Entry not found";
       const tool = mockServer.registrations.find((r) => r.name === "delete_time_entry")!;
       const result = await tool.handler({ taskId: "task_001", entryId: "999" });
+
+      expect(result.isError).toBe(true);
+    });
+  });
+
+  describe("get_time_tracking_stats", () => {
+    it("registers get_time_tracking_stats with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_time_tracking_stats");
+      expect(tool).toBeDefined();
+      expect(tool!.description).toContain("time tracking");
+    });
+
+    it("returns time tracking summary", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_time_tracking_stats")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.totalEntries).toBe(5);
+      expect(data.totalMinutes).toBe(120);
+      expect(data.byUser).toHaveLength(1);
+      expect(data.recentDaily).toHaveLength(1);
+    });
+
+    it("calls getTimeTrackingStats on client", async () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_time_tracking_stats")!;
+      await tool.handler({});
+
+      expect(mock.calls[0].method).toBe("getTimeTrackingStats");
+    });
+
+    it("returns error when getTimeTrackingStats fails", async () => {
+      mock.failWith = "Stats unavailable";
+      const tool = mockServer.registrations.find((r) => r.name === "get_time_tracking_stats")!;
+      const result = await tool.handler({});
 
       expect(result.isError).toBe(true);
     });

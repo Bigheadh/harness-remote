@@ -164,6 +164,7 @@ export interface TaskApiClient {
   startTimeEntry(taskId: string, description?: string): Promise<import("../shared/types.js").TimeEntry>;
   stopTimeEntry(taskId: string, entryId: string): Promise<import("../shared/types.js").TimeEntry>;
   deleteTimeEntry(taskId: string, entryId: string): Promise<void>;
+  getTimeTrackingStats(): Promise<import("../shared/types.js").TimeTrackingSummary>;
 }
 
 export function createTaskApiClient(
@@ -1927,6 +1928,18 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(`Failed to delete time entry: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
+    },
+
+    async getTimeTrackingStats(): Promise<import("../shared/types.js").TimeTrackingSummary> {
+      const response = await fetch(`${serverBaseUrl}/api/stats/time-tracking`, {
+        method: "GET",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to get time tracking stats: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return (await response.json()) as import("../shared/types.js").TimeTrackingSummary;
     },
   };
 }

@@ -4582,4 +4582,33 @@ export function registerMcpTools(
       }
     },
   );
+
+  // get_time_tracking_stats tool
+  server.registerTool(
+    "get_time_tracking_stats",
+    {
+      description:
+        "Get aggregated time tracking statistics across all tasks. Returns total entries, total minutes tracked, averages per entry and per task, active timers count, breakdown by user (who logged time), breakdown by task priority, and a 7-day daily trend. Useful for understanding time investment across the project and identifying which areas consume the most effort.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const stats = await client.getTimeTrackingStats();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(stats, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

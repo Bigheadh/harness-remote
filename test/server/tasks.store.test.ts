@@ -696,4 +696,53 @@ describe("attachments", () => {
       expect(pendingCol.count).toBe(0);
     });
   });
+
+  describe("getTimeTrackingSummary", () => {
+    it("returns zeroed summary when no entries exist", async () => {
+      const summary = await store.getTimeTrackingSummary();
+      expect(summary.totalEntries).toBe(0);
+      expect(summary.totalMinutes).toBe(0);
+      expect(summary.avgMinutesPerEntry).toBe(0);
+      expect(summary.avgMinutesPerTask).toBe(0);
+      expect(summary.tasksWithEntries).toBe(0);
+      expect(summary.activeTimers).toBe(0);
+      expect(summary.byUser).toHaveLength(0);
+    });
+
+    it("aggregates time entries correctly", async () => {
+      await store.createTask(makeTask({ id: "tt_1", feishuMessageId: "msg_tt_1", priority: "high" }));
+      await store.createTask(makeTask({ id: "tt_2", feishuMessageId: "msg_tt_2", priority: "normal" }));
+
+      await store.createTimeEntry("tt_1", "2026-06-07T10:00:00Z", "2026-06-07T11:00:00Z", 60, "work done", "user_1");
+      await store.createTimeEntry("tt_1", "2026-06-07T14:00:00Z", "2026-06-07T14:30:00Z", 30, "more work", "user_1");
+      await store.createTimeEntry("tt_2", "2026-06-07T12:00:00Z", "2026-06-07T12:15:00Z", 15, "quick task", "user_2");
+
+      const summary = await store.getTimeTrackingSummary();
+      expect(summary.totalEntries).toBe(3);
+      expect(summary.totalMinutes).toBe(105);
+      expect(summary.tasksWithEntries).toBe(2);
+      expect(summary.byUser.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("counts active timers", async () => {
+      await store.createTask(makeTask({ id: "tt_act", feishuMessageId: "msg_tt_act" }));
+      await store.createTimeEntry("tt_act", "2026-06-07T10:00:00Z", undefined, 0, "running", "user_1");
+
+      const summary = await store.getTimeTrackingSummary();
+      expect(summary.activeTimers).toBe(1);
+    });
+
+    it("breaks down by priority", async () => {
+      await store.createTask(makeTask({ id: "tt_p1", feishuMessageId: "msg_tt_p1", priority: "urgent" }));
+      await store.createTask(makeTask({ id: "tt_p2", feishuMessageId: "msg_tt_p2", priority: "normal" }));
+      await store.createTimeEntry("tt_p1", "2026-06-07T10:00:00Z", "2026-06-07T11:00:00Z", 60, null, "sys");
+      await store.createTimeEntry("tt_p2", "2026-06-07T12:00:00Z", "2026-06-07T12:30:00Z", 30, null, "sys");
+
+      const summary = await store.getTimeTrackingSummary();
+      expect(summary.byPriority["urgent"]).toBeDefined();
+      expect(summary.byPriority["urgent"].totalMinutes).toBe(60);
+      expect(summary.byPriority["normal"]).toBeDefined();
+      expect(summary.byPriority["normal"].totalMinutes).toBe(30);
+    });
+  });
 });

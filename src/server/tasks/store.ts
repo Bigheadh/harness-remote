@@ -173,6 +173,8 @@ export interface TaskStore {
   getTimeEntry(taskId: string, entryId: string): Promise<import("../../shared/types.js").TimeEntry | undefined>;
   deleteTimeEntry(taskId: string, entryId: string): Promise<boolean>;
   stopTimeEntry(taskId: string, entryId: string, endedAt: string): Promise<import("../../shared/types.js").TimeEntry>;
+  /** Get aggregated time tracking statistics across all tasks */
+  getTimeTrackingSummary(): Promise<import("../../shared/types.js").TimeTrackingSummary>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -3137,6 +3139,66 @@ export function createTaskStore(storagePath: string): TaskStore {
       const now = new Date().toISOString();
       db.prepare(`UPDATE time_entries SET ended_at = ?, duration_minutes = ?, updated_at = ? WHERE task_id = ? AND id = ?`).run(endedAt, durationMinutes, now, taskId, entryId);
       return { id: entryId, taskId, startedAt: existing["started_at"] as string, endedAt, durationMinutes, description: (existing["description"] as string) ?? undefined, loggedBy: existing["logged_by"] as string, createdAt: existing["created_at"] as string, updatedAt: now };
+    },
+
+    async getTimeTrackingSummary(): Promise<import("../../shared/types.js").TimeTrackingSummary> {
+      // Total entries and minutes
+      const totals = db.prepare(`
+        SELECT COUNT(*) as total_entries, COALESCE(SUM(duration_minutes), 0) as total_minutes
+        FROM time_entries
+      `).get() as Record<string, unknown>;
+
+      // Active timers (no ended_at)
+      const active = db.prepare(`
+        SELECT COUNT(*) as cnt FROM time_entries WHERE ended_at IS NULL
+      `).get() as Record<string, unknown>;
+
+      // Tasks with entries
+      const tasksCount = db.prepare(`
+        SELECT COUNT(DISTINCT task_id) as cnt FROM time_entries
+      `).get() as Record<string, unknown>;
+
+      // Breakdown by loggedBy (top 10)
+      const byUserRows = db.prepare(`
+        SELECT logged_by, SUM(duration_minutes) as total_minutes, COUNT(*) as entry_count
+        FROM time_entries
+        GROUP BY logged_by
+        ORDER BY total_minutes DESC
+        LIMIT 10
+      `).all() as Array<Record<string, unknown>>;
+
+      // Breakdown by task priority
+      const byPriorityRows = db.prepare(`
+        SELECT t.priority, SUM(te.duration_minutes) as total_minutes, COUNT(*) as entry_count
+        FROM time_entries te
+        JOIN tasks t ON te.task_id = t.id
+        GROUP BY t.priority
+      `).all() as Array<Record<string, unknown>>;
+
+      // Last 7 days daily breakdown
+      const dailyRows = db.prepare(`
+        SELECT DATE(te.started_at) as date, SUM(te.duration_minutes) as total_minutes, COUNT(*) as entry_count
+        FROM time_entries te
+        WHERE te.started_at >= datetime('now', '-7 days')
+        GROUP BY DATE(te.started_at)
+        ORDER BY date ASC
+      `).all() as Array<Record<string, unknown>>;
+
+      const totalEntries = Number(totals["total_entries"]) || 0;
+      const totalMinutes = Number(totals["total_minutes"]) || 0;
+      const tasksWithEntries = Number(tasksCount["cnt"]) || 0;
+
+      return {
+        totalEntries,
+        totalMinutes,
+        avgMinutesPerEntry: totalEntries > 0 ? Math.round(totalMinutes / totalEntries) : 0,
+        avgMinutesPerTask: tasksWithEntries > 0 ? Math.round(totalMinutes / tasksWithEntries) : 0,
+        tasksWithEntries,
+        activeTimers: Number(active["cnt"]) || 0,
+        byUser: byUserRows.map(r => ({ userId: r["logged_by"] as string, totalMinutes: Number(r["total_minutes"]), entryCount: Number(r["entry_count"]) })),
+        byPriority: Object.fromEntries(byPriorityRows.map(r => [r["priority"] as string, { totalMinutes: Number(r["total_minutes"]), entryCount: Number(r["entry_count"]) }])),
+        recentDaily: dailyRows.map(r => ({ date: r["date"] as string, totalMinutes: Number(r["total_minutes"]), entryCount: Number(r["entry_count"]) })),
+      };
     },
   };
 }

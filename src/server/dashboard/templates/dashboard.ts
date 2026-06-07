@@ -1852,20 +1852,21 @@ export function renderDashboardHTML(
       const container = document.getElementById('analyticsContent');
       container.innerHTML = '<div class="analytics-loading">Loading analytics...</div>';
       try {
-        const [summary, processing, created, completed, users] = await Promise.all([
+        const [summary, processing, created, completed, users, timeTracking] = await Promise.all([
           apiFetch('/api/stats/summary'),
           apiFetch('/api/stats/processing').catch(() => null),
           apiFetch('/api/stats/timeseries?metric=created&interval=day').catch(() => null),
           apiFetch('/api/stats/timeseries?metric=completed&interval=day').catch(() => null),
           apiFetch('/api/stats/users').catch(() => null),
+          apiFetch('/api/stats/time-tracking').catch(() => null),
         ]);
-        renderAnalytics(container, summary, processing, created, completed, users);
+        renderAnalytics(container, summary, processing, created, completed, users, timeTracking);
       } catch (e) {
         container.innerHTML = '<div class="chart-empty">Failed to load analytics: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
-    function renderAnalytics(container, summary, processing, created, completed, users) {
+    function renderAnalytics(container, summary, processing, created, completed, users, timeTracking) {
       let html = '<div class="analytics-grid">';
 
       // 1. Status distribution
@@ -1960,6 +1961,52 @@ export function renderDashboardHTML(
         html += '</div>';
       } else {
         html += '<div class="chart-empty">No user data available</div>';
+      }
+      html += '</div>';
+
+      // 7. Time tracking summary
+      html += '<div class="chart-card" style="grid-column: span 2"><h3>⏱️ Time Tracking Summary</h3>';
+      if (timeTracking && timeTracking.totalEntries > 0) {
+        html += '<div class="stat-metric">';
+        const ttMetrics = [
+          { label: 'Total Time', value: Math.round(timeTracking.totalMinutes / 60 * 10) / 10 + 'h' },
+          { label: 'Total Entries', value: timeTracking.totalEntries },
+          { label: 'Avg per Entry', value: timeTracking.avgMinutesPerEntry + 'm' },
+          { label: 'Avg per Task', value: timeTracking.avgMinutesPerTask + 'm' },
+          { label: 'Tasks Tracked', value: timeTracking.tasksWithEntries },
+          { label: 'Active Timers', value: timeTracking.activeTimers },
+        ];
+        ttMetrics.forEach(m => {
+          html += '<div class="metric-card"><div class="metric-value">' + m.value + '</div><div class="metric-label">' + m.label + '</div></div>';
+        });
+        html += '</div>';
+
+        // Time by priority
+        if (timeTracking.byPriority && Object.keys(timeTracking.byPriority).length > 0) {
+          html += '<div style="margin-top:12px"><strong style="font-size:13px;color:var(--text-dim)">By Priority</strong></div>';
+          html += '<div class="bar-chart" style="margin-top:8px">';
+          const prioEntries = Object.entries(timeTracking.byPriority);
+          const prioMax = Math.max(1, ...prioEntries.map(([, v]) => v.totalMinutes));
+          prioEntries.forEach(([prio, data]) => {
+            const pct = Math.round(data.totalMinutes / prioMax * 100);
+            html += '<div class="bar-row"><span class="bar-label">' + prio + '</span><div class="bar-track"><div class="bar-fill ' + prio + '" style="width:' + pct + '%"></div></div><span class="bar-value">' + data.totalMinutes + 'm</span></div>';
+          });
+          html += '</div>';
+        }
+
+        // Time by user
+        if (timeTracking.byUser && timeTracking.byUser.length > 0) {
+          html += '<div style="margin-top:12px"><strong style="font-size:13px;color:var(--text-dim)">By User</strong></div>';
+          html += '<div class="bar-chart" style="margin-top:8px">';
+          const userMax2 = Math.max(1, ...timeTracking.byUser.map(u => u.totalMinutes));
+          timeTracking.byUser.slice(0, 5).forEach(u => {
+            const pct = Math.round(u.totalMinutes / userMax2 * 100);
+            html += '<div class="bar-row"><span class="bar-label" title="' + escapeHtml(u.userId) + '">' + escapeHtml(u.userId.slice(0, 12)) + '</span><div class="bar-track"><div class="bar-fill created" style="width:' + pct + '%"></div></div><span class="bar-value">' + u.totalMinutes + 'm</span></div>';
+          });
+          html += '</div>';
+        }
+      } else {
+        html += '<div class="chart-empty">No time entries logged yet</div>';
       }
       html += '</div>';
 
