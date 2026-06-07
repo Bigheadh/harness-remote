@@ -672,6 +672,36 @@ export function renderDashboardHTML(
             </div>
           </div>
         </div>
+        <div class="settings-card">
+          <h3>👁️ Saved Views</h3>
+          <div id="settingsSavedViews"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateSavedViewModal()">+ Add View</button>
+          </div>
+          <div class="settings-form" id="createSavedViewForm">
+            <input id="newSavedViewName" placeholder="View name" />
+            <input id="newSavedViewFilters" placeholder='Filters JSON (e.g. {"status":"pending"})' />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createSavedViewForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateSavedView()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>📦 Modules (Epics)</h3>
+          <div id="settingsModules"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateModuleModal()">+ Add Module</button>
+          </div>
+          <div class="settings-form" id="createModuleForm">
+            <input id="newModuleName" placeholder="Module name" />
+            <input id="newModuleDescription" placeholder="Description (optional)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createModuleForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateModule()">Create</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1592,6 +1622,8 @@ export function renderDashboardHTML(
       loadSettingsTemplates();
       loadSettingsScheduled();
       loadSettingsSla();
+      loadSettingsSavedViews();
+      loadSettingsModules();
     }
 
     // Users
@@ -1825,6 +1857,97 @@ export function renderDashboardHTML(
       try {
         await apiFetch('/api/scheduled-tasks/' + id, { method: 'DELETE' });
         loadSettingsScheduled();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    // Saved Views
+    async function loadSettingsSavedViews() {
+      const el = document.getElementById('settingsSavedViews');
+      try {
+        const data = await apiFetch('/api/saved-views');
+        const views = data.views || [];
+        if (views.length === 0) { el.innerHTML = '<div class="settings-empty">No saved views</div>'; return; }
+        let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Filters</th><th>By</th><th>Actions</th></tr></thead><tbody>';
+        views.forEach(v => {
+          const filterStr = v.filters ? JSON.stringify(v.filters) : '{}';
+          html += '<tr><td>' + escapeHtml(v.name) + '</td><td class="id-cell" title="' + escapeHtml(filterStr) + '">' + escapeHtml(filterStr.slice(0, 40)) + '</td><td>' + escapeHtml(v.createdBy || '') + '</td><td>';
+          html += '<button class="btn-sm red" onclick="deleteSavedView(\'' + v.id + '\')">🗑️</button>';
+          html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      } catch (e) { el.innerHTML = '<div class="settings-empty">Error: ' + escapeHtml(e.message) + '</div>'; }
+    }
+
+    function openCreateSavedViewModal() {
+      document.getElementById('createSavedViewForm').classList.toggle('open');
+    }
+
+    async function submitCreateSavedView() {
+      const name = document.getElementById('newSavedViewName').value.trim();
+      const filtersStr = document.getElementById('newSavedViewFilters').value.trim();
+      if (!name) { alert('View name is required'); return; }
+      let filters = {};
+      if (filtersStr) {
+        try { filters = JSON.parse(filtersStr); } catch { alert('Invalid JSON in filters'); return; }
+      }
+      try {
+        await apiFetch('/api/saved-views', { method: 'POST', body: JSON.stringify({ name, filters }) });
+        document.getElementById('createSavedViewForm').classList.remove('open');
+        document.getElementById('newSavedViewName').value = '';
+        document.getElementById('newSavedViewFilters').value = '';
+        loadSettingsSavedViews();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function deleteSavedView(id) {
+      if (!confirm('Delete this saved view?')) return;
+      try {
+        await apiFetch('/api/saved-views/' + id, { method: 'DELETE' });
+        loadSettingsSavedViews();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    // Modules (Epics)
+    async function loadSettingsModules() {
+      const el = document.getElementById('settingsModules');
+      try {
+        const data = await apiFetch('/api/modules');
+        const modules = data.modules || [];
+        if (modules.length === 0) { el.innerHTML = '<div class="settings-empty">No modules</div>'; return; }
+        let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Status</th><th>Tasks</th><th>Actions</th></tr></thead><tbody>';
+        modules.forEach(m => {
+          html += '<tr><td>' + escapeHtml(m.name) + '</td><td>' + escapeHtml(m.status || 'active') + '</td><td>' + (m.taskCount || 0) + '<td>';
+          html += '<button class="btn-sm red" onclick="deleteModule(\'' + m.id + '\')">🗑️</button>';
+          html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      } catch (e) { el.innerHTML = '<div class="settings-empty">Error: ' + escapeHtml(e.message) + '</div>'; }
+    }
+
+    function openCreateModuleModal() {
+      document.getElementById('createModuleForm').classList.toggle('open');
+    }
+
+    async function submitCreateModule() {
+      const name = document.getElementById('newModuleName').value.trim();
+      const description = document.getElementById('newModuleDescription').value.trim();
+      if (!name) { alert('Module name is required'); return; }
+      try {
+        await apiFetch('/api/modules', { method: 'POST', body: JSON.stringify({ name, description: description || undefined }) });
+        document.getElementById('createModuleForm').classList.remove('open');
+        document.getElementById('newModuleName').value = '';
+        document.getElementById('newModuleDescription').value = '';
+        loadSettingsModules();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function deleteModule(id) {
+      if (!confirm('Delete this module? Tasks will be unlinked, not deleted.')) return;
+      try {
+        await apiFetch('/api/modules/' + id, { method: 'DELETE' });
+        loadSettingsModules();
       } catch (e) { alert('Failed: ' + e.message); }
     }
 

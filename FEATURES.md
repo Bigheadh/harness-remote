@@ -588,3 +588,12 @@
 - [x] Updated tool count assertion (142 → 150)
 - [x] Added 17 new tests for module tools (registration, success, error cases)
 
+
+## Phase 71: Dashboard Settings — Saved Views & Modules Management UI
+- [x] Added Saved Views settings card to dashboard Settings tab (list, create, delete)
+- [x] Added Modules (Epics) settings card to dashboard Settings tab (list, create, delete)
+- [x] Saved Views: table with name, filters preview, creator, delete action
+- [x] Saved Views: create form with name and JSON filters input
+- [x] Modules: table with name, status, task count, delete action
+- [x] Modules: create form with name and optional description
+- [x] Both cards wired into loadSettings() initialization
