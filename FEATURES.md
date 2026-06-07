@@ -434,3 +434,9 @@
 - [x] Chinese language support for all detection patterns
 - [x] Explicit #priority:/#tag:/#due: markers take precedence over keyword detection
 - [x] 14 new tests for keyword detection (priority, tags, due dates, precedence)
+## Phase 56: Dashboard Task Detail Enhancements - Dependencies, Time Entries & Watchers
+- [x] Added CSS styles for dependency items, time entry items, and watcher items in detail panel
+- [x] Added loadDependencies function - fetches and renders task dependency graph in detail panel
+- [x] Added loadTimeEntries function - fetches and renders time tracking entries with duration totals
+- [x] Added loadWatchers function - fetches and renders task watcher list
+- [x] Wired all 3 new sections into showDetail flow (load after subtasks/comments/activity)

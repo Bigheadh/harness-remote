@@ -348,6 +348,33 @@ export function renderDashboardHTML(
     /* Comment form in detail */
    .comment-form { display: flex; gap: 8px; margin-top: 10px; }
    .comment-form input { flex: 1; }
+    .dep-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dep-item:last-child { border-bottom: none; }
+    .dep-arrow { color: var(--text-dim); font-size: 12px; }
+    .dep-status { font-size: 12px; }
+    .time-entry-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .time-entry-item:last-child { border-bottom: none; }
+    .time-entry-duration { font-size: 12px; font-weight: 600; color: var(--accent); }
+    .time-entry-meta { font-size: 11px; color: var(--text-dim); }
+    .time-entry-active { color: var(--green); }
+    .watcher-item {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .watcher-item:last-child { border-bottom: none; }
         .task-table th.sortable { cursor: pointer; user-select: none; }
     .task-table th.sortable:hover { color: var(--accent); }
     .task-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.5; }
@@ -1000,6 +1027,9 @@ export function renderDashboardHTML(
         loadSubtasks(id);
         loadComments(id);
         loadActivity(id);
+        loadDependencies(id);
+        loadTimeEntries(id);
+        loadWatchers(id);
       } catch (e) {
         alert('Failed to load task: ' + e.message);
       }
@@ -1089,6 +1119,84 @@ export function renderDashboardHTML(
           '</div>';
         document.getElementById('detailBody').appendChild(section);
       } catch { /* activity endpoint may not exist */ }
+    }
+
+    async function loadDependencies(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/dependencies');
+        const deps = data.dependencies || data.blockedBy || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (deps.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">🔗 Dependencies (0)</div><div class="detail-section-body"><div class="no-data">No dependencies</div></div>';
+        } else {
+          section.innerHTML = '<div class="detail-section-header">🔗 Dependencies (' + deps.length + ')</div>' +
+            '<div class="detail-section-body">' +
+            deps.map(d =>
+              '<div class="dep-item">' +
+                '<span class="badge badge-' + (d.dependsOnStatus || d.status || 'pending') + '">' + (d.dependsOnStatus || d.status || 'pending') + '</span>' +
+                '<span style="flex:1;font-size:13px">' + escapeHtml(d.dependsOnTitle || d.title || d.dependsOnId || d.id) + '</span>' +
+                '<span class="dep-arrow">' + escapeHtml(d.type || 'blocks') + '</span>' +
+              '</div>'
+            ).join('') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* dependencies endpoint may not exist */ }
+    }
+
+    async function loadTimeEntries(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/time-entries');
+        const entries = data.entries || data.timeEntries || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (entries.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">⏱️ Time Tracking (0)</div><div class="detail-section-body"><div class="no-data">No time entries</div></div>';
+        } else {
+          const totalMin = entries.reduce((s, e) => s + (e.durationMinutes || 0), 0);
+          const hrs = Math.floor(totalMin / 60);
+          const mins = totalMin % 60;
+          section.innerHTML = '<div class="detail-section-header">⏱️ Time Tracking (' + entries.length + ' · ' + (hrs > 0 ? hrs + 'h ' : '') + mins + 'm total)</div>' +
+            '<div class="detail-section-body">' +
+            entries.slice(0, 10).map(e =>
+              '<div class="time-entry-item">' +
+                '<div>' +
+                  '<div style="font-size:13px">' + escapeHtml(e.description || 'No description') + '</div>' +
+                  '<div class="time-entry-meta">' + escapeHtml(e.user || e.userId || 'unknown') + ' · ' + formatTime(e.startedAt) +
+                    (e.endedAt ? ' → ' + formatTime(e.endedAt) : ' <span class="time-entry-active">● active</span>') +
+                  '</div>' +
+                '</div>' +
+                '<div class="time-entry-duration">' + (e.durationMinutes || 0) + 'm</div>' +
+              '</div>'
+            ).join('') +
+            (entries.length > 10 ? '<div class="no-data">...and ' + (entries.length - 10) + ' more</div>' : '') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* time-entries endpoint may not exist */ }
+    }
+
+    async function loadWatchers(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/watchers');
+        const watchers = data.watchers || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (watchers.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">👁️ Watchers (0)</div><div class="detail-section-body"><div class="no-data">No watchers</div></div>';
+        } else {
+          section.innerHTML = '<div class="detail-section-header">👁️ Watchers (' + watchers.length + ')</div>' +
+            '<div class="detail-section-body">' +
+            watchers.map(w =>
+              '<div class="watcher-item">👤 ' + escapeHtml(w.username || w.userId || w.id) +
+                (w.addedAt ? ' <span class="time-entry-meta">· ' + formatTime(w.addedAt) + '</span>' : '') +
+              '</div>'
+            ).join('') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* watchers endpoint may not exist */ }
     }
 
     function field(label, value) {
