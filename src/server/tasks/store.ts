@@ -207,6 +207,10 @@ export interface TaskStore {
   addTaskToModule(taskId: string, moduleId: string): Promise<import("../../shared/types.js").Task>;
   removeTaskFromModule(taskId: string): Promise<import("../../shared/types.js").Task>;
   listModuleTasks(moduleId: string): Promise<import("../../shared/types.js").Task[]>;
+  // Task links methods (external URLs attached to tasks)
+  addTaskLink(taskId: string, title: string, url: string, addedBy: string): Promise<import("../../shared/types.js").TaskLink>;
+  listTaskLinks(taskId: string): Promise<import("../../shared/types.js").TaskLink[]>;
+  deleteTaskLink(taskId: string, linkId: number): Promise<boolean>;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -676,6 +680,11 @@ export function createTaskStore(storagePath: string): TaskStore {
   db.exec(`\n    CREATE TABLE IF NOT EXISTS task_notes (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      task_id TEXT NOT NULL,\n      author TEXT NOT NULL,\n      body TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_notes_task_id\n      ON task_notes(task_id)\n  `);
+
+  // Task links table (external URLs attached to tasks)
+  db.exec(`\n    CREATE TABLE IF NOT EXISTS task_links (\n      id INTEGER PRIMARY KEY AUTOINCREMENT,\n      task_id TEXT NOT NULL,\n      title TEXT NOT NULL,\n      url TEXT NOT NULL,\n      added_by TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
+
+  db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_links_task_id\n      ON task_links(task_id)\n  `);
 
   // Task locks table (TTL-based locks to prevent concurrent processing)
   db.exec(`\n    CREATE TABLE IF NOT EXISTS task_locks (\n      task_id TEXT PRIMARY KEY,\n      locked_by TEXT NOT NULL,\n      locked_at TEXT NOT NULL,\n      expires_at TEXT NOT NULL,\n      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE\n    )\n  `);
@@ -3897,6 +3906,43 @@ export function createTaskStore(storagePath: string): TaskStore {
     async listModuleTasks(moduleId: string): Promise<import("../../shared/types.js").Task[]> {
       const rows = db.prepare("SELECT * FROM tasks WHERE module_id = ? AND archived_at IS NULL ORDER BY created_at DESC").all(moduleId) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
+    },
+
+    // Task links methods
+    async addTaskLink(taskId: string, title: string, url: string, addedBy: string): Promise<import("../../shared/types.js").TaskLink> {
+      const now = new Date().toISOString();
+      const result = db.prepare(
+        "INSERT INTO task_links (task_id, title, url, added_by, created_at) VALUES (?, ?, ?, ?, ?)"
+      ).run(taskId, title, url, addedBy, now);
+      return {
+        id: Number(result.lastInsertRowid),
+        taskId,
+        title,
+        url,
+        addedBy,
+        createdAt: now,
+      };
+    },
+
+    async listTaskLinks(taskId: string): Promise<import("../../shared/types.js").TaskLink[]> {
+      const rows = db.prepare(
+        "SELECT * FROM task_links WHERE task_id = ? ORDER BY created_at ASC"
+      ).all(taskId) as Array<Record<string, unknown>>;
+      return rows.map(row => ({
+        id: row["id"] as number,
+        taskId: row["task_id"] as string,
+        title: row["title"] as string,
+        url: row["url"] as string,
+        addedBy: row["added_by"] as string,
+        createdAt: row["created_at"] as string,
+      }));
+    },
+
+    async deleteTaskLink(taskId: string, linkId: number): Promise<boolean> {
+      const result = db.prepare(
+        "DELETE FROM task_links WHERE id = ? AND task_id = ?"
+      ).run(linkId, taskId);
+      return Number(result.changes) > 0;
     },
   };
 }

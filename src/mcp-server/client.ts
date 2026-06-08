@@ -209,6 +209,10 @@ export interface TaskApiClient {
   cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }>;
   // Feishu card update
   updateTaskCard(taskId: string, markdown: string, title?: string, color?: string): Promise<{ success: boolean; messageId: string }>;
+  // Task links (external URLs)
+  listTaskLinks(taskId: string): Promise<import("../shared/types.js").TaskLink[]>;
+  addTaskLink(taskId: string, title: string, url: string): Promise<import("../shared/types.js").TaskLink>;
+  deleteTaskLink(taskId: string, linkId: number): Promise<void>;
 }
 
 export function createTaskApiClient(
@@ -2501,6 +2505,42 @@ export function createTaskApiClient(
       }
       const data = (await response.json()) as { success: boolean; messageId: string };
       return { success: data.success, messageId: data.messageId };
+    },
+
+    // Task links
+    async listTaskLinks(taskId: string): Promise<import("../shared/types.js").TaskLink[]> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links`, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to list task links: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { links: import("../shared/types.js").TaskLink[] };
+      return data.links;
+    },
+
+    async addTaskLink(taskId: string, title: string, url: string): Promise<import("../shared/types.js").TaskLink> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ title, url }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to add task link: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      const data = (await response.json()) as { link: import("../shared/types.js").TaskLink };
+      return data.link;
+    },
+
+    async deleteTaskLink(taskId: string, linkId: number): Promise<void> {
+      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links/${linkId}`, {
+        method: "DELETE",
+        headers,
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to delete task link: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
     },
   };
 }

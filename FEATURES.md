@@ -607,3 +607,16 @@
 - [x] Exported CardElement interface from card-builder.ts (required for digest card element types)
 - [x] Tests: 8 new tests for digest command (parseCommand, executeCommand, empty state, overdue, pending, in-progress, error handling)
 - [x] Updated test count: 528 → 536
+
+## Phase 73: Task Links (External URLs)
+- [x] Shared types: TaskLink interface (id, taskId, title, url, addedBy, createdAt)
+- [x] Store layer: task_links SQLite table with CRUD methods (addTaskLink, listTaskLinks, deleteTaskLink)
+- [x] API routes: GET/POST /api/tasks/:id/links, DELETE /api/tasks/:id/links/:linkId
+- [x] MCP client interface: 3 new methods (listTaskLinks, addTaskLink, deleteTaskLink)
+- [x] MCP client implementation: HTTP client methods calling existing link API routes
+- [x] MCP tool: list_task_links — list all external links attached to a task
+- [x] MCP tool: add_task_link — attach an external URL (PR, doc, reference) to a task
+- [x] MCP tool: remove_task_link — remove an external link from a task
+- [x] AuditAction union: added task.link_added and task.link_removed
+- [x] Updated tool count assertion (150 → 153)
+

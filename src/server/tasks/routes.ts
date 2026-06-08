@@ -3480,6 +3480,129 @@ export function registerTaskRoutes(
     return reply.send({ ok: true });
   });
 
+  // GET /api/tasks/:id/links - list external links for a task (requires tasks.read)
+  server.get<{
+    Params: { id: string };
+  }>("/api/tasks/:id/links", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+
+    const links = await store.listTaskLinks(id);
+    return reply.send({ links, count: links.length });
+  });
+
+  // POST /api/tasks/:id/links - add an external link to a task (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { title: string; url: string };
+  }>("/api/tasks/:id/links", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const { title, url } = req.body as { title: string; url: string };
+
+    if (!title || !url) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "title and url are required" },
+      });
+    }
+
+    try {
+      new URL(url);
+    } catch {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "url must be a valid URL" },
+      });
+    }
+
+    const task = await store.getTask(id);
+    if (!task) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Task not found: ${id}` },
+      });
+    }
+
+    const addedBy = authCtx.user?.username ?? "anonymous";
+    const link = await store.addTaskLink(id, title, url, addedBy);
+    log.info({ taskId: id, linkId: link.id, title, url }, "Link added to task");
+    if (auditStore) {
+      await auditStore.log({
+        action: "task.link_added" as any,
+        taskId: id,
+        actor: addedBy,
+        actorType: "api",
+        details: { linkId: link.id, title, url },
+      });
+    }
+    return reply.code(201).send({ link });
+  });
+
+  // DELETE /api/tasks/:id/links/:linkId - remove an external link from a task (requires tasks.write)
+  server.delete<{
+    Params: { id: string; linkId: string };
+  }>("/api/tasks/:id/links/:linkId", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id, linkId } = req.params;
+    const parsedLinkId = Number(linkId);
+
+    if (isNaN(parsedLinkId) || parsedLinkId <= 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "linkId must be a positive integer" },
+      });
+    }
+
+    const deleted = await store.deleteTaskLink(id, parsedLinkId);
+    if (!deleted) {
+      return reply.code(404).send({
+        error: { code: "not_found", message: `Link not found: ${linkId}` },
+      });
+    }
+
+    log.info({ taskId: id, linkId: parsedLinkId }, "Link removed from task");
+    if (auditStore) {
+      await auditStore.log({
+        action: "task.link_removed" as any,
+        taskId: id,
+        actor: authCtx.user?.username ?? "system",
+        actorType: "api",
+        details: { linkId: parsedLinkId },
+      });
+    }
+    return reply.send({ ok: true });
+  });
+
   // GET /api/tasks/:id/activity - combined chronological activity feed (requires tasks.read)
   server.get<{
     Params: { id: string };

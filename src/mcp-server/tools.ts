@@ -5983,4 +5983,102 @@ export function registerMcpTools(
       }
     },
   );
+
+  // Task links tools
+  server.registerTool(
+    "list_task_links",
+    {
+      description:
+        "List all external links attached to a task. Links are URLs to related resources like PRs, documentation, design docs, or reference materials.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to list links for"),
+      },
+    },
+    async (args) => {
+      try {
+        const links = await client.listTaskLinks(args.taskId as string);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ links, count: links.length }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_task_link",
+    {
+      description:
+        "Add an external link to a task. Use this to attach PRs, documentation, design references, or any URL relevant to the task.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to add a link to"),
+        title: z.string().describe("Display title for the link (e.g. 'PR #123', 'Design Doc')"),
+        url: z.string().describe("The URL to attach"),
+      },
+    },
+    async (args) => {
+      try {
+        const link = await client.addTaskLink(
+          args.taskId as string,
+          args.title as string,
+          args.url as string,
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ link, message: `Link added: ${link.title} (${link.url})` }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "remove_task_link",
+    {
+      description:
+        "Remove an external link from a task. Use list_task_links first to find the link ID.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID"),
+        linkId: z.number().describe("The numeric ID of the link to remove"),
+      },
+    },
+    async (args) => {
+      try {
+        await client.deleteTaskLink(args.taskId as string, args.linkId as number);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ success: true, message: "Link removed" }),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

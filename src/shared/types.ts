@@ -184,6 +184,8 @@ export type AuditAction =
   | "task.forwarded"
   | "task.note_added"
   | "task.note_deleted"
+  | "task.link_added"
+  | "task.link_removed"
   | "task.subtask_created"
   | "task.subtask_status_changed"
   | "task.subtask_result_reported"
@@ -217,6 +219,19 @@ export interface TaskNote {
   taskId: string;
   author: string;
   body: string;
+  createdAt: string;
+}
+
+/** An external link attached to a task (PR, doc, reference URL) */
+export interface TaskLink {
+  id: number;
+  taskId: string;
+  /** Display title for the link (e.g. "PR #123", "Design Doc") */
+  title: string;
+  /** The URL */
+  url: string;
+  /** Who added this link */
+  addedBy: string;
   createdAt: string;
 }
 
