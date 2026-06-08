@@ -620,3 +620,72 @@
 - [x] AuditAction union: added task.link_added and task.link_removed
 - [x] Updated tool count assertion (150 → 153)
 
+## Phase 74: Dashboard API Keys Management UI
+- [x] Added API Keys settings card to dashboard Settings tab (list, create, revoke, enable, disable, rotate)
+- [x] API Keys table with name, masked key, user ID, role badge, status, last used, action buttons
+- [x] Create form with name, user ID, and role selection
+- [x] Key rotation with confirmation and new key display
+- [x] Enable/disable toggle for API keys
+- [x] Revoke with confirmation warning (permanent action)
+- [x] Wired into loadSettings() initialization
+
+## Phase 75: Set Task Command Text MCP Tool
+- [x] Store interface: setTaskCommandText(taskId, commandText) method with validation
+- [x] Store implementation: UPDATE tasks SET command_text with trim and non-empty validation
+- [x] API route: POST /api/tasks/:id/command-text endpoint with auth and validation
+- [x] MCP client interface: setTaskCommandText method
+- [x] MCP client implementation: HTTP POST to /api/tasks/:id/command-text
+- [x] MCP tool: set_task_command_text — AI agents can update a task's core command text
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (153 → 154)
+- [x] Added 3 new tests for set_task_command_text tool (registration, update, error)
+
+## Phase 76: Dashboard Task Links Display
+- [x] Added CSS styles for link items in detail panel (link-item, link-meta, link anchor styles)
+- [x] Added loadLinks function - fetches and renders external links attached to a task
+- [x] Wired loadLinks into showDetail flow (loads after watchers)
+- [x] Links show title (or URL), added-by user, and creation timestamp
+
+## Phase 77: Bulk Task Clone MCP Tool
+- [x] Store interface: bulkCloneTasks(ids) method returning cloned count, task IDs, and errors
+- [x] Store implementation: clones each task with new ID, pending status, unassigned
+- [x] API route: POST /api/tasks/bulk/clone endpoint with auth and 100-item limit
+- [x] MCP client interface: bulkCloneTasks method
+- [x] MCP client implementation: HTTP POST to /api/tasks/bulk/clone
+- [x] MCP tool: bulk_clone_tasks — AI agents can clone multiple tasks at once
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (154 → 155)
+- [x] Added 3 new tests for bulk_clone_tasks tool (registration, batch clone, error)
+
+## Phase 78: Dashboard Cycle Management UI
+- [x] Added Cycles (Sprints) settings card to dashboard Settings tab (list, create, delete)
+- [x] Cycles: table with name, status badge, start/end dates, task count, delete action
+- [x] Cycles: create form with name, description, start date, end date
+- [x] Cycles: status badge styled per cycle status (active=operator, planned=viewer)
+- [x] Wired into loadSettings() initialization
+
+## Phase 79: Feishu /watch and /unwatch Slash Commands
+- [x] /watch command: subscribe to task status update notifications from Feishu
+- [x] /unwatch command: unsubscribe from task status update notifications
+- [x] Already-watching detection (prevents duplicate subscriptions)
+- [x] Not-watching detection (graceful unwatch when not subscribed)
+- [x] Partial task ID matching for both commands
+- [x] Help text updated with /watch and /unwatch commands
+- [x] 10 new tests for watch/unwatch commands (subscribe, already watching, missing ID, unknown task, unsubscribe, not watching)
+- [x] Updated test count: 553 → 560
+
+## Phase 80: Dashboard Module & Cycle Filtering
+- [x] Added module filter dropdown to dashboard toolbar (populated from /api/modules)
+- [x] Added cycle filter dropdown to dashboard toolbar (populated from /api/cycles)
+- [x] Added client-side filtering by moduleId and cycleId in renderTasks()
+- [x] Added loadModulesAndCycles() async function for parallel data loading
+- [x] Wired into init sequence alongside loadTasks()
+
+## Phase 81: Dashboard Notes & Relationships Display
+- [x] Added CSS styles for note items and relationship items in task detail panel
+- [x] Added loadNotes function - fetches and renders internal notes from /api/tasks/:id/notes
+- [x] Added loadRelationships function - fetches and renders task relationships from /api/tasks/:id/relationships
+- [x] Both sections load in parallel with other detail sections (subtasks, comments, etc.)
+- [x] Notes show author, timestamp, and body text
+- [x] Relationships show relationship type badge and clickable target task
+- [x] Graceful fallback when endpoints don't exist (silent catch)

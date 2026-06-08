@@ -689,6 +689,50 @@ export function registerMcpTools(
     },
   );
 
+  // set_task_command_text tool
+  server.registerTool(
+    "set_task_command_text",
+    {
+      description:
+        "Update the command text of a task. Use this to correct typos, clarify instructions, or update the task's core command without losing its history, comments, or status. The command text is the original user request that triggered the task.",
+      inputSchema: {
+        taskId: z.string().describe("The task ID to update"),
+        commandText: z
+          .string()
+          .describe("The new command text (non-empty string)"),
+      },
+    },
+    async (args) => {
+      const { taskId, commandText } = args;
+
+      try {
+        const task = await client.setTaskCommandText(taskId, commandText);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                task,
+                message: `Command text updated (${commandText.length} chars)`,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // set_task_priority tool
   server.registerTool(
     "set_task_priority",
@@ -3680,6 +3724,54 @@ export function registerMcpTools(
                 message: result.updated > 0
                   ? `Updated ${result.updated} task(s) to ${priority} priority`
                   : "No tasks were updated",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // bulk_clone_tasks tool
+  server.registerTool(
+    "bulk_clone_tasks",
+    {
+      description:
+        "Clone multiple tasks at once. Each cloned task starts in 'pending' status with the same command text, priority, tags, and description as the original. Cloned tasks are unassigned. Returns the count of successfully cloned tasks, their new IDs, and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to clone (1-100 IDs)"),
+      },
+    },
+    async (args) => {
+      const { ids } = args;
+      try {
+        const result = await client.bulkCloneTasks(ids);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                cloned: result.cloned,
+                taskIds: result.taskIds,
+                errors: result.errors,
+                message: result.cloned > 0
+                  ? `Cloned ${result.cloned} task(s) successfully`
+                  : "No tasks were cloned",
               }, null, 2),
             },
           ],

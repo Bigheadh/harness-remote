@@ -215,6 +215,22 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async setTaskCommandText(taskId: string, commandText: string): Promise<Task> {
+      calls.push({ method: "setTaskCommandText", args: [taskId, commandText] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_cmd",
+        feishuChatId: "oc_cmd",
+        feishuUserId: "ou_cmd",
+        commandText,
+        status: "pending",
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
     async setPriority(taskId: string, priority: TaskPriority): Promise<Task> {
       calls.push({ method: "setPriority", args: [taskId, priority] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -392,6 +408,13 @@ function createMockClient(): TaskApiClient & {
       calls.push({ method: "bulkUpdatePriority", args: [ids, priority] });
       if (mock.failWith) throw new Error(mock.failWith);
       return { updated: ids.length, errors: [] };
+    },
+
+    async bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }> {
+      calls.push({ method: "bulkCloneTasks", args: [ids] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      const taskIds = ids.map((id) => `${id}_clone`);
+      return { cloned: ids.length, errors: [], taskIds };
     },
 
     async listTemplates(): Promise<import("../../src/shared/types.js").TaskTemplate[]> {
@@ -2085,8 +2108,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 153 tools", () => {
-        expect(mockServer.registrations).toHaveLength(153);
+      it("registers all 155 tools", () => {
+        expect(mockServer.registrations).toHaveLength(155);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2761,6 +2784,38 @@ describe("MCP tools", () => {
       mock.failWith = "Task not found";
       const tool = mockServer.registrations.find((r) => r.name === "set_task_priority")!;
       const result = await tool.handler({ taskId: "task_nonexistent", priority: "high" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Task not found");
+    });
+
+    // --- set_task_command_text tool tests ---
+
+    it("registers set_task_command_text tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_command_text");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("command text");
+    });
+
+    it("updates task command text", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_command_text")!;
+      const result = await tool.handler({ taskId: "task_001", commandText: "Updated command" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("setTaskCommandText");
+      expect(mock.calls[0].args).toEqual(["task_001", "Updated command"]);
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.commandText).toBe("Updated command");
+      expect(parsed.message).toContain("Command text updated");
+    });
+
+    it("returns error when set_task_command_text fails", async () => {
+      mock.failWith = "Task not found";
+      const tool = mockServer.registrations.find((r) => r.name === "set_task_command_text")!;
+      const result = await tool.handler({ taskId: "task_nonexistent", commandText: "New text" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
@@ -3912,6 +3967,39 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toBe("Disk full");
+    });
+  });
+
+  // ===== Bulk Clone Tests =====
+
+  describe("bulk_clone_tasks", () => {
+    it("registers bulk_clone_tasks with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_clone_tasks");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("clone");
+    });
+
+    it("clones multiple tasks", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_clone_tasks")!;
+      const result = await tool.handler({ ids: ["task_001", "task_002", "task_003"] });
+
+      expect(mock.calls[0].method).toBe("bulkCloneTasks");
+      expect(mock.calls[0].args).toEqual([["task_001", "task_002", "task_003"]]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.cloned).toBe(3);
+      expect(parsed.taskIds).toHaveLength(3);
+      expect(parsed.errors).toEqual([]);
+    });
+
+    it("returns error when bulkCloneTasks fails", async () => {
+      mock.failWith = "Database locked";
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_clone_tasks")!;
+      const result = await tool.handler({ ids: ["task_001"] });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Database locked");
     });
   });
 

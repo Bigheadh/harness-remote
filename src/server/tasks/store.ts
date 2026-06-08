@@ -66,6 +66,7 @@ export interface TaskStore {
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   setTaskPriority(taskId: string, priority: TaskPriority): Promise<Task>;
   setTaskEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task>;
+  setTaskCommandText(taskId: string, commandText: string): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   addComment(taskId: string, author: string, authorType: AuditLogEntry["actorType"], body: string): Promise<TaskComment>;
   listComments(taskId: string): Promise<TaskComment[]>;
@@ -76,6 +77,7 @@ export interface TaskStore {
   bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
   bulkUpdatePriority(ids: string[], priority: TaskPriority): Promise<{ updated: number; errors: string[] }>;
+  bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }>;
   // Task template methods
   createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
   listTemplates(): Promise<TaskTemplate[]>;
@@ -1464,6 +1466,29 @@ export function createTaskStore(storagePath: string): TaskStore {
       return rowToTask(updated);
     },
 
+    async setTaskCommandText(taskId: string, commandText: string): Promise<Task> {
+      if (typeof commandText !== "string" || commandText.trim() === "") {
+        throw new Error("commandText must be a non-empty string");
+      }
+
+      const row = selectTaskById.get(taskId) as
+        | Record<string, unknown>
+        | undefined;
+      if (!row) {
+        throw new Error(`Task not found: ${taskId}`);
+      }
+
+      const now = new Date().toISOString();
+      db.prepare(`UPDATE tasks SET command_text = ?, updated_at = ? WHERE id = ?`).run(
+        commandText.trim(),
+        now,
+        taskId,
+      );
+
+      const updated = selectTaskById.get(taskId) as Record<string, unknown>;
+      return rowToTask(updated);
+    },
+
     async listOverdueTasks(): Promise<Task[]> {
       const now = new Date().toISOString();
       const rows = db.prepare(`
@@ -1665,6 +1690,60 @@ export function createTaskStore(storagePath: string): TaskStore {
         }
       }
       return { updated, errors };
+    },
+
+    async bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }> {
+      const errors: string[] = [];
+      let cloned = 0;
+      const taskIds: string[] = [];
+      const now = new Date().toISOString();
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+
+          const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const originalMessageId = row["feishu_message_id"] as string;
+          const clonedMessageId = `${originalMessageId}_clone_${Date.now()}`;
+
+          const tagsJson = row["tags"] as string | null;
+          const attachmentsJson = row["attachments"] as string | null;
+
+          Number(insertTask.run(
+            newId,
+            row["source"] as string,
+            clonedMessageId,
+            row["feishu_chat_id"] as string,
+            row["feishu_user_id"] as string,
+            row["command_text"] as string,
+            "pending",
+            (row["priority"] as string) ?? "normal",
+            tagsJson,
+            attachmentsJson,
+            null, // cloned task starts unassigned
+            (row["due_date"] as string) ?? null,
+            (row["reminder_at"] as string) ?? null,
+            (row["description"] as string) ?? null,
+            now,
+            now,
+            null, // picked_at
+            null, // started_at
+            null, // completed_at
+            (row["cycle_id"] as string) ?? null, // cycle_id
+            null, // module_id
+          ));
+
+          taskIds.push(newId);
+          cloned++;
+        } catch (e) {
+          errors.push(`Error cloning task ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { cloned, errors, taskIds };
     },
 
     // ── Task Templates ──────────────────────────────────────────────

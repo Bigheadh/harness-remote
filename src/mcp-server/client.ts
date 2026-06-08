@@ -35,6 +35,7 @@ export interface TaskApiClient {
   setTaskDescription(taskId: string, description: string | null): Promise<Task>;
   setPriority(taskId: string, priority: TaskPriority): Promise<Task>;
   setEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task>;
+  setTaskCommandText(taskId: string, commandText: string): Promise<Task>;
   listOverdueTasks(): Promise<Task[]>;
   listComments(taskId: string): Promise<TaskComment[]>;
   addComment(taskId: string, author: string, body: string): Promise<TaskComment>;
@@ -47,6 +48,7 @@ export interface TaskApiClient {
   bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }>;
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
   bulkUpdatePriority(ids: string[], priority: string): Promise<{ updated: number; errors: string[] }>;
+  bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }>;
   // Template methods
   listTemplates(): Promise<TaskTemplate[]>;
   getTemplate(templateId: string): Promise<TaskTemplate>;
@@ -626,6 +628,27 @@ export function createTaskApiClient(
       return data.task;
     },
 
+    async setTaskCommandText(taskId: string, commandText: string): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/${taskId}/command-text`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ commandText }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to set command text: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
     async listOverdueTasks(): Promise<Task[]> {
       const response = await fetch(
         `${serverBaseUrl}/api/tasks/overdue`,
@@ -860,6 +883,27 @@ export function createTaskApiClient(
 
       const data = (await response.json()) as { updated: number; errors: string[] };
       return { updated: data.updated, errors: data.errors };
+    },
+
+    async bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks/bulk/clone`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to bulk clone tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { cloned: number; errors: string[]; taskIds: string[] };
+      return { cloned: data.cloned, errors: data.errors, taskIds: data.taskIds };
     },
 
     // ── Task Templates ──────────────────────────────────────────────

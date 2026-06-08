@@ -10,11 +10,17 @@
  *   /list [status]     — List tasks (default: pending)
  *   /status <id>       — Show task details
  *   /cancel <id>       — Cancel a pending task
+ *   /assign <id> <device> — Assign task to a device
+ *   /priority <id> <level> — Change task priority (low/normal/high/urgent)
+ *   /due <id> <date>   — Set task due date (YYYY-MM-DD)
+ *   /tag <id> <tag>    — Add tag(s) to a task (comma-separated)
  *   /stats             — Show task statistics
  *   /search <query>    — Search tasks by text
  *   /overdue           — List overdue tasks
  *   /mine              — List tasks created by the sender
  *   /digest            — Daily task summary (pending, overdue, due today, completed today)
+ *   /watch <id>        — Subscribe to task status updates
+ *   /unwatch <id>      — Unsubscribe from task status updates
  */
 
 import type { Task, TaskStatus } from "../../shared/types.js";
@@ -106,6 +112,24 @@ export async function executeCommand(
       case "digest":
         card = await buildDigestCard(userId, store);
         break;
+      case "assign":
+        card = await buildAssignCard(cmd.args, store);
+        break;
+      case "priority":
+        card = await buildPriorityCard(cmd.args, store);
+        break;
+      case "due":
+        card = await buildDueCard(cmd.args, store);
+        break;
+      case "tag":
+        card = await buildTagCard(cmd.args, store);
+        break;
+      case "watch":
+        card = await buildWatchCard(cmd.args, userId, store);
+        break;
+      case "unwatch":
+        card = await buildUnwatchCard(cmd.args, userId, store);
+        break;
       default:
         card = buildCustomCard(
           "Unknown Command",
@@ -144,6 +168,12 @@ function buildHelpCard(): FeishuCard {
     "**/list [status]** — List tasks (pending/picked/running/done/failed)",
     "**/status <id>** — Show task details",
     "**/cancel <id>** — Cancel a pending task",
+    "**/assign <id> <device>** — Assign task to a device",
+    "**/priority <id> <level>** — Change priority (low/normal/high/urgent)",
+    "**/due <id> <date>** — Set due date (YYYY-MM-DD)",
+    "**/tag <id> <tag>** — Add tag(s) to a task (comma-separated)",
+    "**/watch <id>** — Subscribe to task status updates",
+    "**/unwatch <id>** — Unsubscribe from task updates",
     "**/stats** — Show task statistics",
     "**/search <query>** — Search tasks by text",
     "**/overdue** — List overdue tasks",
@@ -629,4 +659,369 @@ async function buildDigestCard(
     },
     elements,
   };
+}
+
+// ─── Task Management Commands ──────────────────────────────────
+
+async function buildAssignCard(args: string, store: TaskStore): Promise<FeishuCard> {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return buildCustomCard(
+      "Missing Arguments",
+      "Usage: /assign <task-id> <device-id>\n\nExample: /assign abc123 device_01",
+      "red",
+    );
+  }
+
+  const [taskId, deviceId] = parts;
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const updated = await store.assignTask(task.id, deviceId);
+    return buildCustomCard(
+      "Task Assigned",
+      "**Task:** `" + updated.id.slice(0, 16) + "...` " + updated.commandText.slice(0, 50) +
+      (updated.commandText.length > 50 ? "..." : "") +
+      "\n**Device:** `" + deviceId + "`" +
+      "\n**Status:** " + STATUS_LABELS[updated.status],
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Assignment Failed",
+      "Failed to assign task: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
+}
+
+async function buildPriorityCard(args: string, store: TaskStore): Promise<FeishuCard> {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return buildCustomCard(
+      "Missing Arguments",
+      "Usage: /priority <task-id> <level>\n\nLevels: low, normal, high, urgent\nExample: /priority abc123 high",
+      "red",
+    );
+  }
+
+  const [taskId, priorityArg] = parts;
+  const priority = priorityArg.toLowerCase();
+
+  if (!["low", "normal", "high", "urgent"].includes(priority)) {
+    return buildCustomCard(
+      "Invalid Priority",
+      "Priority must be one of: low, normal, high, urgent\nGot: " + priorityArg,
+      "red",
+    );
+  }
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const updated = await store.setTaskPriority(task.id, priority as import("../../shared/types.js").TaskPriority);
+    return buildCustomCard(
+      "Priority Updated",
+      "**Task:** `" + updated.id.slice(0, 16) + "...` " + updated.commandText.slice(0, 50) +
+      (updated.commandText.length > 50 ? "..." : "") +
+      "\n**Priority:** " + PRIORITY_LABELS[updated.priority] +
+      "\n**Status:** " + STATUS_LABELS[updated.status],
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Priority Update Failed",
+      "Failed to update priority: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
+}
+
+async function buildDueCard(args: string, store: TaskStore): Promise<FeishuCard> {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return buildCustomCard(
+      "Missing Arguments",
+      "Usage: /due <task-id> <date>\n\nDate format: YYYY-MM-DD\nUse 'clear' to remove due date\nExample: /due abc123 2026-12-31",
+      "red",
+    );
+  }
+
+  const [taskId, dateArg] = parts;
+  const dueDate = dateArg.toLowerCase() === "clear" ? null : dateArg;
+
+  if (dueDate && isNaN(Date.parse(dueDate))) {
+    return buildCustomCard(
+      "Invalid Date",
+      "Date must be in YYYY-MM-DD format.\nGot: " + dateArg,
+      "red",
+    );
+  }
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const updated = await store.setTaskDueDate(task.id, dueDate);
+    const dueDisplay = updated.dueDate
+      ? "**Due Date:** " + updated.dueDate
+      : "**Due Date:** (cleared)";
+    return buildCustomCard(
+      "Due Date Updated",
+      "**Task:** `" + updated.id.slice(0, 16) + "...` " + updated.commandText.slice(0, 50) +
+      (updated.commandText.length > 50 ? "..." : "") +
+      "\n" + dueDisplay,
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Due Date Update Failed",
+      "Failed to update due date: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
+}
+
+async function buildTagCard(args: string, store: TaskStore): Promise<FeishuCard> {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    return buildCustomCard(
+      "Missing Arguments",
+      "Usage: /tag <task-id> <tag1>[,tag2,...]\n\nTags are comma-separated.\nExample: /tag abc123 bugfix,urgent",
+      "red",
+    );
+  }
+
+  const taskId = parts[0];
+  const tagsStr = parts.slice(1).join(" ");
+  const tags = tagsStr.split(",").map((t) => t.trim()).filter(Boolean);
+
+  if (tags.length === 0) {
+    return buildCustomCard(
+      "No Tags Provided",
+      "Please provide at least one tag.\nUsage: /tag <task-id> <tag1>[,tag2,...]",
+      "red",
+    );
+  }
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const updated = await store.addTags(task.id, tags);
+    const tagDisplay = updated.tags && updated.tags.length > 0
+      ? updated.tags.map((t) => "`" + t + "`").join(" ")
+      : "(none)";
+    return buildCustomCard(
+      "Tags Added",
+      "**Task:** `" + updated.id.slice(0, 16) + "...` " + updated.commandText.slice(0, 50) +
+      (updated.commandText.length > 50 ? "..." : "") +
+      "\n**Tags:** " + tagDisplay,
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Tag Update Failed",
+      "Failed to add tags: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
+}
+
+async function buildWatchCard(
+  args: string,
+  userId: string,
+  store: TaskStore,
+): Promise<FeishuCard> {
+  const taskId = args.trim();
+  if (!taskId) {
+    return buildCustomCard(
+      "Missing Task ID",
+      "Usage: /watch <task-id>",
+      "red",
+    );
+  }
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const alreadyWatching = await store.isWatching(task.id, userId);
+    if (alreadyWatching) {
+      return buildCustomCard(
+        "Already Watching",
+        "**Task:** `" + task.id.slice(0, 16) + "...` " + task.commandText.slice(0, 50) +
+        (task.commandText.length > 50 ? "..." : "") +
+        "\n\nYou are already watching this task. You will be notified of status changes.",
+        "blue",
+      );
+    }
+
+    await store.addWatcher(task.id, userId);
+    return buildCustomCard(
+      "Now Watching",
+      "**Task:** `" + task.id.slice(0, 16) + "...` " + task.commandText.slice(0, 50) +
+      (task.commandText.length > 50 ? "..." : "") +
+      "\n**Status:** " + STATUS_LABELS[task.status] +
+      "\n\nYou will be notified when this task's status changes.",
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Watch Failed",
+      "Failed to watch task: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
+}
+
+async function buildUnwatchCard(
+  args: string,
+  userId: string,
+  store: TaskStore,
+): Promise<FeishuCard> {
+  const taskId = args.trim();
+  if (!taskId) {
+    return buildCustomCard(
+      "Missing Task ID",
+      "Usage: /unwatch <task-id>",
+      "red",
+    );
+  }
+
+  let task: Task | undefined;
+  try {
+    task = await store.getTask(taskId);
+  } catch {
+    // try partial match
+  }
+
+  if (!task) {
+    const all = await store.listTasks(undefined, 100);
+    task = all.find((t) => t.id.startsWith(taskId));
+  }
+
+  if (!task) {
+    return buildCustomCard(
+      "Task Not Found",
+      "No task found matching " + taskId + ".",
+      "red",
+    );
+  }
+
+  try {
+    const wasWatching = await store.isWatching(task.id, userId);
+    if (!wasWatching) {
+      return buildCustomCard(
+        "Not Watching",
+        "**Task:** `" + task.id.slice(0, 16) + "...` " + task.commandText.slice(0, 50) +
+        (task.commandText.length > 50 ? "..." : "") +
+        "\n\nYou are not currently watching this task.",
+        "blue",
+      );
+    }
+
+    await store.removeWatcher(task.id, userId);
+    return buildCustomCard(
+      "Unwatched",
+      "**Task:** `" + task.id.slice(0, 16) + "...` " + task.commandText.slice(0, 50) +
+      (task.commandText.length > 50 ? "..." : "") +
+      "\n\nYou will no longer receive status update notifications for this task.",
+      "green",
+    );
+  } catch (e) {
+    return buildCustomCard(
+      "Unwatch Failed",
+      "Failed to unwatch task: " + (e instanceof Error ? e.message : String(e)),
+      "red",
+    );
+  }
 }

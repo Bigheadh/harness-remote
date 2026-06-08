@@ -303,6 +303,12 @@ export function renderDashboardHTML(
     .activity-text { font-size: 13px; }
     .activity-time { font-size: 11px; color: var(--text-dim); }
     .overdue { color: var(--red); font-weight: 600; }
+
+    .archived-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.2s; flex: none; }
+    .archived-toggle:hover { border-color: var(--accent); }
+    .archived-toggle.active { background: rgba(108,92,231,0.15); border-color: var(--accent); color: var(--accent); }
+    tr.archived-row { opacity: 0.55; }
+    tr.archived-row:hover { opacity: 0.8; }
     .no-data { color: var(--text-dim); font-size: 12px; font-style: italic; }
 
     /* Create task modal */
@@ -546,12 +552,13 @@ export function renderDashboardHTML(
       </div>
     </div>
 
+      <button class=\"archived-toggle\" id=\"archivedToggle\" onclick=\"toggleArchived()\">&#128230; Archived</button>
     <div id="taskList"><div class="loading">Loading...</div></div>
 
     <!-- Bulk actions bar -->
     <div class="bulk-bar" id="bulkBar">
       <span class="bulk-count" id="bulkCount">0 selected</span>
-      <div class="bulk-actions">
+      <div class="bulk-actions" id="bulkActionsActive">
         <button class="btn-sm green" onclick="bulkAction('done')">✅ Mark Done</button>
         <button class="btn-sm orange" onclick="bulkAction('running')">▶ Start</button>
         <button class="btn-sm red" onclick="bulkAction('failed')">❌ Mark Failed</button>
@@ -780,6 +787,8 @@ export function renderDashboardHTML(
     let dateTo = '';
     let allTags = new Set();
     let sortCol = '';
+    let showArchived = false;
+    let archivedTasks = [];
     let sortDir = 'asc';
 
     async function apiFetch(path, opts = {}) {
@@ -821,10 +830,50 @@ export function renderDashboardHTML(
       }
     }
 
+
+    async function loadArchivedTasks() {
+      try {
+        const data = await apiFetch('/api/tasks/archived?limit=500');
+        archivedTasks = data.tasks || [];
+        allTags = new Set();
+        archivedTasks.forEach(t => {
+          if (t.tags) t.tags.forEach(tag => allTags.add(tag));
+        });
+        renderStats();
+        renderTasks();
+      } catch (e) {
+        document.getElementById('taskList').innerHTML =
+          '<div class=\"empty\">Failed to load archived tasks: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    function toggleArchived() {
+      showArchived = !showArchived;
+      const btn = document.getElementById('archivedToggle');
+      btn.classList.toggle('active', showArchived);
+      currentFilter = '';
+      currentPriorityFilter = '';
+      searchQuery = '';
+      tagQuery = '';
+      document.getElementById('search').value = '';
+      document.getElementById('statusFilter').value = '';
+      document.getElementById('priorityFilter').value = '';
+      document.getElementById('tagFilter').value = '';
+      document.getElementById('bulkActionsActive').style.display = showArchived ? 'none' : '';
+      document.getElementById('bulkActionsArchived').style.display = showArchived ? '' : 'none';
+      if (showArchived) {
+        loadArchivedTasks();
+      } else {
+        loadTasks();
+      }
+    }
+
     function renderStats() {
       const counts = { pending: 0, picked: 0, running: 0, done: 0, failed: 0 };
-      allTasks.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
-      const total = allTasks.length;
+      const _tasks = showArchived ? archivedTasks : allTasks;
+      _tasks.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
+      const total = _tasks.length;
+      const _pfx = showArchived ? '&#128230; ' : '';
 
       document.getElementById('stats').innerHTML = [
         { label: 'Total', value: total, cls: '' },
@@ -841,12 +890,16 @@ export function renderDashboardHTML(
       ).join('');
 
       // Update page title with counts
+      if (showArchived) {
+        document.title = '&#128230; Archived (' + total + ') - Harness Remote';
+      } else {
       const active = counts.pending + counts.picked + counts.running;
       document.title = (active > 0 ? '(' + active + ') ' : '') + 'Harness Remote - Task Dashboard';
     }
+      }
 
     function renderTasks() {
-      let filtered = allTasks;
+      let filtered = showArchived ? archivedTasks : allTasks;
 
       // Sort
       if (sortCol) {
@@ -911,8 +964,7 @@ export function renderDashboardHTML(
 
         return '<tr onclick="showDetail(\\'' + t.id + '\\')" style="cursor:pointer">' +
           '<td onclick="event.stopPropagation()"><input type="checkbox" class="row-cb" data-id="' + t.id + '" onchange="onRowSelect()" /></td>' +
-          '<td><code style="font-size:12px;color:var(--text-dim)">' + t.id.slice(0, 16) + '...</code></td>' +
-          '<td><span class="badge badge-' + t.status + '">' + t.status + '</span>' + pin + '</td>' +
+        const _acls = showArchived ? ' archived-row' : '';
           '<td><span class="priority priority-' + t.priority + '">' + t.priority + '</span></td>' +
           '<td title="' + escapeHtml(t.commandText) + '">' + escapeHtml(t.commandText.slice(0, 60)) + (t.commandText.length > 60 ? '...' : '') + '</td>' +
           '<td>' + (tags || '<span style="color:var(--text-dim)">—</span>') + '</td>' +

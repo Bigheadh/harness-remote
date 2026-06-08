@@ -1044,6 +1044,47 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, ...result });
   });
 
+  // POST /api/tasks/bulk/clone - clone multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/clone", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[] };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+
+    if (body.ids.length > 100) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Cannot clone more than 100 tasks at once" },
+      });
+    }
+
+    const result = await store.bulkCloneTasks(body.ids);
+    log.info({ count: result.cloned, errors: result.errors.length }, "Bulk clone completed");
+
+    if (auditStore && result.cloned > 0) {
+      await auditStore.log({
+        action: "task.created",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.cloned, sourceIds: body.ids, clonedIds: result.taskIds, errors: result.errors },
+      });
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
   // GET /api/tasks/ready - list tasks ready for processing (pending + all deps met)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.get("/api/tasks/ready", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -2227,6 +2268,47 @@ export function registerTaskRoutes(
     try {
       const task = await store.setTaskDescription(id, body?.description ?? null);
       log.info({ taskId: id, hasDescription: body?.description != null }, "Task description updated");
+      return reply.send({ task });
+    } catch (e) {
+      if (e instanceof Error && e.message.includes("not found")) {
+        return reply.code(404).send({
+          error: { code: "not_found", message: `Task not found: ${id}` },
+        });
+      }
+      throw e;
+    }
+  });
+
+  // POST /api/tasks/:id/command-text - set command text (requires tasks.write)
+  server.post<{
+    Params: { id: string };
+    Body: { commandText: string };
+  }>("/api/tasks/:id/command-text", async (req, reply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const { id } = req.params;
+    const body = req.body as { commandText?: string };
+
+    if (typeof body?.commandText !== "string" || body.commandText.trim() === "") {
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "'commandText' must be a non-empty string",
+        },
+      });
+    }
+
+    try {
+      const task = await store.setTaskCommandText(id, body.commandText);
+      log.info({ taskId: id }, "Task command text updated");
       return reply.send({ task });
     } catch (e) {
       if (e instanceof Error && e.message.includes("not found")) {
