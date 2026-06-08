@@ -597,3 +597,13 @@
 - [x] Modules: table with name, status, task count, delete action
 - [x] Modules: create form with name and optional description
 - [x] Both cards wired into loadSettings() initialization
+
+## Phase 72: Feishu /digest Slash Command
+- [x] Card builder: buildDigestCard — comprehensive daily task summary card with pending/in-progress/overdue/due-today/completed-today sections
+- [x] Commands: /digest slash command — user sends /digest in Feishu to receive a task summary card
+- [x] Card header: red when overdue tasks exist, blue otherwise
+- [x] Empty state: "No active tasks. You're all caught up!" when no tasks
+- [x] Help text: updated /help to include /digest command
+- [x] Exported CardElement interface from card-builder.ts (required for digest card element types)
+- [x] Tests: 8 new tests for digest command (parseCommand, executeCommand, empty state, overdue, pending, in-progress, error handling)
+- [x] Updated test count: 528 → 536

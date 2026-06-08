@@ -14,6 +14,7 @@
  *   /search <query>    — Search tasks by text
  *   /overdue           — List overdue tasks
  *   /mine              — List tasks created by the sender
+ *   /digest            — Daily task summary (pending, overdue, due today, completed today)
  */
 
 import type { Task, TaskStatus } from "../../shared/types.js";
@@ -102,6 +103,9 @@ export async function executeCommand(
       case "mine":
         card = await buildMineCard(userId, store);
         break;
+      case "digest":
+        card = await buildDigestCard(userId, store);
+        break;
       default:
         card = buildCustomCard(
           "Unknown Command",
@@ -144,6 +148,7 @@ function buildHelpCard(): FeishuCard {
     "**/search <query>** — Search tasks by text",
     "**/overdue** — List overdue tasks",
     "**/mine** — List your tasks",
+    "**/digest** — Daily task summary",
     "",
     "_Tip: Prefix any other message with text to create a new task._",
     "_Priority: #priority:urgent #priority:high !urgent !high_",
@@ -468,4 +473,160 @@ async function buildMineCard(
     lines.join("\n"),
     "indigo",
   );
+}
+
+async function buildDigestCard(
+  userId: string,
+  store: TaskStore,
+): Promise<FeishuCard> {
+  // Gather data in parallel
+  const [allUserTasks, overdueTasks] = await Promise.all([
+    store.listTasksByUser(userId, 50),
+    store.listOverdueTasks(),
+  ]);
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+
+  // Filter user's tasks into digest categories
+  const pendingTasks = allUserTasks.filter((t) => t.status === "pending");
+  const pickedTasks = allUserTasks.filter((t) => t.status === "picked");
+  const runningTasks = allUserTasks.filter((t) => t.status === "running");
+  const doneToday = allUserTasks.filter(
+    (t) => t.status === "done" && t.completedAt && t.completedAt >= todayStart && t.completedAt <= todayEnd,
+  );
+  const dueToday = allUserTasks.filter(
+    (t) => t.dueDate && t.dueDate >= todayStart.slice(0, 10) && t.dueDate <= todayEnd.slice(0, 10) && t.status !== "done" && t.status !== "failed",
+  );
+  const userOverdue = overdueTasks.filter((t) => t.feishuUserId === userId);
+
+  const inProgress = [...pickedTasks, ...runningTasks];
+
+  // Build summary line
+  const summaryParts: string[] = [];
+  summaryParts.push("**Pending:** " + pendingTasks.length);
+  summaryParts.push("**In Progress:** " + inProgress.length);
+  if (userOverdue.length > 0) {
+    summaryParts.push("**Overdue:** ⚠️ " + userOverdue.length);
+  }
+  if (dueToday.length > 0) {
+    summaryParts.push("**Due Today:** 📅 " + dueToday.length);
+  }
+  summaryParts.push("**Done Today:** ✅ " + doneToday.length);
+
+  const elements: import("./card-builder.js").CardElement[] = [];
+
+  // Summary section
+  elements.push({
+    tag: "div",
+    text: { content: summaryParts.join("  |  "), tag: "lark_md" },
+  });
+
+  elements.push({ tag: "hr" });
+
+  // Overdue tasks (high priority)
+  if (userOverdue.length > 0) {
+    const overdueLines: string[] = ["**⚠️ Overdue Tasks:**"];
+    for (const task of userOverdue.slice(0, 5)) {
+      const truncated = task.commandText.length > 50
+        ? task.commandText.slice(0, 47) + "..."
+        : task.commandText;
+      overdueLines.push(
+        "* `" + task.id.slice(0, 12) + "` " + PRIORITY_LABELS[task.priority] + " " + truncated,
+      );
+    }
+    if (userOverdue.length > 5) {
+      overdueLines.push("_...and " + (userOverdue.length - 5) + " more._");
+    }
+    elements.push({
+      tag: "div",
+      text: { content: overdueLines.join("\n"), tag: "lark_md" },
+    });
+  }
+
+  // Due today tasks
+  if (dueToday.length > 0) {
+    const dueLines: string[] = ["**📅 Due Today:**"];
+    for (const task of dueToday.slice(0, 5)) {
+      const truncated = task.commandText.length > 50
+        ? task.commandText.slice(0, 47) + "..."
+        : task.commandText;
+      dueLines.push(
+        "* `" + task.id.slice(0, 12) + "` " + PRIORITY_LABELS[task.priority] + " " + truncated,
+      );
+    }
+    if (dueToday.length > 5) {
+      dueLines.push("_...and " + (dueToday.length - 5) + " more._");
+    }
+    elements.push({
+      tag: "div",
+      text: { content: dueLines.join("\n"), tag: "lark_md" },
+    });
+  }
+
+  // In progress tasks
+  if (inProgress.length > 0) {
+    const progLines: string[] = ["**🔄 In Progress:**"];
+    for (const task of inProgress.slice(0, 5)) {
+      const truncated = task.commandText.length > 50
+        ? task.commandText.slice(0, 47) + "..."
+        : task.commandText;
+      progLines.push(
+        "* `" + task.id.slice(0, 12) + "` " + STATUS_LABELS[task.status] + " " + truncated,
+      );
+    }
+    elements.push({
+      tag: "div",
+      text: { content: progLines.join("\n"), tag: "lark_md" },
+    });
+  }
+
+  // Recently completed
+  if (doneToday.length > 0) {
+    const doneLines: string[] = ["**✅ Completed Today:**"];
+    for (const task of doneToday.slice(0, 5)) {
+      const truncated = task.commandText.length > 50
+        ? task.commandText.slice(0, 47) + "..."
+        : task.commandText;
+      doneLines.push("* `" + task.id.slice(0, 12) + "` " + truncated);
+    }
+    elements.push({
+      tag: "div",
+      text: { content: doneLines.join("\n"), tag: "lark_md" },
+    });
+  }
+
+  // Empty state
+  if (elements.length === 1) {
+    // Only the summary section exists
+    elements.push({
+      tag: "div",
+      text: {
+        content: "No active tasks. You're all caught up! 🎉",
+        tag: "lark_md",
+      },
+    });
+  }
+
+  // Note
+  elements.push({ tag: "hr" });
+  elements.push({
+    tag: "note",
+    elements: [
+      {
+        tag: "plain_text",
+        content: "Generated at " + now.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+      },
+    ],
+  });
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      title: { content: "📊 Task Digest", tag: "plain_text" },
+      template: userOverdue.length > 0 ? "red" : "blue",
+    },
+    elements,
+  };
 }

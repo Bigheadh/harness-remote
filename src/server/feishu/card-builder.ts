@@ -64,7 +64,7 @@ interface CardButton {
   value: Record<string, string>;
 }
 
-interface CardElement {
+export interface CardElement {
   tag: string;
   text?: { content: string; tag: string };
   content?: string;
