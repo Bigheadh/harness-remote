@@ -1699,7 +1699,15 @@ export function renderDashboardHTML(
 
     // CSV export
     function exportCSV() {
-      window.open(API_BASE + '/api/tasks/export.csv', '_blank');
+      const params = new URLSearchParams();
+      if (currentFilter) params.set('status', currentFilter);
+      if (currentPriorityFilter) params.set('priority', currentPriorityFilter);
+      if (tagQuery) params.set('tags', tagQuery);
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo) params.set('to', dateTo + 'T23:59:59');
+      if (searchQuery) params.set('q', searchQuery);
+      const qs = params.toString();
+      window.open(API_BASE + '/api/tasks/export.csv' + (qs ? '?' + qs : ''), '_blank');
     }
 
     // Event listeners

@@ -1130,6 +1130,7 @@ export function registerTaskRoutes(
 
   // GET /api/tasks/export.csv - export all tasks as CSV (requires tasks.read)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  // Supports optional query params: status, priority, tags (comma-separated), from, to, q, deviceId
   server.get("/api/tasks/export.csv", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
     try {
@@ -1142,7 +1143,19 @@ export function registerTaskRoutes(
     }
 
     try {
-      const tasks = await store.getAllTasks();
+      const query = req.query as Record<string, string | undefined>;
+      const hasFilters = query.status || query.priority || query.tags || query.from || query.to || query.q || query.deviceId;
+      const tasks = hasFilters
+        ? await store.searchAllTasksForExport({
+            status: query.status as import("../../shared/types.js").TaskStatus | undefined,
+            priority: query.priority as import("../../shared/types.js").TaskPriority | undefined,
+            tags: query.tags ? query.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
+            from: query.from,
+            to: query.to,
+            q: query.q,
+            deviceId: query.deviceId,
+          })
+        : await store.getAllTasks();
 
       // CSV header
       const headers = [

@@ -770,6 +770,11 @@ function createMockClient(): TaskApiClient & {
         scheduledTasks: [],
       };
     },
+    async exportTasksCsv(filters?: Record<string, string>): Promise<string> {
+      calls.push({ method: "exportTasksCsv", args: [filters] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return "id,source,commandText,status,priority\n";
+    },
 
     async importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
       calls.push({ method: "importTasks", args: [data, mode] });
@@ -2108,8 +2113,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 155 tools", () => {
-        expect(mockServer.registrations).toHaveLength(155);
+      it("registers all 156 tools", () => {
+        expect(mockServer.registrations).toHaveLength(156);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -4876,17 +4881,57 @@ describe("MCP tools", () => {
       expect(tool).toBeDefined();
       expect(tool!.inputSchema).toHaveProperty("moduleId");
     });
-
     it("lists module tasks via client", async () => {
       mock.calls.length = 0;
       const tool = mockServer.registrations.find((r) => r.name === "list_module_tasks")!;
       const result = await tool.handler({ moduleId: "module_001" });
-
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.tasks).toHaveLength(1);
       expect(parsed.tasks[0].moduleId).toBe("module_001");
       expect(mock.calls[0].method).toBe("listModuleTasks");
+    });
+  });
+  describe("export_tasks_csv", () => {
+    it("registers the tool with correct schema", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "export_tasks_csv");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("csv");
+    });
+
+    it("exports CSV with no filters", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "export_tasks_csv")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.csv).toContain("id,source");
+      expect(parsed.lineCount).toBe(1);
+      expect(mock.calls[0].method).toBe("exportTasksCsv");
+    });
+
+    it("exports CSV with status filter", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "export_tasks_csv")!;
+      const result = await tool.handler({ status: "pending" });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.csv).toBeDefined();
+      expect(mock.calls[0].args[0].status).toBe("pending");
+    });
+
+    it("handles errors gracefully", async () => {
+      mock.calls.length = 0;
+      mock.failWith = "Network error";
+      const tool = mockServer.registrations.find((r) => r.name === "export_tasks_csv")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Network error");
+      mock.failWith = undefined;
     });
   });
 });

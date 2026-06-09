@@ -2412,6 +2412,56 @@ export function registerMcpTools(
     },
   );
 
+  // export_tasks_csv tool
+  server.registerTool(
+    "export_tasks_csv",
+    {
+      description:
+        "Export tasks as CSV with optional filters. Returns CSV text with headers (id, source, commandText, status, priority, tags, dueDate, etc.). Use filters to narrow the export to specific status, priority, tags, date range, or text search. Without filters, exports all tasks.",
+      inputSchema: {
+        status: z.enum(["pending", "picked", "running", "done", "failed"]).optional().describe("Filter by task status"),
+        priority: z.enum(["low", "normal", "high", "urgent"]).optional().describe("Filter by task priority"),
+        tags: z.string().optional().describe("Comma-separated tags to filter by (e.g. 'bug,urgent')"),
+        from: z.string().optional().describe("Export tasks created after this ISO 8601 date"),
+        to: z.string().optional().describe("Export tasks created before this ISO 8601 date"),
+        q: z.string().optional().describe("Text search filter (matches commandText, resultSummary, description)"),
+        deviceId: z.string().optional().describe("Filter by assigned device ID"),
+      },
+    },
+    async (args) => {
+      try {
+        const csv = await client.exportTasksCsv({
+          status: args.status,
+          priority: args.priority,
+          tags: args.tags,
+          from: args.from,
+          to: args.to,
+          q: args.q,
+          deviceId: args.deviceId,
+        });
+        const lineCount = csv.split("\n").length - 1;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                csv,
+                lineCount,
+                message: `Exported ${lineCount} tasks as CSV${args.status ? ` (status=${args.status})` : ""}${args.priority ? ` (priority=${args.priority})` : ""}`,
+              }),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // import_tasks tool
   server.registerTool(
     "import_tasks",

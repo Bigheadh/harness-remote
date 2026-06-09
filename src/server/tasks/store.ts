@@ -123,6 +123,7 @@ export interface TaskStore {
     metric: import("../../shared/types.js").TimeSeriesMetric,
   ): Promise<import("../../shared/types.js").TimeSeriesResult>;
   // Return all tasks without limit (for CSV export, archive, etc.)
+  searchAllTasksForExport(options: SearchOptions): Promise<Task[]>;
   getAllTasks(): Promise<Task[]>;
   // Task retry/requeue methods
   retryTask(taskId: string): Promise<Task>;
@@ -3140,6 +3141,48 @@ export function createTaskStore(storagePath: string): TaskStore {
 
     async getAllTasks(): Promise<Task[]> {
       const rows = db.prepare(`SELECT * FROM tasks ORDER BY created_at DESC`).all() as Array<Record<string, unknown>>;
+      return rows.map(rowToTask);
+    },
+
+    async searchAllTasksForExport(options: SearchOptions): Promise<Task[]> {
+      const conditions: string[] = [];
+      const params: (string | number | null)[] = [];
+
+      if (options.status) {
+        conditions.push("status = ?");
+        params.push(options.status);
+      }
+      if (options.priority) {
+        conditions.push("priority = ?");
+        params.push(options.priority);
+      }
+      if (options.from) {
+        conditions.push("created_at >= ?");
+        params.push(options.from);
+      }
+      if (options.to) {
+        conditions.push("created_at <= ?");
+        params.push(options.to);
+      }
+      if (options.q) {
+        conditions.push("(command_text LIKE ? OR result_summary LIKE ? OR description LIKE ?)");
+        const pattern = `%${options.q}%`;
+        params.push(pattern, pattern, pattern);
+      }
+      if (options.deviceId) {
+        conditions.push("assigned_device_id = ?");
+        params.push(options.deviceId);
+      }
+      if (options.tags && options.tags.length > 0) {
+        for (const tag of options.tags) {
+          conditions.push("tags LIKE ?");
+          params.push(`%"${tag}"%`);
+        }
+      }
+
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const sql = `SELECT * FROM tasks ${where} ORDER BY created_at DESC`;
+      const rows = db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
       return rows.map(rowToTask);
     },
 

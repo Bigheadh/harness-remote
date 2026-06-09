@@ -730,3 +730,13 @@
 - [x] Color-coded progress bar (green < 60%, yellow < 80%, red >= 80%)
 - [x] Wired loadSlaStatus into showDetail flow (loads after links)
 - [x] Graceful fallback when SLA endpoint doesn't exist (silent catch)
+
+## Phase 86: Filtered CSV Export
+- [x] Store layer: searchAllTasksForExport(options) - same filter logic as searchTasks but without 100-row limit
+- [x] API route: GET /api/tasks/export.csv now accepts optional query params (status, priority, tags, from, to, q, deviceId)
+- [x] MCP client: exportTasksCsv(filters?) method - fetches filtered CSV from the API
+- [x] MCP tool: export_tasks_csv - AI agents can export tasks as CSV with status/priority/tags/date/text filters
+- [x] Dashboard: CSV export button now passes current filter state (status, priority, tags, date range, search)
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (155 → 156)
+- [x] Added 4 new tests for export_tasks_csv tool (registration, no filters, status filter, error handling)

@@ -80,6 +80,7 @@ export interface TaskApiClient {
   getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }>;
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
+  exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string }): Promise<string>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
   importTasksFromCsv(csv: string, options?: { columnMap?: Record<string, string>; defaultPriority?: string; defaultTags?: string[]; delimiter?: string }): Promise<{ imported: number; errors: string[]; taskIds: string[] }>;
   // SLA methods
@@ -1212,6 +1213,25 @@ export function createTaskApiClient(
         throw new Error(`Failed to export tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
       }
       return (await response.json()) as Record<string, unknown>;
+    },
+
+    async exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string }): Promise<string> {
+      const params = new URLSearchParams();
+      if (filters?.status) params.set("status", filters.status);
+      if (filters?.priority) params.set("priority", filters.priority);
+      if (filters?.tags) params.set("tags", filters.tags);
+      if (filters?.from) params.set("from", filters.from);
+      if (filters?.to) params.set("to", filters.to);
+      if (filters?.q) params.set("q", filters.q);
+      if (filters?.deviceId) params.set("deviceId", filters.deviceId);
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/tasks/export.csv${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(`Failed to export CSV: ${response.status} ${body.error?.message ?? response.statusText}`);
+      }
+      return await response.text();
     },
 
     async importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
