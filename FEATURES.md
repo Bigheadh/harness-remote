@@ -722,3 +722,11 @@
 - [x] loadSettingsCycles function - fetches from GET /api/cycles
 - [x] Status emoji indicators (upcoming, active, completed)
 - [x] Wired into loadSettings() function
+
+## Phase 85: Dashboard Task SLA Status Display
+- [x] Added CSS styles for SLA status items (ok/warning/breach/no_policy with color-coded left borders)
+- [x] Added loadSlaStatus function - fetches from GET /api/tasks/:id/sla and renders SLA status in detail panel
+- [x] SLA status shows policy name, target minutes, elapsed time, and progress bar
+- [x] Color-coded progress bar (green < 60%, yellow < 80%, red >= 80%)
+- [x] Wired loadSlaStatus into showDetail flow (loads after links)
+- [x] Graceful fallback when SLA endpoint doesn't exist (silent catch)

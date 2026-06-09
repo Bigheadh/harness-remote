@@ -397,6 +397,37 @@ export function renderDashboardHTML(
     }
     .link-item a:hover { text-decoration: underline; }
     .link-meta { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+    .sla-status-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+    .sla-status-item.ok { background: rgba(34,197,94,0.1); border-left: 3px solid var(--green); }
+    .sla-status-item.warning { background: rgba(234,179,8,0.1); border-left: 3px solid #eab308; }
+    .sla-status-item.breach { background: rgba(239,68,68,0.1); border-left: 3px solid var(--red); }
+    .sla-status-item.no_policy { background: rgba(107,114,128,0.1); border-left: 3px solid #6b7280; }
+    .sla-status-icon { font-size: 18px; flex-shrink: 0; }
+    .sla-status-detail { flex: 1; }
+    .sla-status-label { font-weight: 600; }
+    .sla-status-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .sla-progress-bar {
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .sla-progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s;
+    }
+
     .global-activity-item {
       padding: 10px 12px;
       border-bottom: 1px solid var(--border);
@@ -1226,6 +1257,7 @@ export function renderDashboardHTML(
         loadNotes(id);
         loadRelationships(id);
         loadLinks(id);
+        loadSlaStatus(id);
       } catch (e) {
         alert('Failed to load task: ' + e.message);
       }
@@ -1466,6 +1498,40 @@ export function renderDashboardHTML(
         document.getElementById('detailBody').appendChild(section);
       } catch { /* links endpoint may not exist */ }
     }
+
+    async function loadSlaStatus(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/sla');
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        const status = data.status || 'no_policy';
+        const icons = { ok: '✅', warning: '⚠️', breach: '🚨', no_policy: '📏' };
+        const labels = { ok: 'Within SLA', warning: 'SLA Warning', breach: 'SLA Breached', no_policy: 'No SLA Policy' };
+        let inner = '<div class="detail-section-header">📏 SLA Status</div><div class="detail-section-body">';
+        inner += '<div class="sla-status-item ' + status + '">';
+        inner += '<div class="sla-status-icon">' + (icons[status] || '📏') + '</div>';
+        inner += '<div class="sla-status-detail">';
+        inner += '<div class="sla-status-label">' + (labels[status] || status) + '</div>';
+        if (data.policy && data.policy.name) {
+          inner += '<div class="sla-status-meta">Policy: ' + escapeHtml(data.policy.name);
+          if (data.targetMinutes) inner += ' · Target: ' + data.targetMinutes + 'm';
+          inner += '</div>';
+        }
+        if (data.elapsedMinutes !== undefined) {
+          inner += '<div class="sla-status-meta">Elapsed: ' + Math.round(data.elapsedMinutes) + 'm</div>';
+        }
+        inner += '</div></div>';
+        if (data.targetMinutes && data.targetMinutes > 0) {
+          const pct = Math.min(100, (data.elapsedMinutes / data.targetMinutes) * 100);
+          const color = pct < 60 ? 'var(--green)' : pct < 80 ? '#eab308' : 'var(--red)';
+          inner += '<div class="sla-progress-bar"><div class="sla-progress-fill" style="width:' + Math.round(pct) + '%;background:' + color + '"></div></div>';
+        }
+        inner += '</div>';
+        section.innerHTML = inner;
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* sla endpoint may not exist */ }
+    }
+
 
     function field(label, value) {
       return '<div class="detail-label">' + label + '</div><div class="detail-value">' + value + '</div>';
