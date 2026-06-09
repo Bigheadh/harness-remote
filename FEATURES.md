@@ -689,3 +689,36 @@
 - [x] Notes show author, timestamp, and body text
 - [x] Relationships show relationship type badge and clickable target task
 - [x] Graceful fallback when endpoints don't exist (silent catch)
+
+## Phase 82: Global Activity Feed Dashboard Tab
+- [x] Added CSS styles for global activity feed items (icon, body, meta, task link, empty state)
+- [x] Added Activity tab button in dashboard toolbar (between Kanban and Settings)
+- [x] Added Activity view panel in dashboard HTML
+- [x] Added loadGlobalActivity function - fetches from GET /api/activity and renders chronological feed
+- [x] Activity items show action icon, action name, detail, actor info, timestamp, and clickable task link
+- [x] Updated switchView function with activity case and nth-child indices (5 tabs now)
+- [x] Empty state message when no activity exists
+- [x] Graceful error handling with fallback message
+
+## Phase 83: Audit Log Dashboard Tab
+- [x] CSS styles for audit log items (icon, body, meta, filters, empty state, count)
+- [x] Audit tab button in dashboard toolbar (between Activity and Settings, 6 tabs now)
+- [x] Audit view panel with filter controls (action, actor type, actor ID, date range)
+- [x] loadAuditLog function - fetches from GET /api/audit with query params and renders chronological feed
+- [x] Audit entries show action icon, action name, detail, actor info, timestamp, and clickable task link
+- [x] Action filter dropdown with all known AuditAction types
+- [x] Actor type filter (feishu, device, api, system)
+- [x] Actor ID text filter
+- [x] Date range filters (from/to)
+- [x] Entry count display
+- [x] Updated switchView function with audit case and nth-child indices (6 tabs now)
+- [x] Graceful error handling with fallback message
+
+## Phase 84: Dashboard Settings - Cycles Management UI
+- [x] Added Cycles (Sprints) card in dashboard Settings tab
+- [x] Cycles table showing name, status, date range, task counts
+- [x] Create Cycle form with name, description, start date, end date fields
+- [x] Delete Cycle confirmation with unlink warning
+- [x] loadSettingsCycles function - fetches from GET /api/cycles
+- [x] Status emoji indicators (upcoming, active, completed)
+- [x] Wired into loadSettings() function

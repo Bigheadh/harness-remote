@@ -381,6 +381,54 @@ export function renderDashboardHTML(
       font-size: 13px;
     }
     .watcher-item:last-child { border-bottom: none; }
+    .link-item {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .link-item:last-child { border-bottom: none; }
+    .link-item a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .link-item a:hover { text-decoration: underline; }
+    .link-meta { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+    .global-activity-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .global-activity-item:last-child { border-bottom: none; }
+    .global-activity-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .global-activity-body { flex: 1; min-width: 0; }
+    .global-activity-text { line-height: 1.4; }
+    .global-activity-text strong { color: var(--text); }
+    .global-activity-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .global-activity-task { color: var(--accent); text-decoration: none; font-weight: 500; }
+    .global-activity-task:hover { text-decoration: underline; }
+    .global-activity-empty { padding: 40px; text-align: center; color: var(--text-dim); font-size: 13px; }
+
+    .audit-log-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .audit-log-filters select, .audit-log-filters input { font-size: 12px; padding: 4px 8px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+    .audit-log-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .audit-log-item:last-child { border-bottom: none; }
+    .audit-log-icon { font-size: 16px; width: 24px; text-align: center; flex-shrink: 0; }
+    .audit-log-body { flex: 1; min-width: 0; }
+    .audit-log-text { color: var(--text); }
+    .audit-log-text strong { color: var(--accent); }
+    .audit-log-meta { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+    .audit-log-meta a { color: var(--accent); text-decoration: none; }
+    .audit-log-meta a:hover { text-decoration: underline; }
+    .audit-log-empty { color: var(--text-dim); text-align: center; padding: 40px 0; font-size: 13px; }
+    .audit-log-count { color: var(--text-dim); font-size: 12px; margin-bottom: 8px; }
+
         .task-table th.sortable { cursor: pointer; user-select: none; }
     .task-table th.sortable:hover { color: var(--accent); }
     .task-table th .sort-arrow { font-size: 10px; margin-left: 4px; opacity: 0.5; }
@@ -506,6 +554,8 @@ export function renderDashboardHTML(
       <button class="view-tab active" onclick="switchView('tasks')">📋 Tasks</button>
       <button class="view-tab" onclick="switchView('analytics')">📊 Analytics</button>
       <button class="view-tab" onclick="switchView('kanban')">📌 Kanban</button>
+      <button class="view-tab" onclick="switchView('activity')">🔄 Activity</button>
+      <button class="view-tab" onclick="switchView('audit')">📜 Audit</button>
       <button class="view-tab" onclick="switchView('settings')">⚙️ Settings</button>
     </nav>
     <div class="header-actions">
@@ -581,6 +631,49 @@ export function renderDashboardHTML(
     <!-- Kanban view -->
     <div class="view-panel" id="kanbanView">
       <div id="kanbanContent"><div class="kanban-empty">Loading kanban board...</div></div>
+    </div>
+
+    <!-- Activity view -->
+    <div class="view-panel" id="activityView">
+      <div id="activityContent"><div class="global-activity-empty">Loading activity feed...</div></div>
+    </div>
+
+    <!-- Audit log view -->
+    <div class="view-panel" id="auditView">
+      <div style="padding:16px 0">
+        <div class="audit-log-filters">
+          <select id="auditActionFilter">
+            <option value="">All Actions</option>
+            <option value="task.created">Task Created</option>
+            <option value="task.status_changed">Status Changed</option>
+            <option value="task.assigned">Task Assigned</option>
+            <option value="task.archived">Task Archived</option>
+            <option value="task.reopened">Task Reopened</option>
+            <option value="task.pinned">Task Pinned</option>
+            <option value="task.link_added">Link Added</option>
+            <option value="task.link_removed">Link Removed</option>
+            <option value="comment.added">Comment Added</option>
+            <option value="note.added">Note Added</option>
+            <option value="subtask.created">Subtask Created</option>
+            <option value="subtask.completed">Subtask Completed</option>
+            <option value="sla.breach">SLA Breach</option>
+            <option value="sla.warning">SLA Warning</option>
+          </select>
+          <select id="auditActorTypeFilter">
+            <option value="">All Actors</option>
+            <option value="feishu">Feishu</option>
+            <option value="device">Device</option>
+            <option value="api">API</option>
+            <option value="system">System</option>
+          </select>
+          <input id="auditActorFilter" type="text" placeholder="Actor ID..." style="max-width:160px" />
+          <input id="auditDateFrom" type="date" title="From date" />
+          <input id="auditDateTo" type="date" title="To date" />
+          <button class="btn btn-outline" onclick="loadAuditLog()">🔍 Filter</button>
+        </div>
+        <div class="audit-log-count" id="auditCount"></div>
+        <div id="auditContent"><div class="audit-log-empty">Loading audit log...</div></div>
+      </div>
     </div>
 
     <!-- Settings view -->
@@ -713,6 +806,24 @@ export function renderDashboardHTML(
     </div>
 
   </div>
+
+        <div class="settings-card">
+          <h3>🔄 Cycles (Sprints)</h3>
+          <div id="settingsCycles"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateCycleModal()">+ Add Cycle</button>
+          </div>
+          <div class="settings-form" id="createCycleForm">
+            <input id="newCycleName" placeholder="Cycle name (e.g. Sprint 1)" />
+            <input id="newCycleDescription" placeholder="Description (optional)" />
+            <input id="newCycleStart" type="date" />
+            <input id="newCycleEnd" type="date" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createCycleForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateCycle()">Create</button>
+            </div>
+          </div>
+        </div>
 
   <!-- Detail overlay -->
   <div class="detail-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
@@ -1112,6 +1223,9 @@ export function renderDashboardHTML(
         loadDependencies(id);
         loadTimeEntries(id);
         loadWatchers(id);
+        loadNotes(id);
+        loadRelationships(id);
+        loadLinks(id);
       } catch (e) {
         alert('Failed to load task: ' + e.message);
       }
@@ -1279,6 +1393,78 @@ export function renderDashboardHTML(
         }
         document.getElementById('detailBody').appendChild(section);
       } catch { /* watchers endpoint may not exist */ }
+    }
+
+    async function loadNotes(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/notes');
+        const notes = data.notes || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (notes.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">📝 Notes (0)</div><div class="detail-section-body"><div class="no-data">No notes</div></div>';
+        } else {
+          section.innerHTML = '<div class="detail-section-header">📝 Notes (' + notes.length + ')</div>' +
+            '<div class="detail-section-body">' +
+            notes.map(n =>
+              '<div class="comment-item">' +
+                '<div class="comment-meta">' + escapeHtml(n.author) + ' · ' + formatTime(n.createdAt) + '</div>' +
+                '<div class="comment-body">' + escapeHtml(n.body) + '</div>' +
+              '</div>'
+            ).join('') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* notes endpoint may not exist */ }
+    }
+
+    async function loadRelationships(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/relationships');
+        const rels = data.relationships || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (rels.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">🔀 Relationships (0)</div><div class="detail-section-body"><div class="no-data">No relationships</div></div>';
+        } else {
+          const typeLabels = { depends_on: '⬇️ depends on', blocks: '🚫 blocks', relates_to: '🔗 relates to', duplicates: '📋 duplicates' };
+          section.innerHTML = '<div class="detail-section-header">🔀 Relationships (' + rels.length + ')</div>' +
+            '<div class="detail-section-body">' +
+            rels.map(r =>
+              '<div class="dep-item">' +
+                '<span style="font-size:12px;color:var(--text-dim)">' + (typeLabels[r.relationshipType] || r.relationshipType) + '</span>' +
+                '<span style="flex:1;font-size:13px">' + escapeHtml(r.relatedTaskId) + '</span>' +
+                '<span style="font-size:11px;color:var(--text-dim)">' + formatTime(r.createdAt) + '</span>' +
+              '</div>'
+            ).join('') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* relationships endpoint may not exist */ }
+    }
+
+    async function loadLinks(taskId) {
+      try {
+        const data = await apiFetch('/api/tasks/' + taskId + '/links');
+        const links = data.links || [];
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        if (links.length === 0) {
+          section.innerHTML = '<div class="detail-section-header">🔗 Links (0)</div><div class="detail-section-body"><div class="no-data">No external links</div></div>';
+        } else {
+          section.innerHTML = '<div class="detail-section-header">🔗 Links (' + links.length + ')</div>' +
+            '<div class="detail-section-body">' +
+            links.map(l =>
+              '<div class="link-item">' +
+                '<span>📄</span>' +
+                '<a href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.title || l.url) + '</a>' +
+                '<span class="link-meta">' + escapeHtml(l.addedBy || 'unknown') + ' · ' + formatTime(l.createdAt) + '</span>' +
+              '</div>'
+            ).join('') +
+            '</div>';
+        }
+        document.getElementById('detailBody').appendChild(section);
+      } catch { /* links endpoint may not exist */ }
     }
 
     function field(label, value) {
@@ -1676,6 +1862,7 @@ export function renderDashboardHTML(
       loadSettingsSla();
       loadSettingsSavedViews();
       loadSettingsModules();
+      loadSettingsCycles();
     }
 
     // Users
@@ -2003,7 +2190,59 @@ export function renderDashboardHTML(
       } catch (e) { alert('Failed: ' + e.message); }
     }
 
-    // SLA Policies
+    // Cycles (Sprints)
+    async function loadSettingsCycles() {
+      const el = document.getElementById('settingsCycles');
+      try {
+        const data = await apiFetch('/api/cycles');
+        const cycles = data.cycles || [];
+        if (cycles.length === 0) { el.innerHTML = '<div class="settings-empty">No cycles</div>'; return; }
+        let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Status</th><th>Dates</th><th>Tasks</th><th>Actions</th></tr></thead><tbody>';
+        cycles.forEach(c => {
+          const start = c.startDate ? new Date(c.startDate).toLocaleDateString() : '—';
+          const end = c.endDate ? new Date(c.endDate).toLocaleDateString() : '—';
+          const statusEmoji = c.status === 'active' ? '🟢' : c.status === 'completed' ? '✅' : '🔵';
+          html += '<tr><td>' + escapeHtml(c.name) + '</td><td>' + statusEmoji + ' ' + escapeHtml(c.status) + '</td><td>' + start + ' → ' + end + '</td><td>' + (c.completedTasks || 0) + '/' + (c.totalTasks || 0) + '</td><td>';
+          html += '<button class="btn-sm red" onclick="deleteCycle(\'' + c.id + '\',\'' + escapeHtml(c.name) + '\')">🗑️</button>';
+          html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      } catch (e) { el.innerHTML = '<div class="settings-empty">Error: ' + escapeHtml(e.message) + '</div>'; }
+    }
+
+    function openCreateCycleModal() {
+      document.getElementById('createCycleForm').classList.toggle('open');
+    }
+
+    async function submitCreateCycle() {
+      const name = document.getElementById('newCycleName').value.trim();
+      const description = document.getElementById('newCycleDescription').value.trim();
+      const startDate = document.getElementById('newCycleStart').value;
+      const endDate = document.getElementById('newCycleEnd').value;
+      if (!name || !startDate || !endDate) { alert('Name, start date, and end date are required'); return; }
+      try {
+        const body = { name, startDate: startDate + 'T00:00:00.000Z', endDate: endDate + 'T23:59:59.999Z' };
+        if (description) body.description = description;
+        await apiFetch('/api/cycles', { method: 'POST', body: JSON.stringify(body) });
+        document.getElementById('createCycleForm').classList.remove('open');
+        document.getElementById('newCycleName').value = '';
+        document.getElementById('newCycleDescription').value = '';
+        document.getElementById('newCycleStart').value = '';
+        document.getElementById('newCycleEnd').value = '';
+        loadSettingsCycles();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function deleteCycle(id, name) {
+      if (!confirm('Delete cycle "' + name + '"? Tasks will be unlinked, not deleted.')) return;
+      try {
+        await apiFetch('/api/cycles/' + id, { method: 'DELETE' });
+        loadSettingsCycles();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+        // SLA Policies
     async function loadSettingsSla() {
       const el = document.getElementById('settingsSla');
       try {
@@ -2048,8 +2287,120 @@ export function renderDashboardHTML(
     }
 
 
-    // Init
+    // Global activity feed
+    async function loadAuditLog() {
+      const container = document.getElementById('auditContent');
+      const countEl = document.getElementById('auditCount');
+      container.innerHTML = '<div class="audit-log-empty">Loading audit log...</div>';
+      try {
+        const params = new URLSearchParams();
+        const action = document.getElementById('auditActionFilter').value;
+        const actorType = document.getElementById('auditActorTypeFilter').value;
+        const actor = document.getElementById('auditActorFilter').value.trim();
+        const from = document.getElementById('auditDateFrom').value;
+        const to = document.getElementById('auditDateTo').value;
+        if (action) params.set('action', action);
+        if (actorType) params.set('actorType', actorType);
+        if (actor) params.set('actor', actor);
+        if (from) params.set('from', from + 'T00:00:00Z');
+        if (to) params.set('to', to + 'T23:59:59Z');
+        params.set('limit', '200');
+        const data = await apiFetch('/api/audit?' + params.toString());
+        const entries = data.entries || [];
+        countEl.textContent = entries.length + ' entries found';
+        if (entries.length === 0) {
+          container.innerHTML = '<div class="audit-log-empty">No audit log entries found matching your filters.</div>';
+          return;
+        }
+        const iconMap = {
+          'task.created': '📝', 'task.status_changed': '🔄', 'task.assigned': '👤',
+          'task.archived': '📦', 'task.reopened': '🔁', 'task.pinned': '📌',
+          'task.unpinned': '📌', 'task.command_text_changed': '✏️',
+          'task.description_changed': '📝', 'task.due_date_changed': '📅',
+          'task.priority_changed': '🏷️', 'task.estimated_minutes_changed': '⏱️',
+          'task.reminder_changed': '🔔', 'task.link_added': '🔗', 'task.link_removed': '🔗',
+          'task.note_added': '📝', 'task.relationship_added': '🔗', 'task.relationship_removed': '🔗',
+          'task.locked': '🔒', 'task.unlocked': '🔓',
+          'comment.added': '💬', 'comment.deleted': '💬',
+          'note.added': '📝', 'note.deleted': '📝',
+          'subtask.created': '📋', 'subtask.completed': '✅', 'subtask.status_changed': '🔄',
+          'sla.breach': '🚨', 'sla.warning': '⚠️',
+          'template.created': '📄', 'template.used': '📄',
+          'webhook.created': '🔔', 'webhook.deleted': '🔔',
+          'user.created': '👤', 'user.deleted': '👤', 'user.token_regenerated': '🔑',
+          'device.registered': '💻', 'device.deleted': '💻',
+          'api_key.created': '🔑', 'api_key.revoked': '🔑',
+          'time_entry.logged': '⏱️', 'time_entry.deleted': '⏱️',
+          'cycle.created': '📅', 'cycle.deleted': '📅',
+          'module.created': '📦', 'module.deleted': '📦',
+        };
+        let html = '';
+        for (const e of entries) {
+          const icon = iconMap[e.action] || '📌';
+          const time = formatTime(e.createdAt);
+          const taskId = e.taskId
+            ? '<a href="#" onclick="event.preventDefault();showDetail(\'' + e.taskId + '\')">' + escapeHtml(e.taskId.slice(0, 12)) + '...</a>'
+            : '';
+          const detail = e.detail ? ' - ' + escapeHtml(e.detail) : '';
+          html += '<div class="audit-log-item">' +
+            '<span class="audit-log-icon">' + icon + '</span>' +
+            '<div class="audit-log-body">' +
+              '<div class="audit-log-text"><strong>' + escapeHtml(e.action) + '</strong>' + detail + '</div>' +
+              '<div class="audit-log-meta">' + escapeHtml(e.actorType + '/' + (e.actorId || 'system')) + ' &middot; ' + time +
+                (taskId ? ' &middot; Task ' + taskId : '') +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<div class="audit-log-empty">Failed to load audit log: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
 
+    async function loadGlobalActivity() {
+      const container = document.getElementById('activityContent');
+      container.innerHTML = '<div class="global-activity-empty">Loading activity feed...</div>';
+      try {
+        const data = await apiFetch('/api/activity');
+        const items = data.activities || [];
+        if (items.length === 0) {
+          container.innerHTML = '<div class="global-activity-empty">No recent activity. Tasks, comments, and status changes will appear here.</div>';
+          return;
+        }
+        const iconMap = {
+          'task.created': '📝', 'task.status_changed': '🔄', 'task.assigned': '👤',
+          'task.archived': '📦', 'task.reopened': '🔁', 'task.pinned': '📌',
+          'task.link_added': '🔗', 'task.link_removed': '🔗',
+          'comment.added': '💬', 'note.added': '📝',
+          'subtask.created': '📋', 'subtask.completed': '✅',
+          'sla.breach': '🚨', 'sla.warning': '⚠️'
+        };
+        let html = '';
+        for (const item of items) {
+          const icon = iconMap[item.action] || '📌';
+          const time = formatTime(item.createdAt);
+          const taskLink = item.taskId
+            ? '<a class="global-activity-task" href="#" onclick="event.preventDefault();showDetail(\'' + item.taskId + '\')">' + escapeHtml(item.taskId.slice(0, 12)) + '...</a>'
+            : '';
+          const detail = item.detail ? ' - ' + escapeHtml(item.detail) : '';
+          html += '<div class="global-activity-item">' +
+            '<span class="global-activity-icon">' + icon + '</span>' +
+            '<div class="global-activity-body">' +
+              '<div class="global-activity-text"><strong>' + escapeHtml(item.action) + '</strong>' + detail + '</div>' +
+              '<div class="global-activity-meta">' + escapeHtml(item.actorType + '/' + (item.actorId || 'system')) + ' &middot; ' + time +
+                (taskLink ? ' &middot; ' + taskLink : '') +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<div class="global-activity-empty">Failed to load activity: ' + escapeHtml(e.message) + '</div>';
+      }
+    }
+
+    // Init
     // View switching
     let currentView = 'tasks';
     function switchView(view) {
@@ -2067,8 +2418,16 @@ export function renderDashboardHTML(
         document.querySelector('.view-tab:nth-child(3)').classList.add('active');
         document.getElementById('kanbanView').classList.add('active');
         loadKanban();
-      } else if (view === 'settings') {
+      } else if (view === 'activity') {
         document.querySelector('.view-tab:nth-child(4)').classList.add('active');
+        document.getElementById('activityView').classList.add('active');
+        loadGlobalActivity();
+      } else if (view === 'audit') {
+        document.querySelector('.view-tab:nth-child(5)').classList.add('active');
+        document.getElementById('auditView').classList.add('active');
+        loadAuditLog();
+      } else if (view === 'settings') {
+        document.querySelector('.view-tab:nth-child(6)').classList.add('active');
         document.getElementById('settingsView').classList.add('active');
         loadSettings();
       }
