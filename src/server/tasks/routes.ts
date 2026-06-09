@@ -1044,6 +1044,57 @@ export function registerTaskRoutes(
     return reply.send({ ok: true, ...result });
   });
 
+  // POST /api/tasks/bulk/due-date - bulk update due date for multiple tasks (requires tasks.write)
+  // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
+  server.post("/api/tasks/bulk/due-date", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.write");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+
+    const body = req.body as { ids?: string[]; dueDate?: string | null };
+    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
+      });
+    }
+
+    const dueDate = body.dueDate ?? null;
+    if (dueDate !== null && isNaN(Date.parse(dueDate))) {
+      return reply.code(400).send({
+        error: { code: "invalid_date", message: `Invalid date format: ${dueDate}. Use ISO 8601.` },
+      });
+    }
+
+    const result = await store.bulkUpdateDueDate(body.ids, dueDate);
+    log.info({ count: result.updated, dueDate, errors: result.errors.length }, "Bulk due date update completed");
+
+    if (auditStore && result.updated > 0) {
+      await auditStore.log({
+        action: "task.status_changed",
+        actor: authCtx.user?.username ?? "api",
+        actorType: "api",
+        details: { bulk: true, count: result.updated, dueDate, ids: body.ids, errors: result.errors },
+      });
+    }
+
+    // Broadcast SSE events for each updated task
+    for (const taskId of body.ids) {
+      if (result.errors.includes(taskId)) continue;
+      const task = await store.getTask(taskId);
+      if (task) {
+        broadcastTaskUpdated(task);
+      }
+    }
+
+    return reply.send({ ok: true, ...result });
+  });
+
   // POST /api/tasks/bulk/clone - clone multiple tasks (requires tasks.write)
   // NOTE: Must be registered before /api/tasks/:id to avoid matching as :id param
   server.post("/api/tasks/bulk/clone", async (req: FastifyRequest, reply: FastifyReply) => {

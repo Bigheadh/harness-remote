@@ -78,6 +78,7 @@ export interface TaskStore {
   bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }>;
   bulkUpdatePriority(ids: string[], priority: TaskPriority): Promise<{ updated: number; errors: string[] }>;
   bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }>;
+  bulkUpdateDueDate(ids: string[], dueDate: string | null): Promise<{ updated: number; errors: string[] }>;
   // Task template methods
   createTemplate(template: Omit<TaskTemplate, "id" | "createdAt" | "updatedAt">): Promise<TaskTemplate>;
   listTemplates(): Promise<TaskTemplate[]>;
@@ -1688,6 +1689,32 @@ export function createTaskStore(storagePath: string): TaskStore {
           updated++;
         } catch (e) {
           errors.push(`Error updating priority for ${id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      return { updated, errors };
+    },
+
+    async bulkUpdateDueDate(ids: string[], dueDate: string | null): Promise<{ updated: number; errors: string[] }> {
+      const errors: string[] = [];
+      let updated = 0;
+      const now = new Date().toISOString();
+
+      // Validate date format if provided
+      if (dueDate && isNaN(Date.parse(dueDate))) {
+        throw new Error(`Invalid date format: ${dueDate}. Use ISO 8601.`);
+      }
+
+      for (const id of ids) {
+        try {
+          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+          if (!row) {
+            errors.push(`Task not found: ${id}`);
+            continue;
+          }
+          db.prepare(`UPDATE tasks SET due_date = ?, updated_at = ? WHERE id = ?`).run(dueDate, now, id);
+          updated++;
+        } catch (e) {
+          errors.push(`Error updating due date for ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       return { updated, errors };

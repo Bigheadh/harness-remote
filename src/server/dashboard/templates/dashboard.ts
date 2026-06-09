@@ -1181,6 +1181,17 @@ export function renderDashboardHTML(
         }
         html += '<button class=\"btn-sm\" onclick=\"taskClone(\\'' + t.id + '\\')\">📋 Clone</button>';
         html += '<button class=\"btn-sm blue\" onclick=\"taskCloneAndEdit(\\'' + t.id + '\\')\">📝 Clone & Edit</button>';
+        if (t.status === 'done' || t.status === 'failed') {
+          html += '<button class=\"btn-sm purple\" onclick=\"taskReopen(\\'' + t.id + '\\')\">🔁 Reopen</button>';
+        }
+        if (t.status !== 'archived' && t.archivedAt == null) {
+          html += '<button class=\"btn-sm blue\" onclick=\"taskForward(\\'' + t.id + '\\')\">➡️ Forward</button>';
+        }
+        if (!t.archivedAt) {
+          html += '<button class=\"btn-sm\" onclick=\"taskArchive(\\'' + t.id + '\\')\">📦 Archive</button>';
+        } else {
+          html += '<button class=\"btn-sm orange\" onclick=\"taskUnarchive(\\'' + t.id + '\\')\">📤 Unarchive</button>';
+        }
         html += '</div></div></div>';
 
         // Tags section
@@ -1815,7 +1826,53 @@ export function renderDashboardHTML(
       }
     }
 
-    async function bulkAction(status) {
+    // Reopen a done/failed task back to pending
+    async function taskReopen(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/reopen', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Reopen failed: ' + e.message); }
+    }
+    // Forward task to a different device
+    async function taskForward(id) {
+      try {
+        const devData = await apiFetch('/api/devices');
+        const devices = devData.devices || [];
+        if (devices.length === 0) { alert('No devices registered'); return; }
+        const devList = devices.map((d, i) => (i + 1) + '. ' + d.name + ' (' + d.id.slice(0, 12) + '...)').join('\n');
+        const choice = prompt('Forward to which device?\n\n' + devList + '\n\nEnter device number or ID:');
+        if (!choice) return;
+        let deviceId = choice.trim();
+        if (/^\d+$/.test(deviceId) && parseInt(deviceId) <= devices.length) {
+          deviceId = devices[parseInt(deviceId) - 1].id;
+        }
+        const message = prompt('Optional message for the new device:') || '';
+        await apiFetch('/api/tasks/' + id + '/forward', {
+          method: 'POST',
+          body: JSON.stringify({ deviceId, message }),
+        });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Forward failed: ' + e.message); }
+    }
+    // Archive a task (soft-delete)
+    async function taskArchive(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/archive', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Archive failed: ' + e.message); }
+    }
+    // Unarchive a task
+    async function taskUnarchive(id) {
+      try {
+        await apiFetch('/api/tasks/' + id + '/unarchive', { method: 'POST' });
+        closeDetail();
+        loadTasks();
+      } catch (e) { alert('Unarchive failed: ' + e.message); }
+    }
+        async function bulkAction(status) {
       const ids = Array.from(selectedIds);
       if (ids.length === 0) return;
       if (!confirm('Set ' + ids.length + ' task(s) to ' + status + '?')) return;

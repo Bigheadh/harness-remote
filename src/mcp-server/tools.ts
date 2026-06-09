@@ -3793,6 +3793,58 @@ export function registerMcpTools(
     },
   );
 
+  // bulk_update_due_date tool
+  server.registerTool(
+    "bulk_update_due_date",
+    {
+      description:
+        "Update the due date of multiple tasks at once. Sets all specified tasks to the given due date (ISO 8601 format). Pass null to clear due dates. Returns the count of successfully updated tasks and any errors.",
+      inputSchema: {
+        ids: z
+          .array(z.string())
+          .min(1)
+          .max(100)
+          .describe("Array of task IDs to update (1-100 IDs)"),
+        dueDate: z
+          .string()
+          .nullable()
+          .describe("New due date in ISO 8601 format (e.g. '2026-06-15T23:59:59.000Z'), or null to clear"),
+      },
+    },
+    async (args) => {
+      const { ids, dueDate } = args;
+      try {
+        const result = await client.bulkUpdateDueDate(ids, dueDate);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                updated: result.updated,
+                errors: result.errors,
+                dueDate,
+                message: result.updated > 0
+                  ? `Updated ${result.updated} task(s) due date to ${dueDate ?? "cleared"}`
+                  : "No tasks were updated",
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // bulk_clone_tasks tool
   server.registerTool(
     "bulk_clone_tasks",

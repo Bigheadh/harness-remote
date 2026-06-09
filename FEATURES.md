@@ -740,3 +740,23 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (155 → 156)
 - [x] Added 4 new tests for export_tasks_csv tool (registration, no filters, status filter, error handling)
+
+## Phase 87: Dashboard Task Detail Panel - Reopen, Forward, Archive Actions
+- [x] Added Reopen button to detail panel action bar (shown for done/failed tasks)
+- [x] Added Forward button to detail panel action bar (shown for non-archived tasks)
+- [x] Added Archive button to detail panel action bar (shown for non-archived tasks)
+- [x] Added Unarchive button to detail panel action bar (shown for archived tasks)
+- [x] taskReopen() JS function - calls POST /api/tasks/:id/reopen
+- [x] taskForward() JS function - fetches device list, prompts for target device, calls POST /api/tasks/:id/forward
+- [x] taskArchive() JS function - calls POST /api/tasks/:id/archive
+- [x] taskUnarchive() JS function - calls POST /api/tasks/:id/unarchive
+
+## Phase 88: Bulk Due Date Update MCP Tool
+- [x] Store layer: bulkUpdateDueDate(ids, dueDate) method with date validation
+- [x] API route: POST /api/tasks/bulk/due-date endpoint with auth and date validation
+- [x] MCP client interface: bulkUpdateDueDate method
+- [x] MCP client implementation: HTTP POST to /api/tasks/bulk/due-date
+- [x] MCP tool: bulk_update_due_date - AI agents can set/clear due dates for multiple tasks at once
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (156 -> 157)
+- [x] Added 4 new tests for bulk_update_due_date tool (registration, set date, clear date, error)

@@ -410,6 +410,12 @@ function createMockClient(): TaskApiClient & {
       return { updated: ids.length, errors: [] };
     },
 
+    async bulkUpdateDueDate(ids: string[], dueDate: string | null): Promise<{ updated: number; errors: string[] }> {
+      calls.push({ method: "bulkUpdateDueDate", args: [ids, dueDate] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { updated: ids.length, errors: [] };
+    },
+
     async bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }> {
       calls.push({ method: "bulkCloneTasks", args: [ids] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -2113,8 +2119,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 156 tools", () => {
-        expect(mockServer.registrations).toHaveLength(156);
+      it("registers all 157 tools", () => {
+        expect(mockServer.registrations).toHaveLength(157);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3968,6 +3974,53 @@ describe("MCP tools", () => {
       mock.failWith = "Disk full";
       const tool = mockServer.registrations.find((r) => r.name === "bulk_update_priority")!;
       const result = await tool.handler({ ids: ["task_001"], priority: "high" });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toBe("Disk full");
+    });
+  });
+
+  // ===== Bulk Update Due Date Tests =====
+
+  describe("bulk_update_due_date", () => {
+    it("registers bulk_update_due_date with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_due_date");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("due date");
+    });
+
+    it("updates due date for multiple tasks", async () => {
+      mock.calls.length = 0;
+      mock.serverResponse = { updated: 3, errors: [] };
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_due_date")!;
+      const result = await tool.handler({ ids: ["task_001", "task_002", "task_003"], dueDate: "2026-12-31T23:59:59.000Z" });
+
+      expect(mock.calls[0].method).toBe("bulkUpdateDueDate");
+      expect(mock.calls[0].args).toEqual([["task_001", "task_002", "task_003"], "2026-12-31T23:59:59.000Z"]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(3);
+      expect(parsed.dueDate).toBe("2026-12-31T23:59:59.000Z");
+      expect(parsed.errors).toEqual([]);
+    });
+
+    it("clears due date when null is passed", async () => {
+      mock.calls.length = 0;
+      mock.serverResponse = { updated: 2, errors: [] };
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_due_date")!;
+      const result = await tool.handler({ ids: ["task_001", "task_002"], dueDate: null });
+
+      expect(mock.calls[0].method).toBe("bulkUpdateDueDate");
+      expect(mock.calls[0].args).toEqual([["task_001", "task_002"], null]);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.updated).toBe(2);
+      expect(parsed.dueDate).toBeNull();
+    });
+
+    it("returns error when bulkUpdateDueDate fails", async () => {
+      mock.failWith = "Disk full";
+      const tool = mockServer.registrations.find((r) => r.name === "bulk_update_due_date")!;
+      const result = await tool.handler({ ids: ["task_001"], dueDate: "2026-06-15T00:00:00.000Z" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
