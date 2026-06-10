@@ -833,11 +833,6 @@ export function renderDashboardHTML(
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-  </div>
-
         <div class="settings-card">
           <h3>🔄 Cycles (Sprints)</h3>
           <div id="settingsCycles"><div class="loading">Loading...</div></div>
@@ -855,6 +850,28 @@ export function renderDashboardHTML(
             </div>
           </div>
         </div>
+        <div class="settings-card">
+          <h3>🔑 API Keys</h3>
+          <div id="settingsApiKeys"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateApiKeyModal()">+ Create API Key</button>
+          </div>
+          <div class="settings-form" id="createApiKeyForm">
+            <input id="newApiKeyName" placeholder="Key name" />
+            <input id="newApiKeyUserId" placeholder="User ID (optional)" />
+            <select id="newApiKeyRole"><option value="">Inherit from user</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select>
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createApiKeyForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateApiKey()">Create</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
 
   <!-- Detail overlay -->
   <div class="detail-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
@@ -1994,7 +2011,88 @@ export function renderDashboardHTML(
       loadSettingsSavedViews();
       loadSettingsModules();
       loadSettingsCycles();
+      loadSettingsApiKeys();
     }
+    // API Keys
+    async function loadSettingsApiKeys() {
+      const el = document.getElementById('settingsApiKeys');
+      try {
+        const data = await apiFetch('/api/keys');
+        const keys = data.keys || [];
+        if (keys.length === 0) { el.innerHTML = '<div class="settings-empty">No API keys configured</div>'; return; }
+        let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Key</th><th>User</th><th>Role</th><th>Status</th><th>Last Used</th><th>Actions</th></tr></thead><tbody>';
+        keys.forEach(k => {
+          const masked = k.keyPrefix ? k.keyPrefix + '****' : '****';
+          const roleClass = 'role-' + (k.role || 'viewer');
+          const status = k.enabled !== false ? '<span style="color:#4ade80">Active</span>' : '<span style="color:#f87171">Disabled</span>';
+          html += '<tr><td>' + escapeHtml(k.name || '—') + '</td><td class="id-cell" style="font-family:monospace">' + escapeHtml(masked) + '</td><td class="id-cell">' + escapeHtml(k.userId || '—') + '</td><td><span class="role-badge ' + roleClass + '">' + (k.role || '—') + '</span></td><td>' + status + '</td><td>' + (k.lastUsedAt ? formatTime(k.lastUsedAt) : 'Never') + '</td><td>';
+          if (k.enabled !== false) {
+            html += '<button class="btn-sm" onclick="disableApiKey(\'' + k.id + '\')" title="Disable">⏸️</button> ';
+          } else {
+            html += '<button class="btn-sm" onclick="enableApiKey(\'' + k.id + '\')" title="Enable">▶️</button> ';
+          }
+          html += '<button class="btn-sm" onclick="rotateApiKey(\'' + k.id + '\')" title="Rotate">🔄</button> ';
+          html += '<button class="btn-sm red" onclick="revokeApiKey(\'' + k.id + '\',\'' + escapeHtml(k.name || k.id) + '\')" title="Revoke">🗑️</button>';
+          html += '</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+      } catch (e) { el.innerHTML = '<div class="settings-empty">Error: ' + escapeHtml(e.message) + '</div>'; }
+    }
+
+    function openCreateApiKeyModal() {
+      document.getElementById('createApiKeyForm').classList.toggle('open');
+    }
+
+    async function submitCreateApiKey() {
+      const name = document.getElementById('newApiKeyName').value.trim();
+      const userId = document.getElementById('newApiKeyUserId').value.trim();
+      const role = document.getElementById('newApiKeyRole').value;
+      if (!name) { alert('Key name is required'); return; }
+      try {
+        const body = { name };
+        if (userId) body.userId = userId;
+        if (role) body.role = role;
+        const data = await apiFetch('/api/keys', { method: 'POST', body: JSON.stringify(body) });
+        alert('API Key created! Full key: ' + data.apiKey.key + '\n\nSave this key now - it won\'t be shown again!');
+        document.getElementById('createApiKeyForm').classList.remove('open');
+        document.getElementById('newApiKeyName').value = '';
+        document.getElementById('newApiKeyUserId').value = '';
+        loadSettingsApiKeys();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function disableApiKey(id) {
+      try {
+        await apiFetch('/api/keys/' + id + '/disable', { method: 'POST' });
+        loadSettingsApiKeys();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function enableApiKey(id) {
+      try {
+        await apiFetch('/api/keys/' + id + '/enable', { method: 'POST' });
+        loadSettingsApiKeys();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function rotateApiKey(id) {
+      if (!confirm('Rotate this API key? The old key will remain valid for 24 hours.')) return;
+      try {
+        const data = await apiFetch('/api/keys/' + id + '/rotate', { method: 'POST' });
+        alert('New key: ' + data.apiKey.key + '\n\nSave this key now - it won\'t be shown again!');
+        loadSettingsApiKeys();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
+    async function revokeApiKey(id, name) {
+      if (!confirm('Permanently revoke API key "' + name + '"? This cannot be undone.')) return;
+      try {
+        await apiFetch('/api/keys/' + id, { method: 'DELETE' });
+        loadSettingsApiKeys();
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
+
 
     // Users
     async function loadSettingsUsers() {

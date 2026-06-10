@@ -760,3 +760,13 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (156 -> 157)
 - [x] Added 4 new tests for bulk_update_due_date tool (registration, set date, clear date, error)
+
+## Phase 89: Dashboard API Keys Management UI (Fix Missing Implementation)
+- [x] Fixed Cycles card placement (was outside settings-grid div, now properly inside)
+- [x] Added API Keys settings card to dashboard Settings tab (list, create, revoke, enable, disable, rotate)
+- [x] API Keys table with name, masked key, user ID, role badge, status, last used, action buttons
+- [x] Create form with name, user ID, and role selection
+- [x] Key rotation with confirmation and new key display
+- [x] Enable/disable toggle for API keys
+- [x] Revoke with confirmation warning (permanent action)
+- [x] Wired into loadSettings() initialization
