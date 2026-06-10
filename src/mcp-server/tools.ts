@@ -3978,6 +3978,52 @@ export function registerMcpTools(
     },
   );
 
+  // get_api_usage_entries tool
+  server.registerTool(
+    "get_api_usage_entries",
+    {
+      description:
+        "Get raw API usage entries for a specific caller (user, device, token, or IP). Shows individual request logs with method, path, status code, duration, and timestamp. Useful for debugging a specific caller's API activity and identifying problematic requests.",
+      inputSchema: {
+        callerId: z
+          .string()
+          .describe(
+            "Caller identity to query (e.g., 'user:<id>', 'device:<id>', 'token:<hash>', 'ip:<addr>')",
+          ),
+        limit: z
+          .number()
+          .optional()
+          .describe("Maximum number of entries to return (default: 50)"),
+      },
+    },
+    async (args) => {
+      const { callerId, limit } = args;
+
+      try {
+        const result = await client.getApiUsageEntries(callerId, limit);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   // list_webhooks tool
   server.registerTool(
     "list_webhooks",

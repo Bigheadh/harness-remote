@@ -1263,6 +1263,26 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async getApiUsageEntries(callerId: string, limit?: number): Promise<Record<string, unknown>> {
+      calls.push({ method: "getApiUsageEntries", args: [callerId, limit] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        callerId,
+        entries: [
+          {
+            id: 1,
+            callerId,
+            method: "GET",
+            path: "/api/tasks",
+            statusCode: 200,
+            durationMs: 45,
+            createdAt: "2026-06-03T12:00:00Z",
+          },
+        ],
+        count: 1,
+      };
+    },
+
     async listWebhooks(): Promise<import("../../src/shared/types.js").WebhookSubscription[]> {
       calls.push({ method: "listWebhooks", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -2119,8 +2139,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 157 tools", () => {
-        expect(mockServer.registrations).toHaveLength(157);
+      it("registers all 158 tools", () => {
+        expect(mockServer.registrations).toHaveLength(158);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -2735,6 +2755,46 @@ describe("MCP tools", () => {
       mock.failWith = "Server error";
       const tool = mockServer.registrations.find((r) => r.name === "get_api_usage")!;
       const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Server error");
+    });
+
+    it("registers get_api_usage_entries with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage_entries");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("usage");
+      expect(tool!.description.toLowerCase()).toContain("entries");
+    });
+
+    it("gets API usage entries for a caller", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage_entries")!;
+      const result = await tool.handler({ callerId: "user:admin" });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(mock.calls[0].method).toBe("getApiUsageEntries");
+      expect(result.isError).toBeFalsy();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.callerId).toBe("user:admin");
+      expect(parsed.entries).toHaveLength(1);
+      expect(parsed.entries[0].method).toBe("GET");
+    });
+
+    it("passes limit parameter to get_api_usage_entries", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage_entries")!;
+      const result = await tool.handler({ callerId: "user:admin", limit: 10 });
+
+      expect(mock.calls).toHaveLength(1);
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("returns error when get_api_usage_entries fails", async () => {
+      mock.failWith = "Server error";
+      const tool = mockServer.registrations.find((r) => r.name === "get_api_usage_entries")!;
+      const result = await tool.handler({ callerId: "user:admin" });
 
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);

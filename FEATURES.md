@@ -770,3 +770,11 @@
 - [x] Enable/disable toggle for API keys
 - [x] Revoke with confirmation warning (permanent action)
 - [x] Wired into loadSettings() initialization
+
+## Phase 90: API Usage Entries MCP Tool
+- [x] Client interface: getApiUsageEntries(callerId, limit?) method
+- [x] Client implementation: HTTP client method calling GET /api/usage/entries/:callerId
+- [x] MCP tool: get_api_usage_entries — get raw API usage entries for a specific caller (user, device, token, or IP)
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (157 → 158)
+- [x] Added 4 new tests for get_api_usage_entries tool (registration, data return, limit param, error handling)

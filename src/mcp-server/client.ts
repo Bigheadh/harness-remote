@@ -132,6 +132,7 @@ export interface TaskApiClient {
   getKanbanBoard(limit?: number, deviceId?: string): Promise<import("../shared/types.js").KanbanBoard>;
   // API usage analytics
   getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>>;
+  getApiUsageEntries(callerId: string, limit?: number): Promise<Record<string, unknown>>;
   // Webhook methods
   listWebhooks(): Promise<WebhookSubscription[]>;
   getWebhook(webhookId: string): Promise<WebhookSubscription>;
@@ -1748,6 +1749,21 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to get API usage stats: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+      return (await response.json()) as Record<string, unknown>;
+    },
+
+    async getApiUsageEntries(callerId: string, limit?: number): Promise<Record<string, unknown>> {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", String(limit));
+      const qs = params.toString();
+      const url = `${serverBaseUrl}/api/usage/entries/${encodeURIComponent(callerId)}${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to get API usage entries: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
       return (await response.json()) as Record<string, unknown>;
