@@ -6329,4 +6329,41 @@ export function registerMcpTools(
       }
     },
   );
+
+  // list_all_tags tool
+  server.registerTool(
+    "list_all_tags",
+    {
+      description:
+        "List all unique tags used across all tasks in the system. Returns an array of tag strings. Useful for discovering available tags before filtering tasks or managing tag assignments.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const tags = await client.listAllTags();
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  tags,
+                  count: tags.length,
+                  message: tags.length > 0 ? `Found ${tags.length} unique tag(s)` : "No tags found",
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }

@@ -789,3 +789,11 @@
 - [x] MCP tool: added cycleId and moduleId to search_tasks inputSchema with descriptions
 - [x] Updated mock client in tests for new interface parameters
 - [x] Updated search_tasks tool description to mention cycle and module filtering
+
+## Phase 92: List All Tags MCP Tool
+- [x] MCP client interface: added listAllTags() method returning string[]
+- [x] MCP client implementation: HTTP GET to /api/tasks/tags
+- [x] MCP tool: list_all_tags — AI agents can discover all unique tags used across tasks
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (158 → 159)
+- [x] Added 3 new tests for list_all_tags tool (registration, data return, error handling)

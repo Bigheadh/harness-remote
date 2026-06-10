@@ -2086,6 +2086,12 @@ function createMockClient(): TaskApiClient & {
         },
       ];
     },
+
+    async listAllTags(): Promise<string[]> {
+      calls.push({ method: "listAllTags", args: [] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return ["bug", "feature", "urgent"];
+    },
   };
   return mock;
 }
@@ -2141,8 +2147,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 158 tools", () => {
-        expect(mockServer.registrations).toHaveLength(158);
+      it("registers all 159 tools", () => {
+        expect(mockServer.registrations).toHaveLength(159);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -5046,6 +5052,38 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Network error");
+      mock.failWith = undefined;
+    });
+  });
+
+  describe("list_all_tags", () => {
+    it("registers list_all_tags with correct description", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "list_all_tags");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("list all unique tags");
+    });
+
+    it("returns tags from client", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "list_all_tags")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.tags).toEqual(["bug", "feature", "urgent"]);
+      expect(parsed.count).toBe(3);
+      expect(mock.calls[0].method).toBe("listAllTags");
+    });
+
+    it("returns error when client fails", async () => {
+      mock.calls.length = 0;
+      mock.failWith = "Connection refused";
+      const tool = mockServer.registrations.find((r) => r.name === "list_all_tags")!;
+      const result = await tool.handler({});
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Connection refused");
       mock.failWith = undefined;
     });
   });
