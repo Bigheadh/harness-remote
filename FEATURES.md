@@ -797,3 +797,14 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (158 → 159)
 - [x] Added 3 new tests for list_all_tags tool (registration, data return, error handling)
+
+## Phase 93: Source Filter for Search and Export Tasks
+- [x] Store layer: added source to SearchOptions interface
+- [x] Store layer: added WHERE clause in searchTasks() for source filtering
+- [x] Store layer: added WHERE clause in searchAllTasksForExport() for source filtering
+- [x] API route: added source query parameter to GET /api/tasks/search with validation
+- [x] API route: added source query parameter to GET /api/tasks/export.csv
+- [x] MCP client interface: added source to searchTasks and exportTasksCsv options
+- [x] MCP client implementation: added source to URLSearchParams in searchTasks and exportTasksCsv
+- [x] MCP tool: added source filter to search_tasks inputSchema (enum: feishu, web, mcp)
+- [x] MCP tool: added source filter to export_tasks_csv inputSchema

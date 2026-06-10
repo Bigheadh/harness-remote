@@ -28,6 +28,7 @@ export interface SearchOptions {
   tags?: string[];
   cycleId?: string;
   moduleId?: string;
+  source?: string;
 }
 
 export interface TaskCounts {
@@ -972,6 +973,11 @@ export function createTaskStore(storagePath: string): TaskStore {
       if (options.moduleId) {
         conditions.push("module_id = ?");
         params.push(options.moduleId);
+      }
+
+      if (options.source) {
+        conditions.push("source = ?");
+        params.push(options.source);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -3225,6 +3231,10 @@ export function createTaskStore(storagePath: string): TaskStore {
       if (options.moduleId) {
         conditions.push("module_id = ?");
         params.push(options.moduleId);
+      }
+      if (options.source) {
+        conditions.push("source = ?");
+        params.push(options.source);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

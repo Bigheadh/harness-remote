@@ -17,6 +17,7 @@ export interface TaskApiClient {
     tags?: string[];
     cycleId?: string;
     moduleId?: string;
+    source?: string;
   }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
@@ -83,7 +84,7 @@ export interface TaskApiClient {
   getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }>;
   // Export/Import methods
   exportTasks(): Promise<Record<string, unknown>>;
-  exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string }): Promise<string>;
+  exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string; source?: string }): Promise<string>;
   importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }>;
   importTasksFromCsv(csv: string, options?: { columnMap?: Record<string, string>; defaultPriority?: string; defaultTags?: string[]; delimiter?: string }): Promise<{ imported: number; errors: string[]; taskIds: string[] }>;
   // SLA methods
@@ -267,6 +268,7 @@ export function createTaskApiClient(
       tags?: string[];
       cycleId?: string;
       moduleId?: string;
+      source?: string;
     }): Promise<Task[]> {
       const params = new URLSearchParams();
       if (options.q) params.set("q", options.q);
@@ -282,6 +284,7 @@ export function createTaskApiClient(
       }
       if (options.cycleId) params.set("cycleId", options.cycleId);
       if (options.moduleId) params.set("moduleId", options.moduleId);
+      if (options.source) params.set("source", options.source);
 
       const qs = params.toString();
       const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
@@ -1244,7 +1247,7 @@ export function createTaskApiClient(
       return (await response.json()) as Record<string, unknown>;
     },
 
-    async exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string }): Promise<string> {
+    async exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string; source?: string }): Promise<string> {
       const params = new URLSearchParams();
       if (filters?.status) params.set("status", filters.status);
       if (filters?.priority) params.set("priority", filters.priority);
@@ -1253,6 +1256,7 @@ export function createTaskApiClient(
       if (filters?.to) params.set("to", filters.to);
       if (filters?.q) params.set("q", filters.q);
       if (filters?.deviceId) params.set("deviceId", filters.deviceId);
+      if (filters?.source) params.set("source", filters.source);
       const qs = params.toString();
       const url = `${serverBaseUrl}/api/tasks/export.csv${qs ? `?${qs}` : ""}`;
       const response = await fetch(url, { headers });

@@ -534,7 +534,7 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { q, status, from, to, limit, deviceId, tags, priority, cycleId, moduleId } = req.query as {
+    const { q, status, from, to, limit, deviceId, tags, priority, cycleId, moduleId, source } = req.query as {
       q?: string;
       status?: TaskStatus;
       from?: string;
@@ -545,6 +545,7 @@ export function registerTaskRoutes(
       priority?: string;
       cycleId?: string;
       moduleId?: string;
+      source?: string;
     };
 
     if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
@@ -573,7 +574,15 @@ export function registerTaskRoutes(
     }
 
     const parsedTags = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-    const tasks = await store.searchTasks({ q, status, priority: priority as TaskPriority | undefined, from, to, limit, deviceId, tags: parsedTags, cycleId, moduleId });
+
+    const validSources = ["feishu", "web", "mcp"];
+    if (source && !validSources.includes(source)) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: `Invalid source: ${source}. Must be one of: ${validSources.join(", ")}` },
+      });
+    }
+
+    const tasks = await store.searchTasks({ q, status, priority: priority as TaskPriority | undefined, from, to, limit, deviceId, tags: parsedTags, cycleId, moduleId, source });
     return reply.send({ tasks });
   });
 
@@ -1197,7 +1206,7 @@ export function registerTaskRoutes(
 
     try {
       const query = req.query as Record<string, string | undefined>;
-      const hasFilters = query.status || query.priority || query.tags || query.from || query.to || query.q || query.deviceId;
+      const hasFilters = query.status || query.priority || query.tags || query.from || query.to || query.q || query.deviceId || query.source;
       const tasks = hasFilters
         ? await store.searchAllTasksForExport({
             status: query.status as import("../../shared/types.js").TaskStatus | undefined,
@@ -1207,6 +1216,7 @@ export function registerTaskRoutes(
             to: query.to,
             q: query.q,
             deviceId: query.deviceId,
+            source: query.source,
           })
         : await store.getAllTasks();
 

@@ -82,7 +82,7 @@ export function registerMcpTools(
     "search_tasks",
     {
       description:
-        "Search task history by text, status, priority, date range, tags, cycle, and module. Text search covers command text, description, and result summary. Returns matching tasks sorted by creation time (newest first).",
+        "Search task history by text, status, priority, date range, tags, source, cycle, and module. Text search covers command text, description, and result summary. Returns matching tasks sorted by creation time (newest first).",
       inputSchema: {
         q: z
           .string()
@@ -127,13 +127,17 @@ export function registerMcpTools(
           .string()
           .optional()
           .describe("Filter by module (epic) ID — only return tasks in this module"),
+        source: z
+          .enum(["feishu", "web", "mcp"])
+          .optional()
+          .describe("Filter by task origin source (feishu, web, or mcp)"),
       },
     },
     async (args) => {
-      const { q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId } = args;
+      const { q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId, source } = args;
 
       try {
-        const tasks = await client.searchTasks({ q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId });
+        const tasks = await client.searchTasks({ q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId, source });
         return {
           content: [
             {
@@ -2425,7 +2429,7 @@ export function registerMcpTools(
     "export_tasks_csv",
     {
       description:
-        "Export tasks as CSV with optional filters. Returns CSV text with headers (id, source, commandText, status, priority, tags, dueDate, etc.). Use filters to narrow the export to specific status, priority, tags, date range, or text search. Without filters, exports all tasks.",
+        "Export tasks as CSV with optional filters. Returns CSV text with headers (id, source, commandText, status, priority, tags, dueDate, etc.). Use filters to narrow the export to specific status, priority, tags, date range, source, or text search. Without filters, exports all tasks.",
       inputSchema: {
         status: z.enum(["pending", "picked", "running", "done", "failed"]).optional().describe("Filter by task status"),
         priority: z.enum(["low", "normal", "high", "urgent"]).optional().describe("Filter by task priority"),
@@ -2434,6 +2438,7 @@ export function registerMcpTools(
         to: z.string().optional().describe("Export tasks created before this ISO 8601 date"),
         q: z.string().optional().describe("Text search filter (matches commandText, resultSummary, description)"),
         deviceId: z.string().optional().describe("Filter by assigned device ID"),
+        source: z.enum(["feishu", "web", "mcp"]).optional().describe("Filter by task origin source (feishu, web, or mcp)"),
       },
     },
     async (args) => {
@@ -2446,6 +2451,7 @@ export function registerMcpTools(
           to: args.to,
           q: args.q,
           deviceId: args.deviceId,
+          source: args.source,
         });
         const lineCount = csv.split("\n").length - 1;
         return {
