@@ -106,6 +106,8 @@ function createMockClient(): TaskApiClient & {
       limit?: number;
       deviceId?: string;
       tags?: string[];
+      cycleId?: string;
+      moduleId?: string;
     }): Promise<Task[]> {
       calls.push({ method: "searchTasks", args: [options] });
       if (mock.failWith) throw new Error(mock.failWith);

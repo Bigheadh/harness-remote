@@ -26,6 +26,8 @@ export interface SearchOptions {
   limit?: number;
   deviceId?: string;
   tags?: string[];
+  cycleId?: string;
+  moduleId?: string;
 }
 
 export interface TaskCounts {
@@ -960,6 +962,16 @@ export function createTaskStore(storagePath: string): TaskStore {
           conditions.push("tags LIKE ?");
           params.push(`%"${tag}"%`);
         }
+      }
+
+      if (options.cycleId) {
+        conditions.push("cycle_id = ?");
+        params.push(options.cycleId);
+      }
+
+      if (options.moduleId) {
+        conditions.push("module_id = ?");
+        params.push(options.moduleId);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -3205,6 +3217,14 @@ export function createTaskStore(storagePath: string): TaskStore {
           conditions.push("tags LIKE ?");
           params.push(`%"${tag}"%`);
         }
+      }
+      if (options.cycleId) {
+        conditions.push("cycle_id = ?");
+        params.push(options.cycleId);
+      }
+      if (options.moduleId) {
+        conditions.push("module_id = ?");
+        params.push(options.moduleId);
       }
 
       const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

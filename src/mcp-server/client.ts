@@ -15,6 +15,8 @@ export interface TaskApiClient {
     limit?: number;
     deviceId?: string;
     tags?: string[];
+    cycleId?: string;
+    moduleId?: string;
   }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
@@ -263,6 +265,8 @@ export function createTaskApiClient(
       limit?: number;
       deviceId?: string;
       tags?: string[];
+      cycleId?: string;
+      moduleId?: string;
     }): Promise<Task[]> {
       const params = new URLSearchParams();
       if (options.q) params.set("q", options.q);
@@ -276,6 +280,8 @@ export function createTaskApiClient(
       if (options.tags && options.tags.length > 0) {
         params.set("tags", options.tags.join(","));
       }
+      if (options.cycleId) params.set("cycleId", options.cycleId);
+      if (options.moduleId) params.set("moduleId", options.moduleId);
 
       const qs = params.toString();
       const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;

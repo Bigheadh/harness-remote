@@ -82,7 +82,7 @@ export function registerMcpTools(
     "search_tasks",
     {
       description:
-        "Search task history by text, status, priority, date range, and tags. Text search covers command text, description, and result summary. Returns matching tasks sorted by creation time (newest first).",
+        "Search task history by text, status, priority, date range, tags, cycle, and module. Text search covers command text, description, and result summary. Returns matching tasks sorted by creation time (newest first).",
       inputSchema: {
         q: z
           .string()
@@ -119,13 +119,21 @@ export function registerMcpTools(
           .array(z.string())
           .optional()
           .describe("Filter by tags (all specified tags must match)"),
+        cycleId: z
+          .string()
+          .optional()
+          .describe("Filter by cycle (sprint) ID — only return tasks in this cycle"),
+        moduleId: z
+          .string()
+          .optional()
+          .describe("Filter by module (epic) ID — only return tasks in this module"),
       },
     },
     async (args) => {
-      const { q, status, priority, from, to, limit, deviceId, tags } = args;
+      const { q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId } = args;
 
       try {
-        const tasks = await client.searchTasks({ q, status, priority, from, to, limit, deviceId, tags });
+        const tasks = await client.searchTasks({ q, status, priority, from, to, limit, deviceId, tags, cycleId, moduleId });
         return {
           content: [
             {

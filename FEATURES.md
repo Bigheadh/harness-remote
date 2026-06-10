@@ -778,3 +778,14 @@
 - [x] Updated mock client in tests for new interface method
 - [x] Updated tool count assertion (157 → 158)
 - [x] Added 4 new tests for get_api_usage_entries tool (registration, data return, limit param, error handling)
+
+## Phase 91: Cycle & Module Filtering for Search Tasks
+- [x] Store layer: added cycleId and moduleId to SearchOptions interface
+- [x] Store layer: added WHERE clauses in searchTasks() for cycle_id and module_id
+- [x] Store layer: added WHERE clauses in searchAllTasksForExport() for cycle_id and module_id
+- [x] API route: added cycleId and moduleId query parameters to GET /api/tasks/search
+- [x] MCP client interface: added cycleId and moduleId to searchTasks options
+- [x] MCP client implementation: added cycleId and moduleId to URLSearchParams
+- [x] MCP tool: added cycleId and moduleId to search_tasks inputSchema with descriptions
+- [x] Updated mock client in tests for new interface parameters
+- [x] Updated search_tasks tool description to mention cycle and module filtering

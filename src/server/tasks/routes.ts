@@ -534,7 +534,7 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const { q, status, from, to, limit, deviceId, tags, priority } = req.query as {
+    const { q, status, from, to, limit, deviceId, tags, priority, cycleId, moduleId } = req.query as {
       q?: string;
       status?: TaskStatus;
       from?: string;
@@ -543,6 +543,8 @@ export function registerTaskRoutes(
       deviceId?: string;
       tags?: string;
       priority?: string;
+      cycleId?: string;
+      moduleId?: string;
     };
 
     if (status && !["pending", "picked", "running", "done", "failed"].includes(status)) {
@@ -571,7 +573,7 @@ export function registerTaskRoutes(
     }
 
     const parsedTags = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : undefined;
-    const tasks = await store.searchTasks({ q, status, priority: priority as TaskPriority | undefined, from, to, limit, deviceId, tags: parsedTags });
+    const tasks = await store.searchTasks({ q, status, priority: priority as TaskPriority | undefined, from, to, limit, deviceId, tags: parsedTags, cycleId, moduleId });
     return reply.send({ tasks });
   });
 
