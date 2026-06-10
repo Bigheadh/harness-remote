@@ -20,6 +20,14 @@ export interface TaskApiClient {
     source?: string;
   }): Promise<Task[]>;
   getTask(taskId: string): Promise<Task>;
+  createTask(options: {
+    commandText: string;
+    description?: string;
+    priority?: string;
+    tags?: string[];
+    assignedDeviceId?: string;
+    dueDate?: string;
+  }): Promise<Task>;
   markTaskRunning(taskId: string): Promise<Task>;
   reportTaskResult(
     taskId: string,
@@ -311,6 +319,34 @@ export function createTaskApiClient(
         const body = (await response.json()) as { error?: { message?: string } };
         throw new Error(
           `Failed to get task: ${response.status} ${body.error?.message ?? response.statusText}`,
+        );
+      }
+
+      const data = (await response.json()) as { task: Task };
+      return data.task;
+    },
+
+    async createTask(options: {
+      commandText: string;
+      description?: string;
+      priority?: string;
+      tags?: string[];
+      assignedDeviceId?: string;
+      dueDate?: string;
+    }): Promise<Task> {
+      const response = await fetch(
+        `${serverBaseUrl}/api/tasks`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(options),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: { message?: string } };
+        throw new Error(
+          `Failed to create task: ${response.status} ${body.error?.message ?? response.statusText}`,
         );
       }
 

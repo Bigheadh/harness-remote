@@ -808,3 +808,11 @@
 - [x] MCP client implementation: added source to URLSearchParams in searchTasks and exportTasksCsv
 - [x] MCP tool: added source filter to search_tasks inputSchema (enum: feishu, web, mcp)
 - [x] MCP tool: added source filter to export_tasks_csv inputSchema
+
+## Phase 94: Direct Task Creation MCP Tool
+- [x] Client interface: added createTask method (commandText, description, priority, tags, assignedDeviceId, dueDate)
+- [x] Client implementation: HTTP POST to /api/tasks
+- [x] MCP tool: create_task — AI agents can create tasks directly without a template
+- [x] Updated mock client in tests for new interface method
+- [x] Updated tool count assertion (159 → 160)
+- [x] Added 4 new tests for create_task tool (registration, minimal fields, all fields, error)

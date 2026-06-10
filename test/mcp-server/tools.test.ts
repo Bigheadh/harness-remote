@@ -517,6 +517,27 @@ function createMockClient(): TaskApiClient & {
       };
     },
 
+    async createTask(options: { commandText: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string }): Promise<Task> {
+      calls.push({ method: "createTask", args: [options] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: "task_created_001",
+        source: "mcp",
+        feishuMessageId: `mcp_${Date.now()}`,
+        feishuChatId: "",
+        feishuUserId: "api",
+        commandText: options.commandText,
+        status: "pending",
+        priority: (options.priority as Task["priority"]) ?? "normal",
+        tags: options.tags ?? [],
+        assignedDeviceId: options.assignedDeviceId,
+        dueDate: options.dueDate,
+        description: options.description,
+        createdAt: "2026-06-11T04:00:00.000Z",
+        updatedAt: "2026-06-11T04:00:00.000Z",
+      };
+    },
+
     async getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }> {
       calls.push({ method: "getTemplateUsageStats", args: [] });
       if (mock.failWith) throw new Error(mock.failWith);
@@ -2147,8 +2168,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 159 tools", () => {
-        expect(mockServer.registrations).toHaveLength(159);
+      it("registers all 160 tools", () => {
+        expect(mockServer.registrations).toHaveLength(160);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -5084,6 +5105,66 @@ describe("MCP tools", () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.error).toContain("Connection refused");
+      mock.failWith = undefined;
+    });
+  });
+
+  describe("create_task", () => {
+    it("registers create_task tool", () => {
+      const tool = mockServer.registrations.find((r) => r.name === "create_task");
+      expect(tool).toBeDefined();
+      expect(tool!.description.toLowerCase()).toContain("create a new task");
+    });
+
+    it("creates a task with commandText only", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_task")!;
+      const result = await tool.handler({
+        commandText: "Deploy the new version to production",
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.id).toBe("task_created_001");
+      expect(parsed.task.commandText).toBe("Deploy the new version to production");
+      expect(parsed.task.status).toBe("pending");
+      expect(parsed.task.priority).toBe("normal");
+      expect(mock.calls[0].method).toBe("createTask");
+      expect(mock.calls[0].args[0].commandText).toBe("Deploy the new version to production");
+    });
+
+    it("creates a task with all optional fields", async () => {
+      mock.calls.length = 0;
+      const tool = mockServer.registrations.find((r) => r.name === "create_task")!;
+      const result = await tool.handler({
+        commandText: "Fix the login bug",
+        description: "Users cannot log in with SSO",
+        priority: "urgent",
+        tags: ["bug", "auth"],
+        assignedDeviceId: "dev_001",
+        dueDate: "2026-06-15T23:59:59.000Z",
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.task.priority).toBe("urgent");
+      expect(parsed.task.tags).toEqual(["bug", "auth"]);
+      expect(parsed.task.assignedDeviceId).toBe("dev_001");
+      expect(parsed.task.dueDate).toBe("2026-06-15T23:59:59.000Z");
+      expect(parsed.task.description).toBe("Users cannot log in with SSO");
+    });
+
+    it("returns error when client fails", async () => {
+      mock.calls.length = 0;
+      mock.failWith = "Validation failed";
+      const tool = mockServer.registrations.find((r) => r.name === "create_task")!;
+      const result = await tool.handler({
+        commandText: "Some task",
+      });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error).toContain("Validation failed");
       mock.failWith = undefined;
     });
   });

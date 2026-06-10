@@ -6372,4 +6372,81 @@ export function registerMcpTools(
       }
     },
   );
+
+  // Phase 94: Create Task MCP Tool
+  server.registerTool(
+    "create_task",
+    {
+      description:
+        "Create a new task directly (without a template). Provide a commandText describing what needs to be done. Optionally set priority, tags, description, device assignment, and due date. Returns the created task with its generated ID.",
+      inputSchema: {
+        commandText: z
+          .string()
+          .describe("The task command text describing what needs to be done"),
+        description: z
+          .string()
+          .optional()
+          .describe("Optional detailed description of the task"),
+        priority: z
+          .enum(["low", "normal", "high", "urgent"])
+          .optional()
+          .describe("Task priority. Default: normal"),
+        tags: z
+          .array(z.string())
+          .optional()
+          .describe("Tags to assign to the task"),
+        assignedDeviceId: z
+          .string()
+          .optional()
+          .describe("Device ID to assign the task to"),
+        dueDate: z
+          .string()
+          .optional()
+          .describe("Due date in ISO 8601 format"),
+      },
+    },
+    async (args) => {
+      try {
+        const task = await client.createTask({
+          commandText: args.commandText,
+          description: args.description,
+          priority: args.priority,
+          tags: args.tags,
+          assignedDeviceId: args.assignedDeviceId,
+          dueDate: args.dueDate,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  message: "Task created successfully",
+                  task: {
+                    id: task.id,
+                    commandText: task.commandText,
+                    status: task.status,
+                    priority: task.priority,
+                    tags: task.tags,
+                    assignedDeviceId: task.assignedDeviceId,
+                    dueDate: task.dueDate,
+                    description: task.description,
+                    createdAt: task.createdAt,
+                  },
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+          isError: true,
+        };
+      }
+    },
+  );
 }
