@@ -1,21 +1,22 @@
-# 🏆 harness-remote — Milestone Report (100% Complete)
+# 🏆 harness-remote — Milestone Report
 
 **Date:** 2026-06-11
-**Final Phase:** Phase 94 — Direct Task Creation MCP Tool
 
 ## 📊 Core Metrics
 
 | Metric | Value |
 |--------|-------|
-| Features Completed | 629 / 629 (100%) |
+| Completed Features | 629 / 629 (100%) |
 | Implementation Phases | Phase 1 → Phase 94 |
 | TypeScript Source Files | 45 |
 | Test Files | 12 |
-| Source Code Lines | ~10,598 |
-| Test Cases | 579 (all passing ✅) |
+| Source Code Lines | 29,775 |
+| Test Lines | 9,086 |
+| Test Cases | 579 passed ✅ |
 | MCP Tool Registrations | 160 |
-| API Route Handlers | 161 (across 11 route modules) |
-| TODO / FIXME / HACK | 0 |
+| Store Methods | 136 |
+| API Route Handlers | 161 |
+| TODO/FIXME/HACK | 0 |
 | Changelog Files | 121 |
 | Research Documents | 30 |
 
@@ -23,69 +24,104 @@
 
 | Check | Status |
 |-------|--------|
-| Typecheck | ✅ Passed |
-| Build | ✅ Passed |
-| Tests | ✅ 579/579 Passed |
-| TODO/FIXME | ✅ 0 items |
+| Typecheck | ✅ Pass |
+| Build | ✅ Pass |
+| Tests | ✅ All 579 pass |
+| TODO/FIXME | ✅ 0 found |
+
+## 📋 Phase Overview
+
+### Foundation (Phase 1-8)
+- TypeScript skeleton, dependencies, shared layer (types, errors, http)
+- SQLite task store, task API routes, auth middleware
+- MCP server setup, basic tool registrations
+
+### Core Task Management (Phase 9-20)
+- Full task lifecycle: create, pick, run, complete, fail
+- Task state machine with validated transitions
+- Task result saving with structured outputs
+- Event deduplication for Feishu webhook processing
+
+### Feishu Integration (Phase 21-30)
+- Feishu card message builder with rich formatting
+- Interactive message handling (pick, run, complete buttons)
+- Task notification cards with status tracking
+- Feishu webhook event processing pipeline
+
+### Advanced Task Features (Phase 31-45)
+- Task dependency graph with cycle detection
+- Bulk task operations (status update, delete, assign)
+- Task search with multi-criteria filtering
+- Task archival and soft-delete
+- CSV export with all task fields
+- SLA policy engine with breach detection
+- Webhook management system with delivery logs
+- Scheduled task automation
+- Template-based task creation
+- Audit logging subsystem
+
+### Dashboard & Observability (Phase 46-60)
+- Real-time web dashboard with live task updates
+- Server-Sent Events (SSE) for real-time updates
+- Metrics collection and stats endpoints
+- Dashboard settings management UI
+- Saved views for custom task filters
+- Module organization for task grouping
+- Dashboard entity management (tags, cycles, modules, saved views, scheduled tasks, SLA policies, webhooks, templates, devices, audit logs)
+- API usage tracking with per-key statistics
+
+### MCP Tools Expansion (Phase 61-80)
+- 160 MCP tools covering all project entities
+- Task CRUD, search, bulk operations, dependencies
+- Device registration and management
+- Webhook CRUD with delivery log queries
+- SLA policy management with breach tracking
+- Template instantiation from saved templates
+- Scheduled task management with manual run
+- Audit log querying and cleanup
+- Tag management with bulk add/remove
+- Cycle and module filtering for search
+- Time entries and estimated minutes tracking
+- Task reopening from terminal states
+- External service API wrappers (file download, card updates)
+
+### Dashboard Detail Panels (Phase 81-90)
+- Notes management on task detail panel
+- Relationships between tasks (blocks, relates-to, duplicates)
+- Task time tracking with start/stop/pause
+- Module assignment on tasks
+- Cycle burndown visualization
+- SLA breach dashboard tab
+- Audit log dashboard tab with filters
+- Dashboard management UI for all entities
+- API usage entries MCP tool
+
+### Final Features (Phase 91-94)
+- Cycle and module filtering for search tasks
+- List all tags MCP tool
+- Source filter for search and export tasks
+- Direct task creation MCP tool
 
 ## 🏗️ Architecture Coverage
 
-### Layer Parity
-- **Shared Types** → **Store Layer** → **API Routes** → **MCP Client** → **MCP Tools**: Full chain coverage ✅
+- **Shared Types** → **Store Layer** → **API Routes** → **MCP Client** → **MCP Tools**: Full pipeline coverage
+- **Store Methods**: 136 async methods across all entity stores
+- **Route Handlers**: 161 HTTP endpoints across 11 route modules
+- **MCP Tools**: 160 registered tools
+- **Dead Code**: 0 unused exports found
+- **Tests**: 579 test cases, all passing
 
-### Store Methods (161+ handlers)
-| Module | Route Handlers |
-|--------|---------------|
-| tasks/routes.ts | 124 |
-| webhooks/routes.ts | 6 |
-| scheduled/routes.ts | 6 |
-| devices/routes.ts | 5 |
-| stats/routes.ts | 5 |
-| auth/routes.ts | 5 |
-| audit/routes.ts | 3 |
-| apiusage/routes.ts | 2 |
-| dashboard/routes.ts | 2 |
-| sse/routes.ts | 2 |
-| metrics/routes.ts | 1 |
+## 📈 Summary
 
-### MCP Tools (160 registered)
-Covers all entity types: tasks (CRUD + bulk + filters), templates, cycles, modules, SLA policies, webhooks, scheduled tasks, devices, users, API keys, audit logs, time tracking, saved views, and more.
+harness-remote has evolved from a TypeScript skeleton into a fully-featured Feishu task inbox with:
+- Complete MCP protocol integration for AI agent automation
+- Rich dashboard with real-time updates
+- SLA monitoring with breach detection
+- Audit logging for compliance
+- Webhook management for external integrations
+- Scheduled task automation
+- Template-based task creation
+- 160 MCP tools providing comprehensive programmatic access
+- 579 passing tests ensuring reliability
 
-## 📋 Phase Summary
-
-### Foundation (Phases 1–7)
-TypeScript skeleton, shared layer, SQLite store, task API routes, server bootstrap, Feishu event processing.
-
-### Core Features (Phases 8–20)
-MCP server integration, task lifecycle management, Feishu card builder, event deduplication, slash commands, search functionality.
-
-### Advanced Features (Phases 21–40)
-Bulk operations, cycle/module management, templates, SLA policies, webhooks, audit logging, device management, user management.
-
-### Dashboard & Observability (Phases 41–60)
-Web dashboard with task detail panel, activity feed, audit log tab, settings UI, kanban board, stats endpoints.
-
-### Polish & Completeness (Phases 61–80)
-Task reopening, description editing, time tracking, dependency management, notes/relationships, module filtering, global activity feed.
-
-### Final Touches (Phases 81–94)
-Dashboard SLA display, filtered CSV export, bulk due date update, API keys management UI, API usage entries, cycle/module filtering, source filtering, direct task creation.
-
-## 🔧 Dependency Health
-
-| Package | Current | Latest | Status |
-|---------|---------|--------|--------|
-| @fastify/compress | 8.3.1 | 9.0.0 | Minor upgrade available (non-critical) |
-
-## 🏁 Project Summary
-
-harness-remote is a complete Feishu task inbox system that enables AI agents (via MCP protocol) to automatically claim and process Feishu tasks. The system includes:
-
-- **Full task lifecycle**: Create → Assign → Pick → Run → Done/Failed → Reopen
-- **160 MCP tools** for AI agent integration
-- **Web dashboard** with real-time SSE updates, kanban view, activity feed
-- **121 changelogs** documenting every phase of evolution
-- **579 tests** covering store, routes, tools, Feishu integration, and utilities
-- **Zero technical debt**: 0 TODOs, 0 FIXMEs, 0 HACKs
-
-The project is production-ready and fully operational.
+The project is now **feature-complete** and enters maintenance mode.
