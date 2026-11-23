@@ -3,22 +3,30 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadMcpConfig } from "./config.js";
 import { createTaskApiClient } from "./client.js";
 import { registerMcpTools } from "./tools.js";
+import { parseToolsets } from "./toolsets.js";
 
 const configPath = process.argv.includes("--config")
   ? process.argv[process.argv.indexOf("--config") + 1]
   : undefined;
 
+const cliToolsetsArg = process.argv.includes("--toolsets")
+  ? process.argv[process.argv.indexOf("--toolsets") + 1]
+  : undefined;
+
 export async function startMcpServer(): Promise<void> {
   const config = loadMcpConfig(configPath);
+  const toolsets = cliToolsetsArg ? parseToolsets(cliToolsetsArg) : config.toolsets;
 
-  const client = createTaskApiClient(config.serverBaseUrl, config.personalToken, config.deviceId);
+  const client = createTaskApiClient(config.serverBaseUrl, config.personalToken, config.deviceId, {
+    timeoutMs: config.timeoutMs,
+  });
 
   const server = new McpServer({
     name: "harness-remote",
     version: "0.1.0",
   });
 
-  registerMcpTools(server, client);
+  registerMcpTools(server, client, { toolsets });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

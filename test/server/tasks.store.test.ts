@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createTaskStore } from "../../src/server/tasks/store.js";
 import type { TaskStore } from "../../src/server/tasks/store.js";
-import type { Task } from "../../shared/types.js";
+import type { Task } from "../../src/shared/types.js";
 import { unlinkSync } from "node:fs";
 
 const TEST_DB = "/tmp/test-tasks-store.db";

@@ -2,6 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import type { TaskApiClient } from "./client.js";
 import type { DependencyGraph, DependencyTreeNode } from "../shared/types.js";
+import { shouldRegisterTool, type McpToolset } from "./toolsets.js";
+
+export interface RegisterMcpToolsOptions {
+  /** Optional list of toolsets to expose (e.g. ["core", "planning"]). Omit or pass ["all"] for all 160 tools. */
+  toolsets?: readonly McpToolset[];
+}
 
 /** Count nodes with status 'pending' that have all deps met (no unresolved children) */
 function countReadyNodes(graph: DependencyGraph): number {
@@ -19,9 +25,28 @@ function countReadyNodes(graph: DependencyGraph): number {
 }
 
 export function registerMcpTools(
-  server: McpServer,
+  rawServer: McpServer,
   client: TaskApiClient,
+  options?: RegisterMcpToolsOptions,
 ): void {
+  const enabledToolsets = options?.toolsets;
+  const server: McpServer =
+    enabledToolsets && enabledToolsets.length > 0 && !enabledToolsets.includes("all")
+      ? new Proxy(rawServer, {
+          get(target, prop, receiver) {
+            if (prop === "registerTool") {
+              return (name: string, ...rest: unknown[]) => {
+                if (!shouldRegisterTool(name, enabledToolsets)) {
+                  return undefined;
+                }
+                return (target.registerTool as (...args: unknown[]) => unknown)(name, ...rest);
+              };
+            }
+            const value = Reflect.get(target, prop, receiver);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        })
+      : rawServer;
   // list_tasks tool
   server.registerTool(
     "list_tasks",

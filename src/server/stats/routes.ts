@@ -40,9 +40,12 @@ export function registerStatsRoutes(
         return reply.send(cached);
       }
 
-      // Query completed tasks with processing timestamps
-      const rows = await store.getAllTasks();
-      const completed = rows.filter(t => t.completedAt && (t.status === "done" || t.status === "failed"));
+      // Query only completed task timing columns instead of loading all full task rows into memory
+      const completed = store.getCompletedTaskTimings
+        ? await store.getCompletedTaskTimings()
+        : (await store.getAllTasks()).filter(
+            (t) => t.completedAt && (t.status === "done" || t.status === "failed"),
+          );
 
       const durations: number[] = [];
       const queueWaits: number[] = [];

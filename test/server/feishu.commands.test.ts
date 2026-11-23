@@ -3,7 +3,8 @@ import {
   parseCommand,
   executeCommand,
 } from "../../src/server/feishu/commands.js";
-import type { Task, TaskStore } from "../../src/shared/types.js";
+import type { Task } from "../../src/shared/types.js";
+import type { TaskStore } from "../../src/server/tasks/store.js";
 import type { FeishuReplyClient } from "../../src/server/feishu/client.js";
 import type { FeishuCard } from "../../src/server/feishu/card-builder.js";
 
@@ -105,7 +106,6 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     addNote: vi.fn(),
     listNotes: vi.fn(),
     deleteNote: vi.fn(),
-    listTasksByUser: vi.fn().mockResolvedValue([]),
     getDependencyGraph: vi.fn(),
     addRelationship: vi.fn(),
     removeRelationship: vi.fn(),

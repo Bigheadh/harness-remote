@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   parseFeishuEvent,
   createTaskFromFeishuEvent,
+  type FeishuEventContext,
 } from "../../src/server/feishu/events.js";
 
 // ── parseFeishuEvent ────────────────────────────────────────────────────────
