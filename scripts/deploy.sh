@@ -43,14 +43,15 @@ echo "Project dir: $PROJECT_DIR"
 echo "Node: $NODE_BIN"
 echo ""
 
-# Step 1: Install dependencies
+# Step 1: Install dependencies (include devDependencies for TypeScript build)
 echo "[1/5] Installing dependencies..."
 cd "$PROJECT_DIR"
-$NPM_BIN ci --omit=dev 2>/dev/null || $NPM_BIN install --omit=dev
+$NPM_BIN ci 2>/dev/null || $NPM_BIN install
 
-# Step 2: Build
+# Step 2: Build TypeScript & copy static dashboard assets, then prune devDependencies
 echo "[2/5] Building TypeScript..."
 $NPM_BIN run build
+$NPM_BIN prune --omit=dev
 
 # Step 3: Create data directory
 echo "[3/5] Creating data directory..."

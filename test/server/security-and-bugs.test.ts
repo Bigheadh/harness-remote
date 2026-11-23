@@ -63,7 +63,7 @@ describe("P0/P1 Security & Bug Regression Suite", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body).not.toContain(viewer.token);
       expect(res.body).not.toContain(PERSONAL_TOKEN);
-      expect(res.body).toContain("/dashboard/assets/dashboard.js");
+      expect(res.body).toContain("/dashboard/assets/js/core.js");
       expect(res.body).toContain("/dashboard/assets/dashboard.css");
       expect(res.headers["x-frame-options"]).toBe("DENY");
       expect(res.headers["x-content-type-options"]).toBe("nosniff");
@@ -138,7 +138,7 @@ describe("P0/P1 Security & Bug Regression Suite", () => {
 
     it("loads syntactically valid client JavaScript asset with no embedded secrets", () => {
       const html = renderDashboardHTML("http://localhost:3000");
-      expect(html).toContain("/dashboard/assets/dashboard.js");
+      expect(html).toContain("/dashboard/assets/js/core.js");
       expect(html).not.toContain(PERSONAL_TOKEN);
       const js = getDashboardJs();
       expect(js.length).toBeGreaterThan(1000);

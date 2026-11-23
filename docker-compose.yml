@@ -1,0 +1,36 @@
+services:
+  harness-remote:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: harness-remote:latest
+    container_name: harness-remote
+    restart: unless-stopped
+    ports:
+      - "${HARNESS_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HARNESS_PORT: "3000"
+      HARNESS_PUBLIC_BASE_URL: ${HARNESS_PUBLIC_BASE_URL:-http://localhost:3000}
+      HARNESS_PERSONAL_TOKEN: ${HARNESS_PERSONAL_TOKEN:?HARNESS_PERSONAL_TOKEN is required (min 24 chars)}
+      HARNESS_STORAGE_PATH: /app/data/tasks.sqlite
+      FEISHU_APP_ID: ${FEISHU_APP_ID:?FEISHU_APP_ID is required}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:?FEISHU_APP_SECRET is required}
+      FEISHU_VERIFICATION_TOKEN: ${FEISHU_VERIFICATION_TOKEN:?FEISHU_VERIFICATION_TOKEN is required}
+      FEISHU_ENCRYPT_KEY: ${FEISHU_ENCRYPT_KEY:-}
+      FEISHU_ALLOWED_USER_IDS: ${FEISHU_ALLOWED_USER_IDS:?FEISHU_ALLOWED_USER_IDS is required}
+      FEISHU_NOTIFY_ON_STATUS_CHANGE: ${FEISHU_NOTIFY_ON_STATUS_CHANGE:-running,failed}
+      HARNESS_RATE_LIMIT_MAX: ${HARNESS_RATE_LIMIT_MAX:-60}
+      HARNESS_RATE_LIMIT_WINDOW_MS: ${HARNESS_RATE_LIMIT_WINDOW_MS:-60000}
+      HARNESS_WEBHOOK_TIMEOUT_MS: ${HARNESS_WEBHOOK_TIMEOUT_MS:-10000}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m

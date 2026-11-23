@@ -5,9 +5,19 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
 
+export const DASHBOARD_JS_MODULES = [
+  "core.js",
+  "detail.js",
+  "actions.js",
+  "settings-views.js",
+] as const;
+
+export type DashboardJsModule = (typeof DASHBOARD_JS_MODULES)[number];
+
 let cachedIndexHtml: string | undefined;
 let cachedCss: string | undefined;
 let cachedJs: string | undefined;
+const cachedJsModules = new Map<string, string>();
 
 export function getDashboardCss(): string {
   if (!cachedCss) {
@@ -16,9 +26,21 @@ export function getDashboardCss(): string {
   return cachedCss;
 }
 
+export function getDashboardJsModule(fileName: string): string | undefined {
+  if (!(DASHBOARD_JS_MODULES as readonly string[]).includes(fileName)) {
+    return undefined;
+  }
+  let content = cachedJsModules.get(fileName);
+  if (!content) {
+    content = readFileSync(join(PUBLIC_DIR, "js", fileName), "utf8");
+    cachedJsModules.set(fileName, content);
+  }
+  return content;
+}
+
 export function getDashboardJs(): string {
   if (!cachedJs) {
-    cachedJs = readFileSync(join(PUBLIC_DIR, "dashboard.js"), "utf8");
+    cachedJs = DASHBOARD_JS_MODULES.map((f) => getDashboardJsModule(f) ?? "").join("\n");
   }
   return cachedJs;
 }

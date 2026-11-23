@@ -9,6 +9,7 @@ import {
   renderLoginHTML,
   getDashboardCss,
   getDashboardJs,
+  getDashboardJsModule,
 } from "./templates/dashboard.js";
 import {
   createSessionCookieValue,
@@ -16,6 +17,7 @@ import {
   formatSetSessionCookie,
   readTokenFromSessionCookie,
 } from "./session.js";
+import { DashboardLoginBodySchema, parseBody } from "../openapi/schemas.js";
 
 const DASHBOARD_CSP = [
   "default-src 'self'",
@@ -97,7 +99,7 @@ export function registerDashboardRoutes(
       .send(getDashboardCss());
   });
 
-  // Static JS asset
+  // Static JS bundle (backwards-compatible combined asset)
   server.get("/dashboard/assets/dashboard.js", async (_req, reply) => {
     return reply
       .header("Content-Type", "application/javascript; charset=utf-8")
@@ -106,15 +108,25 @@ export function registerDashboardRoutes(
       .send(getDashboardJs());
   });
 
+  // Modular static JS assets (strict allowlist — prevents path traversal)
+  server.get("/dashboard/assets/js/:file", async (req, reply) => {
+    const { file } = req.params as { file: string };
+    const content = getDashboardJsModule(file);
+    if (!content) {
+      return reply.code(404).send({ error: { code: "not_found", message: "Asset not found" } });
+    }
+    return reply
+      .header("Content-Type", "application/javascript; charset=utf-8")
+      .header("Cache-Control", "public, max-age=300")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(content);
+  });
+
   // POST /dashboard/login — exchange a bearer token for an HttpOnly encrypted session cookie
   server.post("/dashboard/login", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as { token?: string } | undefined;
-    const rawToken = typeof body?.token === "string" ? body.token.trim() : "";
-    if (!rawToken) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'token'" },
-      });
-    }
+    const parsed = parseBody(DashboardLoginBodySchema, req.body, reply);
+    if (!parsed) return;
+    const rawToken = parsed.token;
 
     let authCtx: AuthContext;
     try {
