@@ -14,6 +14,7 @@ export interface UserStore {
   deleteUser(id: string): Promise<boolean>;
   regenerateToken(id: string): Promise<User>;
   countUsers(): Promise<number>;
+  close?(): void;
 }
 
 function generateUserId(): string {
@@ -41,8 +42,10 @@ export function createUserStore(storagePath: string): UserStore {
 
   const db = new DatabaseSync(storagePath);
 
-  // Enable WAL mode
+  // Enable WAL mode, foreign keys, and busy timeout
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   // Create users table
   db.exec(`
@@ -137,6 +140,10 @@ export function createUserStore(storagePath: string): UserStore {
     async countUsers(): Promise<number> {
       const row = countAll.get() as Record<string, unknown>;
       return Number(row["cnt"]);
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

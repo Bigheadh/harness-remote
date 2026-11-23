@@ -8,6 +8,7 @@ export interface AuditLogStore {
   query(options: AuditLogSearchOptions): Promise<AuditLogEntry[]>;
   count(): Promise<number>;
   cleanup(retentionDays?: number): Promise<number>;
+  close?(): void;
 }
 
 export function createAuditLogStore(storagePath: string): AuditLogStore {
@@ -15,6 +16,8 @@ export function createAuditLogStore(storagePath: string): AuditLogStore {
 
   const db = new DatabaseSync(storagePath);
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
@@ -128,6 +131,10 @@ export function createAuditLogStore(storagePath: string): AuditLogStore {
         .prepare("DELETE FROM audit_log WHERE timestamp < ?")
         .run(cutoff);
       return Number(result.changes);
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

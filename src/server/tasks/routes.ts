@@ -114,6 +114,11 @@ export function registerTaskRoutes(
 
   // RBAC-aware auth hook for /api/* routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
+    const pathname = req.url.split("?")[0];
+    // SSE stream handles its own RBAC auth (supports ?token= for browser EventSource)
+    if (pathname === "/api/tasks/stream") {
+      return;
+    }
     if (req.url.startsWith("/api/")) {
       try {
         const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
@@ -3689,7 +3694,12 @@ export function registerTaskRoutes(
     }
 
     try {
-      new URL(url);
+      const parsedUrl = new URL(url);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        return reply.code(400).send({
+          error: { code: "invalid_request", message: "url must use http:// or https:// protocol" },
+        });
+      }
     } catch {
       return reply.code(400).send({
         error: { code: "invalid_request", message: "url must be a valid URL" },

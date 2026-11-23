@@ -47,6 +47,7 @@ export interface ApiKeyStore {
   createApiKey(name: string, userId: string, role: UserRole): Promise<ApiKey>;
   getApiKeyById(id: string): Promise<ApiKey | undefined>;
   getApiKeyByKey(key: string): Promise<ApiKey | undefined>;
+  getApiKeyByPreviousKey?(key: string): Promise<ApiKey | undefined>;
   listApiKeys(userId?: string): Promise<ApiKey[]>;
   rotateApiKey(id: string, gracePeriodMs: number): Promise<ApiKey>;
   revokeApiKey(id: string): Promise<boolean>;
@@ -55,6 +56,7 @@ export interface ApiKeyStore {
   markLastUsed(id: string): Promise<void>;
   deleteExpiredPreviousKeys(): Promise<number>;
   countApiKeys(): Promise<number>;
+  close?(): void;
 }
 
 export function createApiKeyStore(storagePath: string): ApiKeyStore {
@@ -62,6 +64,8 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
 
   const db = new DatabaseSync(storagePath);
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS api_keys (
@@ -80,6 +84,7 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
   `);
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_key ON api_keys(key)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_previous_key ON api_keys(previous_key)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)`);
 
   // Unique constraint: only one active key per user (only one row with previous_key IS NULL and enabled=1)
@@ -92,6 +97,7 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
 
   const selectById = db.prepare(`SELECT * FROM api_keys WHERE id = ?`);
   const selectByKey = db.prepare(`SELECT * FROM api_keys WHERE key = ?`);
+  const selectByPreviousKey = db.prepare(`SELECT * FROM api_keys WHERE previous_key = ?`);
   const selectByUserId = db.prepare(`SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`);
   const selectAll = db.prepare(`SELECT * FROM api_keys ORDER BY created_at DESC`);
   const countAll = db.prepare(`SELECT COUNT(*) as cnt FROM api_keys`);
@@ -104,8 +110,11 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
   `);
   const updateLastUsed = db.prepare(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`);
   const deleteById = db.prepare(`DELETE FROM api_keys WHERE id = ?`);
-  const deleteExpiredPrevious = db.prepare(`
-    DELETE FROM api_keys WHERE previous_key IS NOT NULL AND previous_key_expires_at < ?
+  // Only clear the expired previous_key columns — never delete the active API key row!
+  const clearExpiredPrevious = db.prepare(`
+    UPDATE api_keys
+    SET previous_key = NULL, previous_key_expires_at = NULL, updated_at = ?
+    WHERE previous_key IS NOT NULL AND previous_key_expires_at < ?
   `);
 
   function generateId(): string {
@@ -131,6 +140,11 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
 
     async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {
       const row = selectByKey.get(key) as Record<string, unknown> | undefined;
+      return row ? rowToApiKey(row) : undefined;
+    },
+
+    async getApiKeyByPreviousKey(key: string): Promise<ApiKey | undefined> {
+      const row = selectByPreviousKey.get(key) as Record<string, unknown> | undefined;
       return row ? rowToApiKey(row) : undefined;
     },
 
@@ -191,13 +205,17 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
 
     async deleteExpiredPreviousKeys(): Promise<number> {
       const now = new Date().toISOString();
-      const result = deleteExpiredPrevious.run(now);
+      const result = clearExpiredPrevious.run(now, now);
       return Number(result.changes);
     },
 
     async countApiKeys(): Promise<number> {
       const row = countAll.get() as Record<string, unknown>;
       return Number(row["cnt"]);
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

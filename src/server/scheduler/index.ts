@@ -1,15 +1,17 @@
 import type { TaskStore } from "../tasks/store.js";
 import type { ScheduledTask, TaskStatus, TaskPriority } from "../../shared/types.js";
 import { createLogger } from "../../shared/logger.js";
+import { broadcastTaskCreated } from "../sse/broadcaster.js";
+import { recordTaskCreated } from "../metrics/collector.js";
 
 const log = createLogger({ level: "info" });
 
-/** Calculate the next run time based on frequency */
+/** Calculate the next run time based on frequency relative to the given timestamp (default: now) */
 export function calculateNextRun(
   frequency: ScheduledTask["frequency"],
-  lastRunAt?: string,
+  referenceTime?: string,
 ): string {
-  const base = lastRunAt ? new Date(lastRunAt) : new Date();
+  const base = referenceTime ? new Date(referenceTime) : new Date();
 
   switch (frequency) {
     case "once":
@@ -20,7 +22,6 @@ export function calculateNextRun(
       return base.toISOString();
     case "daily":
       base.setDate(base.getDate() + 1);
-      base.setHours(base.getHours() || 9); // Default to 9 AM
       return base.toISOString();
     case "weekly":
       base.setDate(base.getDate() + 7);
@@ -58,14 +59,17 @@ async function processScheduledTask(
     updatedAt: now,
   });
 
-  // Calculate next run time
-  const nextRunAt = calculateNextRun(scheduled.frequency, scheduled.lastRunAt);
+  recordTaskCreated();
+  broadcastTaskCreated(task);
+
+  // Calculate next run time from `now` so downtime doesn't leave nextRunAt in the past
+  const nextRunAt = calculateNextRun(scheduled.frequency, now);
 
   // Mark as run
   await store.markScheduledTaskRun(scheduled.id, nextRunAt, task.id);
 
   log.info(
-    { scheduleId: scheduled.id, taskId: task.id, frequency: scheduled.frequency },
+    { scheduleId: scheduled.id, taskId: task.id, frequency: scheduled.frequency, nextRunAt },
     "Scheduled task fired — created task",
   );
 }
@@ -76,8 +80,11 @@ export function startScheduler(
   intervalMs: number = 60_000, // Default: check every 60 seconds
 ): () => void {
   log.info({ intervalMs }, "Starting task scheduler");
+  let running = false;
 
   const timer = setInterval(async () => {
+    if (running) return;
+    running = true;
     try {
       const now = new Date().toISOString();
       const due = await store.getDueScheduledTasks(now);
@@ -98,6 +105,8 @@ export function startScheduler(
       }
     } catch (err) {
       log.error({ err }, "Scheduler tick failed");
+    } finally {
+      running = false;
     }
   }, intervalMs);
 

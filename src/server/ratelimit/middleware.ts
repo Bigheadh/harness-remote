@@ -18,17 +18,15 @@ import type { RateLimiter } from "./limiter.js";
 import { recordRateLimitRejection } from "../metrics/collector.js";
 
 /**
- * Derive a rate limit key from the request context.
- * Uses a stable, non-reversible identifier for each caller.
+ * Derive a rate limit key from the authenticated request context or client IP.
+ * Never trusts unauthenticated query parameters (like ?deviceId=) so callers
+ * cannot bypass rate limits or exhaust memory with random query values.
  */
-function deriveKey(req: FastifyRequest, authCtx?: { user?: { id: string }; isSuperAdmin: boolean; role?: string }): string {
-  // Prefer device ID if present (device-specific rate limiting)
-  const deviceId = (req.query as Record<string, unknown>)?.deviceId;
-  if (typeof deviceId === "string" && deviceId.trim() !== "") {
-    return `device:${deviceId.trim()}`;
-  }
-
-  // Prefer user ID if RBAC is active
+export function deriveKey(
+  req: FastifyRequest,
+  authCtx?: { user?: { id: string }; isSuperAdmin: boolean; role?: string },
+): string {
+  // Prefer authenticated user/API key ID
   if (authCtx?.user?.id) {
     return `user:${authCtx.user.id}`;
   }
@@ -41,7 +39,7 @@ function deriveKey(req: FastifyRequest, authCtx?: { user?: { id: string }; isSup
     return `token:${hash}`;
   }
 
-  // Last resort: use IP
+  // Last resort: use client IP
   return `ip:${req.ip}`;
 }
 
@@ -72,7 +70,7 @@ export function registerRateLimitHook(
 
     if (!result.allowed) {
       recordRateLimitRejection();
-      reply.code(429).send({
+      return reply.code(429).send({
         error: {
           code: "rate_limited",
           message: `Rate limit exceeded. Try again after ${new Date(result.resetMs).toISOString()}`,

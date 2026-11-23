@@ -94,27 +94,28 @@ export async function authenticate(
       // Key exists but is disabled — still reject
     }
 
-    // Check all API keys for a matching previous key (grace period)
-    const allKeys = await apiKeyStore.listApiKeys();
-    for (const ak of allKeys) {
-      if (!ak.previousKey || !ak.previousKeyExpiresAt) continue;
-      if (!safeCompare(token, ak.previousKey)) continue;
+    // Check previous key (grace period) using indexed lookup when available
+    const prevKeyMatch = apiKeyStore.getApiKeyByPreviousKey
+      ? await apiKeyStore.getApiKeyByPreviousKey(token)
+      : (await apiKeyStore.listApiKeys()).find(
+          (ak) => ak.previousKey !== null && safeCompare(token, ak.previousKey),
+        );
 
-      // Check if grace period is still active
+    if (prevKeyMatch && prevKeyMatch.previousKey && prevKeyMatch.previousKeyExpiresAt && safeCompare(token, prevKeyMatch.previousKey)) {
       const now = new Date();
-      const expiresAt = new Date(ak.previousKeyExpiresAt);
-      if (now < expiresAt && ak.enabled) {
-        await apiKeyStore.markLastUsed(ak.id);
+      const expiresAt = new Date(prevKeyMatch.previousKeyExpiresAt);
+      if (now < expiresAt && prevKeyMatch.enabled) {
+        await apiKeyStore.markLastUsed(prevKeyMatch.id);
         return {
           user: {
-            id: ak.userId,
-            username: ak.name,
-            token: ak.key,
-            role: ak.role,
-            createdAt: ak.createdAt,
-            updatedAt: ak.updatedAt,
+            id: prevKeyMatch.userId,
+            username: prevKeyMatch.name,
+            token: prevKeyMatch.key,
+            role: prevKeyMatch.role,
+            createdAt: prevKeyMatch.createdAt,
+            updatedAt: prevKeyMatch.updatedAt,
           },
-          role: ak.role,
+          role: prevKeyMatch.role,
           isSuperAdmin: false,
         };
       }

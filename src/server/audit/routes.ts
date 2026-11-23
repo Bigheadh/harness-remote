@@ -13,9 +13,12 @@ export function registerAuditRoutes(
   userStore?: UserStore,
   apiKeyStore?: ApiKeyStore,
 ): void {
-  // Auth hook for /api/audit routes
+  // Auth hook for /api/audit routes (skips if global /api/ hook already authenticated)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/audit")) {
+      if ((req as FastifyRequest & { authCtx?: unknown }).authCtx) {
+        return;
+      }
       try {
         const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;

@@ -17,6 +17,19 @@ const httpRequests: Map<string, number> = new Map();
 /** HTTP request duration buckets (in seconds) */
 const httpDurationBuckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10];
 const httpDurationCounts: Map<string, number[]> = new Map();
+/** HTTP request duration sum (in seconds) */
+const httpDurationSums: Map<string, number> = new Map();
+
+/** Hard cap on distinct normalized HTTP route keys to prevent unbounded memory growth */
+const MAX_HTTP_METRIC_PATHS = 500;
+const trackedNormalizedPaths: Set<string> = new Set();
+
+/** Internal key delimiter that never collides with :id route placeholders */
+const KEY_SEP = "\0";
+
+function escapePromLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+}
 
 /** Task creation counter */
 let tasksCreated = 0;
@@ -54,20 +67,31 @@ export function recordHttpRequest(
   statusCode: number,
   durationSeconds: number,
 ): void {
-  // Normalize path: strip query params and numeric IDs
-  const normalizedPath = normalizePath(path);
-  const key = `${method}:${normalizedPath}:${statusCode}`;
+  // Normalize path: strip query params and IDs
+  let normalizedPath = normalizePath(path);
+  if (!trackedNormalizedPaths.has(normalizedPath)) {
+    if (trackedNormalizedPaths.size >= MAX_HTTP_METRIC_PATHS) {
+      normalizedPath = "__other__";
+    } else {
+      trackedNormalizedPaths.add(normalizedPath);
+    }
+  }
+
+  const safeDuration = Number.isFinite(durationSeconds) && durationSeconds >= 0 ? durationSeconds : 0;
+  const key = `${method}${KEY_SEP}${normalizedPath}${KEY_SEP}${statusCode}`;
   httpRequests.set(key, (httpRequests.get(key) ?? 0) + 1);
 
-  // Duration histogram
-  const bucketKey = `${method}:${normalizedPath}`;
+  // Duration histogram & sum
+  const bucketKey = `${method}${KEY_SEP}${normalizedPath}`;
   if (!httpDurationCounts.has(bucketKey)) {
     httpDurationCounts.set(bucketKey, new Array(httpDurationBuckets.length + 1).fill(0));
   }
+  httpDurationSums.set(bucketKey, (httpDurationSums.get(bucketKey) ?? 0) + safeDuration);
+
   const buckets = httpDurationCounts.get(bucketKey)!;
   let placed = false;
   for (let i = 0; i < httpDurationBuckets.length; i++) {
-    if (durationSeconds <= httpDurationBuckets[i]) {
+    if (safeDuration <= httpDurationBuckets[i]) {
       buckets[i]++;
       placed = true;
       break;
@@ -96,7 +120,7 @@ export function recordTaskCompleted(status: string): void {
  * Record a task status change.
  */
 export function recordTaskStatusChange(from: string, to: string): void {
-  const key = `${from}:${to}`;
+  const key = `${from}${KEY_SEP}${to}`;
   taskStatusChanges.set(key, (taskStatusChanges.get(key) ?? 0) + 1);
 }
 
@@ -142,6 +166,16 @@ export function recordWebhookDelivery(success: boolean): void {
  */
 export function recordApiKeyOp(op: string): void {
   apiKeyOps.set(op, (apiKeyOps.get(op) ?? 0) + 1);
+}
+
+/**
+ * Reset in-memory HTTP metrics (primarily for unit tests).
+ */
+export function resetHttpMetrics(): void {
+  httpRequests.clear();
+  httpDurationCounts.clear();
+  httpDurationSums.clear();
+  trackedNormalizedPaths.clear();
 }
 
 /**
@@ -197,7 +231,7 @@ export function formatMetrics(taskCounts?: {
   lines.push("# HELP harness_remote_tasks_completed_total Tasks completed by status");
   lines.push("# TYPE harness_remote_tasks_completed_total counter");
   for (const [status, count] of tasksCompleted) {
-    lines.push(`harness_remote_tasks_completed_total{status="${status}"} ${count}`);
+    lines.push(`harness_remote_tasks_completed_total{status="${escapePromLabel(status)}"} ${count}`);
   }
   lines.push("");
 
@@ -206,8 +240,10 @@ export function formatMetrics(taskCounts?: {
     lines.push("# HELP harness_remote_task_status_changes_total Task status transitions");
     lines.push("# TYPE harness_remote_task_status_changes_total counter");
     for (const [transition, count] of taskStatusChanges) {
-      const [from, to] = transition.split(":");
-      lines.push(`harness_remote_task_status_changes_total{from="${from}",to="${to}"} ${count}`);
+      const [from, to] = transition.split(KEY_SEP);
+      lines.push(
+        `harness_remote_task_status_changes_total{from="${escapePromLabel(from)}",to="${escapePromLabel(to)}"} ${count}`,
+      );
     }
     lines.push("");
   }
@@ -222,8 +258,10 @@ export function formatMetrics(taskCounts?: {
   lines.push("# HELP harness_remote_http_requests_total HTTP requests by method, path, and status");
   lines.push("# TYPE harness_remote_http_requests_total counter");
   for (const [key, count] of httpRequests) {
-    const [method, path, status] = key.split(":");
-    lines.push(`harness_remote_http_requests_total{method="${method}",path="${path}",status="${status}"} ${count}`);
+    const [method, path, status] = key.split(KEY_SEP);
+    lines.push(
+      `harness_remote_http_requests_total{method="${escapePromLabel(method)}",path="${escapePromLabel(path)}",status="${escapePromLabel(status)}"} ${count}`,
+    );
   }
   lines.push("");
 
@@ -231,23 +269,26 @@ export function formatMetrics(taskCounts?: {
   lines.push("# HELP harness_remote_http_request_duration_seconds HTTP request duration histogram");
   lines.push("# TYPE harness_remote_http_request_duration_seconds histogram");
   for (const [key, buckets] of httpDurationCounts) {
-    const [method, path] = key.split(":");
+    const [method, path] = key.split(KEY_SEP);
+    const m = escapePromLabel(method);
+    const p = escapePromLabel(path);
     let cumulative = 0;
     for (let i = 0; i < httpDurationBuckets.length; i++) {
       cumulative += buckets[i];
       lines.push(
-        `harness_remote_http_request_duration_seconds_bucket{method="${method}",path="${path}",le="${httpDurationBuckets[i]}"} ${cumulative}`,
+        `harness_remote_http_request_duration_seconds_bucket{method="${m}",path="${p}",le="${httpDurationBuckets[i]}"} ${cumulative}`,
       );
     }
     cumulative += buckets[httpDurationBuckets.length];
+    const durationSum = httpDurationSums.get(key) ?? 0;
     lines.push(
-      `harness_remote_http_request_duration_seconds_bucket{method="${method}",path="${path}",le="+Inf"} ${cumulative}`,
+      `harness_remote_http_request_duration_seconds_bucket{method="${m}",path="${p}",le="+Inf"} ${cumulative}`,
     );
     lines.push(
-      `harness_remote_http_request_duration_seconds_sum{method="${method}",path="${path}"} ${cumulative.toFixed(6)}`,
+      `harness_remote_http_request_duration_seconds_sum{method="${m}",path="${p}"} ${durationSum.toFixed(6)}`,
     );
     lines.push(
-      `harness_remote_http_request_duration_seconds_count{method="${method}",path="${path}"} ${cumulative}`,
+      `harness_remote_http_request_duration_seconds_count{method="${m}",path="${p}"} ${cumulative}`,
     );
   }
   lines.push("");
@@ -262,7 +303,7 @@ export function formatMetrics(taskCounts?: {
   lines.push("# HELP harness_remote_feishu_replies_total Feishu reply attempts");
   lines.push("# TYPE harness_remote_feishu_replies_total counter");
   for (const [result, count] of feishuReplies) {
-    lines.push(`harness_remote_feishu_replies_total{result="${result}"} ${count}`);
+    lines.push(`harness_remote_feishu_replies_total{result="${escapePromLabel(result)}"} ${count}`);
   }
   lines.push("");
 
@@ -271,7 +312,7 @@ export function formatMetrics(taskCounts?: {
     lines.push("# HELP harness_remote_sla_events_total SLA warning/breach events");
     lines.push("# TYPE harness_remote_sla_events_total counter");
     for (const [type, count] of slaEvents) {
-      lines.push(`harness_remote_sla_events_total{type="${type}"} ${count}`);
+      lines.push(`harness_remote_sla_events_total{type="${escapePromLabel(type)}"} ${count}`);
     }
     lines.push("");
   }
@@ -281,7 +322,7 @@ export function formatMetrics(taskCounts?: {
     lines.push("# HELP harness_remote_webhook_deliveries_total Webhook delivery attempts");
     lines.push("# TYPE harness_remote_webhook_deliveries_total counter");
     for (const [result, count] of webhookDeliveries) {
-      lines.push(`harness_remote_webhook_deliveries_total{result="${result}"} ${count}`);
+      lines.push(`harness_remote_webhook_deliveries_total{result="${escapePromLabel(result)}"} ${count}`);
     }
     lines.push("");
   }
@@ -291,7 +332,7 @@ export function formatMetrics(taskCounts?: {
     lines.push("# HELP harness_remote_api_key_ops_total API key operations");
     lines.push("# TYPE harness_remote_api_key_ops_total counter");
     for (const [op, count] of apiKeyOps) {
-      lines.push(`harness_remote_api_key_ops_total{operation="${op}"} ${count}`);
+      lines.push(`harness_remote_api_key_ops_total{operation="${escapePromLabel(op)}"} ${count}`);
     }
     lines.push("");
   }
@@ -301,9 +342,9 @@ export function formatMetrics(taskCounts?: {
 
 /**
  * Normalize a URL path for metric labels.
- * Strips query params and replaces numeric/UUID segments with placeholders.
+ * Strips query params and replaces UUIDs, prefixed entity IDs, and numeric segments with :id.
  */
-function normalizePath(path: string): string {
+export function normalizePath(path: string): string {
   // Remove query string
   let normalized = path.split("?")[0];
 
@@ -313,11 +354,14 @@ function normalizePath(path: string): string {
     ":id",
   );
 
-  // Replace task_xxx style IDs
-  normalized = normalized.replace(/task_[a-zA-Z0-9_]+/g, ":id");
+  // Replace prefixed entity IDs (task_, usr_, apikey_, wh_, tpl_, cyc_, mod_, sla_, sch_, view_, sub_, dev_, time_)
+  normalized = normalized.replace(
+    /\b(?:task|usr|apikey|wh|tpl|cyc|mod|sla|sch|view|sub|dev|time)_[a-zA-Z0-9_-]+/g,
+    ":id",
+  );
 
   // Replace numeric path segments
-  normalized = normalized.replace(/\/\d+/g, "/:id");
+  normalized = normalized.replace(/\/\d+(?=\/|$)/g, "/:id");
 
   return normalized;
 }

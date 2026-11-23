@@ -11,6 +11,7 @@ export interface DeviceStore {
   getDeviceByToken(token: string): Promise<Device | undefined>;
   updateDeviceHeartbeat(id: string): Promise<void>;
   deleteDevice(id: string): Promise<boolean>;
+  close?(): void;
 }
 
 function generateDeviceId(): string {
@@ -38,8 +39,10 @@ export function createDeviceStore(storagePath: string): DeviceStore {
 
   const db = new DatabaseSync(storagePath);
 
-  // Enable WAL mode
+  // Enable WAL mode, foreign keys, and busy timeout
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   // Create devices table
   db.exec(`
@@ -100,6 +103,10 @@ export function createDeviceStore(storagePath: string): DeviceStore {
     async deleteDevice(id: string): Promise<boolean> {
       const result = deleteDeviceStmt.run(id);
       return Number(result.changes) > 0;
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

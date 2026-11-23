@@ -68,6 +68,7 @@ export function addClient(
     heartbeatTimer = setInterval(() => {
       broadcast({ event: "heartbeat", data: { ts: new Date().toISOString() } });
     }, 30_000);
+    heartbeatTimer.unref?.();
   }
 
   return id;
@@ -77,6 +78,22 @@ export function addClient(
 export function removeClient(id: number): void {
   clients.delete(id);
   if (clients.size === 0 && heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = undefined;
+  }
+}
+
+/** Close all active SSE clients and stop the heartbeat timer (for graceful shutdown) */
+export function closeAllClients(): void {
+  for (const [, client] of clients) {
+    try {
+      client.reply.raw.end();
+    } catch {
+      // Ignore errors closing already-closed sockets
+    }
+  }
+  clients.clear();
+  if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
   }
@@ -104,7 +121,7 @@ export function broadcast(event: SseEvent): void {
     }
   }
   for (const id of dead) {
-    clients.delete(id);
+    removeClient(id);
   }
 }
 

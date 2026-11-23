@@ -7,13 +7,26 @@
  * - Tag filter, date range filter
  * - Responsive design
  */
+function escapeForInlineJsString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
 export function renderDashboardHTML(
   apiBaseUrl: string,
   token: string,
 ): string {
   // Token is embedded in the page so JS can use it for API calls
-  // (escaped for safe embedding in JS string)
-  const escapedToken = token.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  // (escaped for safe embedding in JS string & preventing </script> breakout)
+  const escapedBaseUrl = escapeForInlineJsString(apiBaseUrl);
+  const escapedToken = escapeForInlineJsString(token);
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -934,8 +947,19 @@ export function renderDashboardHTML(
   </div>
 
   <script>
-    const API_BASE = '${apiBaseUrl}';
+    const API_BASE = '${escapedBaseUrl}';
     const TOKEN = '${escapedToken}';
+
+    function safeUrl(raw) {
+      if (typeof raw !== 'string') return '#';
+      try {
+        const u = new URL(raw, window.location.origin);
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          return u.href;
+        }
+      } catch {}
+      return '#';
+    }
 
     let allTasks = [];
     let currentFilter = '';
@@ -1121,10 +1145,13 @@ export function renderDashboardHTML(
             : '<span style="font-size:12px">📅 ' + formatTime(t.dueDate) + '</span>')
           : '<span style="color:var(--text-dim);font-size:12px">—</span>';
 
-        return '<tr onclick="showDetail(\\'' + t.id + '\\')" style="cursor:pointer">' +
-          '<td onclick="event.stopPropagation()"><input type="checkbox" class="row-cb" data-id="' + t.id + '" onchange="onRowSelect()" /></td>' +
         const _acls = showArchived ? ' archived-row' : '';
-          '<td><span class="priority priority-' + t.priority + '">' + t.priority + '</span></td>' +
+        const safeId = escapeHtml(t.id);
+        return '<tr class="' + _acls.trim() + '" onclick="showDetail(\\'' + safeId + '\\')" style="cursor:pointer">' +
+          '<td onclick="event.stopPropagation()"><input type="checkbox" class="row-cb" data-id="' + safeId + '" onchange="onRowSelect()" /></td>' +
+          '<td class="task-id" title="' + safeId + '">' + escapeHtml(t.id.slice(0, 12)) + pin + '</td>' +
+          '<td><span class="status status-' + escapeHtml(t.status) + '">' + escapeHtml(t.status) + '</span></td>' +
+          '<td><span class="priority priority-' + escapeHtml(t.priority) + '">' + escapeHtml(t.priority) + '</span></td>' +
           '<td title="' + escapeHtml(t.commandText) + '">' + escapeHtml(t.commandText.slice(0, 60)) + (t.commandText.length > 60 ? '...' : '') + '</td>' +
           '<td>' + (tags || '<span style="color:var(--text-dim)">—</span>') + '</td>' +
           '<td>' + dueDate + '</td>' +
@@ -1137,14 +1164,14 @@ export function renderDashboardHTML(
         '<table class="task-table">' +
           '<thead><tr>' +
             '<th><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this.checked)" title="Select all" /></th>' +
-            '<th class="sortable" onclick="sortBy(\'id\')">ID <span class="sort-arrow">⇅</span></th>' +
-            '<th class="sortable" onclick="sortBy(\'status\')">Status <span class="sort-arrow">⇅</span></th>' +
-            '<th class="sortable" onclick="sortBy(\'priority\')">Priority <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\\'id\\')">ID <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\\'status\\')">Status <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\\'priority\\')">Priority <span class="sort-arrow">⇅</span></th>' +
             '<th>Command</th>' +
             '<th>Tags</th>' +
-            '<th class="sortable" onclick="sortBy(\'dueDate\')">Due Date <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\\'dueDate\\')">Due Date <span class="sort-arrow">⇅</span></th>' +
             '<th>Device</th>' +
-            '<th class="sortable" onclick="sortBy(\'createdAt\')">Created <span class="sort-arrow">⇅</span></th>' +
+            '<th class="sortable" onclick="sortBy(\\'createdAt\\')">Created <span class="sort-arrow">⇅</span></th>' +
           '</tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
         '</table>';
@@ -1332,7 +1359,7 @@ export function renderDashboardHTML(
         }
         inner += '<div class="comment-form">' +
           '<input id="commentInput" type="text" placeholder="Add a comment..." />' +
-          '<button class="btn-sm blue" onclick="addComment('' + taskId + '')">Send</button>' +
+          '<button class="btn-sm blue" onclick="addComment(\\'' + escapeHtml(taskId) + '\\')">Send</button>' +
           '</div>';
         inner += '</div>';
         section.innerHTML = inner;
@@ -1517,7 +1544,7 @@ export function renderDashboardHTML(
             links.map(l =>
               '<div class="link-item">' +
                 '<span>📄</span>' +
-                '<a href="' + escapeHtml(l.url) + '" target="_blank" rel="noopener">' + escapeHtml(l.title || l.url) + '</a>' +
+                '<a href="' + escapeHtml(safeUrl(l.url)) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(l.title || l.url) + '</a>' +
                 '<span class="link-meta">' + escapeHtml(l.addedBy || 'unknown') + ' · ' + formatTime(l.createdAt) + '</span>' +
               '</div>'
             ).join('') +
@@ -1857,8 +1884,8 @@ export function renderDashboardHTML(
         const devData = await apiFetch('/api/devices');
         const devices = devData.devices || [];
         if (devices.length === 0) { alert('No devices registered'); return; }
-        const devList = devices.map((d, i) => (i + 1) + '. ' + d.name + ' (' + d.id.slice(0, 12) + '...)').join('\n');
-        const choice = prompt('Forward to which device?\n\n' + devList + '\n\nEnter device number or ID:');
+        const devList = devices.map((d, i) => (i + 1) + '. ' + d.name + ' (' + d.id.slice(0, 12) + '...)').join('\\n');
+        const choice = prompt('Forward to which device?\\n\\n' + devList + '\\n\\nEnter device number or ID:');
         if (!choice) return;
         let deviceId = choice.trim();
         if (/^\d+$/.test(deviceId) && parseInt(deviceId) <= devices.length) {
@@ -1898,7 +1925,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids, status }),
         });
-        alert('Updated ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Updated ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk status failed: ' + e.message); }
@@ -1914,7 +1941,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids, deviceId: deviceId.trim() }),
         });
-        alert('Assigned ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Assigned ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk assign failed: ' + e.message); }
@@ -1929,7 +1956,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids }),
         });
-        alert('Deleted ' + (data.deleted || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Deleted ' + (data.deleted || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk delete failed: ' + e.message); }
@@ -1947,7 +1974,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids, tags }),
         });
-        alert('Added tags to ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Added tags to ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk add tags failed: ' + e.message); }
@@ -1963,7 +1990,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids, tag: tag.trim() }),
         });
-        alert('Removed tag from ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Removed tag from ' + (data.updated || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk remove tag failed: ' + e.message); }
@@ -1978,7 +2005,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids }),
         });
-        alert('Archived ' + (data.archived || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Archived ' + (data.archived || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk archive failed: ' + e.message); }
@@ -1993,7 +2020,7 @@ export function renderDashboardHTML(
           method: 'POST',
           body: JSON.stringify({ ids }),
         });
-        alert('Restored ' + (data.restored || 0) + ' task(s)' + (data.errors && data.errors.length ? '\nErrors: ' + data.errors.join(', ') : ''));
+        alert('Restored ' + (data.restored || 0) + ' task(s)' + (data.errors && data.errors.length ? '\\nErrors: ' + data.errors.join(', ') : ''));
         clearSelection();
         loadTasks();
       } catch (e) { alert('Bulk unarchive failed: ' + e.message); }
@@ -2027,12 +2054,12 @@ export function renderDashboardHTML(
           const status = k.enabled !== false ? '<span style="color:#4ade80">Active</span>' : '<span style="color:#f87171">Disabled</span>';
           html += '<tr><td>' + escapeHtml(k.name || '—') + '</td><td class="id-cell" style="font-family:monospace">' + escapeHtml(masked) + '</td><td class="id-cell">' + escapeHtml(k.userId || '—') + '</td><td><span class="role-badge ' + roleClass + '">' + (k.role || '—') + '</span></td><td>' + status + '</td><td>' + (k.lastUsedAt ? formatTime(k.lastUsedAt) : 'Never') + '</td><td>';
           if (k.enabled !== false) {
-            html += '<button class="btn-sm" onclick="disableApiKey(\'' + k.id + '\')" title="Disable">⏸️</button> ';
+            html += '<button class="btn-sm" onclick="disableApiKey(\\'' + k.id + '\\')" title="Disable">⏸️</button> ';
           } else {
-            html += '<button class="btn-sm" onclick="enableApiKey(\'' + k.id + '\')" title="Enable">▶️</button> ';
+            html += '<button class="btn-sm" onclick="enableApiKey(\\'' + k.id + '\\')" title="Enable">▶️</button> ';
           }
-          html += '<button class="btn-sm" onclick="rotateApiKey(\'' + k.id + '\')" title="Rotate">🔄</button> ';
-          html += '<button class="btn-sm red" onclick="revokeApiKey(\'' + k.id + '\',\'' + escapeHtml(k.name || k.id) + '\')" title="Revoke">🗑️</button>';
+          html += '<button class="btn-sm" onclick="rotateApiKey(\\'' + k.id + '\\')" title="Rotate">🔄</button> ';
+          html += '<button class="btn-sm red" onclick="revokeApiKey(\\'' + k.id + '\\',\\'' + escapeHtml(k.name || k.id) + '\\')" title="Revoke">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2054,7 +2081,7 @@ export function renderDashboardHTML(
         if (userId) body.userId = userId;
         if (role) body.role = role;
         const data = await apiFetch('/api/keys', { method: 'POST', body: JSON.stringify(body) });
-        alert('API Key created! Full key: ' + data.apiKey.key + '\n\nSave this key now - it won\'t be shown again!');
+        alert('API Key created! Full key: ' + data.apiKey.key + '\\n\\nSave this key now - it won\\'t be shown again!');
         document.getElementById('createApiKeyForm').classList.remove('open');
         document.getElementById('newApiKeyName').value = '';
         document.getElementById('newApiKeyUserId').value = '';
@@ -2080,7 +2107,7 @@ export function renderDashboardHTML(
       if (!confirm('Rotate this API key? The old key will remain valid for 24 hours.')) return;
       try {
         const data = await apiFetch('/api/keys/' + id + '/rotate', { method: 'POST' });
-        alert('New key: ' + data.apiKey.key + '\n\nSave this key now - it won\'t be shown again!');
+        alert('New key: ' + data.apiKey.key + '\\n\\nSave this key now - it won\\'t be shown again!');
         loadSettingsApiKeys();
       } catch (e) { alert('Failed: ' + e.message); }
     }
@@ -2104,8 +2131,8 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Username</th><th>Role</th><th>Feishu ID</th><th>Actions</th></tr></thead><tbody>';
         users.forEach(u => {
           html += '<tr><td>' + escapeHtml(u.username) + '</td><td><span class="role-badge role-' + u.role + '">' + u.role + '</span></td><td class="id-cell">' + escapeHtml(u.feishuUserId || '—') + '</td><td>';
-          html += '<button class="btn-sm" onclick="regenerateUserToken(\'' + u.id + '\')">🔑</button> ';
-          html += '<button class="btn-sm red" onclick="deleteUser(\'' + u.id + '\',\'' + escapeHtml(u.username) + '\')">🗑️</button>';
+          html += '<button class="btn-sm" onclick="regenerateUserToken(\\'' + u.id + '\\')">🔑</button> ';
+          html += '<button class="btn-sm red" onclick="deleteUser(\\'' + u.id + '\\',\\'' + escapeHtml(u.username) + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2161,7 +2188,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Name</th><th>ID</th><th>Capabilities</th><th>Last Seen</th><th>Actions</th></tr></thead><tbody>';
         devices.forEach(d => {
           html += '<tr><td>' + escapeHtml(d.name) + '</td><td class="id-cell">' + escapeHtml(d.id) + '</td><td>' + escapeHtml(d.capabilities || '—') + '</td><td>' + (d.lastSeen ? formatTime(d.lastSeen) : 'Never') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteDevice(\'' + d.id + '\',\'' + escapeHtml(d.name) + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteDevice(\\'' + d.id + '\\',\\'' + escapeHtml(d.name) + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2207,7 +2234,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>URL</th><th>Events</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
         webhooks.forEach(w => {
           html += '<tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(w.url) + '">' + escapeHtml(w.url) + '</td><td>' + (w.events || []).join(', ') + '</td><td>' + (w.enabled ? '✅' : '❌') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteWebhook(\'' + w.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteWebhook(\\'' + w.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2251,7 +2278,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Command</th><th>Priority</th><th>Actions</th></tr></thead><tbody>';
         templates.forEach(t => {
           html += '<tr><td>' + escapeHtml(t.name) + '</td><td title="' + escapeHtml(t.commandText) + '">' + escapeHtml(t.commandText.slice(0, 40)) + (t.commandText.length > 40 ? '...' : '') + '</td><td>' + (t.priority || 'normal') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteTemplate(\'' + t.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteTemplate(\\'' + t.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2295,7 +2322,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Command</th><th>Frequency</th><th>Next Run</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
         schedules.forEach(s => {
           html += '<tr><td title="' + escapeHtml(s.commandText) + '">' + escapeHtml(s.commandText.slice(0, 30)) + (s.commandText.length > 30 ? '...' : '') + '</td><td>' + s.frequency + '</td><td>' + formatTime(s.nextRunAt) + '</td><td>' + (s.enabled ? '✅' : '❌') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteScheduled(\'' + s.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteScheduled(\\'' + s.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2339,7 +2366,7 @@ export function renderDashboardHTML(
         views.forEach(v => {
           const filterStr = v.filters ? JSON.stringify(v.filters) : '{}';
           html += '<tr><td>' + escapeHtml(v.name) + '</td><td class="id-cell" title="' + escapeHtml(filterStr) + '">' + escapeHtml(filterStr.slice(0, 40)) + '</td><td>' + escapeHtml(v.createdBy || '') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteSavedView(\'' + v.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteSavedView(\\'' + v.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2386,7 +2413,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Status</th><th>Tasks</th><th>Actions</th></tr></thead><tbody>';
         modules.forEach(m => {
           html += '<tr><td>' + escapeHtml(m.name) + '</td><td>' + escapeHtml(m.status || 'active') + '</td><td>' + (m.taskCount || 0) + '<td>';
-          html += '<button class="btn-sm red" onclick="deleteModule(\'' + m.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteModule(\\'' + m.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2432,7 +2459,7 @@ export function renderDashboardHTML(
           const end = c.endDate ? new Date(c.endDate).toLocaleDateString() : '—';
           const statusEmoji = c.status === 'active' ? '🟢' : c.status === 'completed' ? '✅' : '🔵';
           html += '<tr><td>' + escapeHtml(c.name) + '</td><td>' + statusEmoji + ' ' + escapeHtml(c.status) + '</td><td>' + start + ' → ' + end + '</td><td>' + (c.completedTasks || 0) + '/' + (c.totalTasks || 0) + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteCycle(\'' + c.id + '\',\'' + escapeHtml(c.name) + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteCycle(\\'' + c.id + '\\',\\'' + escapeHtml(c.name) + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2481,7 +2508,7 @@ export function renderDashboardHTML(
         let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Target</th><th>Warning %</th><th>Priorities</th><th>Actions</th></tr></thead><tbody>';
         policies.forEach(p => {
           html += '<tr><td>' + escapeHtml(p.name) + '</td><td>' + p.targetMinutes + 'm</td><td>' + p.warningThresholdPercent + '%</td><td>' + (p.matchPriorities || []).join(', ') + '</td><td>';
-          html += '<button class="btn-sm red" onclick="deleteSlaPolicy(\'' + p.id + '\')">🗑️</button>';
+          html += '<button class="btn-sm red" onclick="deleteSlaPolicy(\\'' + p.id + '\\')">🗑️</button>';
           html += '</td></tr>';
         });
         html += '</tbody></table>';
@@ -2568,7 +2595,7 @@ export function renderDashboardHTML(
           const icon = iconMap[e.action] || '📌';
           const time = formatTime(e.createdAt);
           const taskId = e.taskId
-            ? '<a href="#" onclick="event.preventDefault();showDetail(\'' + e.taskId + '\')">' + escapeHtml(e.taskId.slice(0, 12)) + '...</a>'
+            ? '<a href="#" onclick="event.preventDefault();showDetail(\\'' + e.taskId + '\\')">' + escapeHtml(e.taskId.slice(0, 12)) + '...</a>'
             : '';
           const detail = e.detail ? ' - ' + escapeHtml(e.detail) : '';
           html += '<div class="audit-log-item">' +
@@ -2610,7 +2637,7 @@ export function renderDashboardHTML(
           const icon = iconMap[item.action] || '📌';
           const time = formatTime(item.createdAt);
           const taskLink = item.taskId
-            ? '<a class="global-activity-task" href="#" onclick="event.preventDefault();showDetail(\'' + item.taskId + '\')">' + escapeHtml(item.taskId.slice(0, 12)) + '...</a>'
+            ? '<a class="global-activity-task" href="#" onclick="event.preventDefault();showDetail(\\'' + item.taskId + '\\')">' + escapeHtml(item.taskId.slice(0, 12)) + '...</a>'
             : '';
           const detail = item.detail ? ' - ' + escapeHtml(item.detail) : '';
           html += '<div class="global-activity-item">' +
@@ -2694,7 +2721,7 @@ export function renderDashboardHTML(
         } else {
           for (const task of col.tasks) {
             const priClass = PRIORITY_CLASSES[task.priority] || 'normal';
-            html += '<div class="kanban-card" onclick="openDetail(\'' + task.id + '\')">';
+            html += '<div class="kanban-card" onclick="openDetail(\\'' + task.id + '\\')">';
             html += '<div class="kanban-card-id">' + escapeHtml(task.id.substring(0, 16)) + '</div>';
             html += '<div class="kanban-card-command">' + escapeHtml(task.commandText.substring(0, 120)) + '</div>';
             html += '<div class="kanban-card-meta">';
