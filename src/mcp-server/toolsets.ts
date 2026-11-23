@@ -2,7 +2,7 @@
  * MCP Toolset categorization and filtering.
  *
  * Allows callers to expose only the tool groups needed for their session
- * (e.g. `core` = 20 essential inbox tools instead of all 160 tools),
+ * (e.g. `core` = 21 essential inbox tools instead of all 161 tools),
  * dramatically reducing LLM context token overhead and improving tool-selection accuracy.
  */
 
@@ -31,6 +31,7 @@ export const MCP_TOOLSET_TOOLS: Record<Exclude<McpToolset, "all">, readonly stri
     "search_tasks",
     "get_task",
     "create_task",
+    "update_task",
     "mark_task_running",
     "report_task_result",
     "reply_feishu",

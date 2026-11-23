@@ -2168,8 +2168,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 160 tools", () => {
-        expect(mockServer.registrations).toHaveLength(160);
+      it("registers all 161 tools", () => {
+        expect(mockServer.registrations).toHaveLength(161);
     });
 
     it("registers list_tasks with correct description", () => {
