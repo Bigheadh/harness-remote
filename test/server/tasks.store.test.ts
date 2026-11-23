@@ -17,6 +17,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     feishuUserId: "user_001",
     commandText: "帮我写一个排序算法",
     status: "pending",
+    priority: "normal",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
@@ -52,15 +53,15 @@ describe("createTask", () => {
 
   it("defaults status to pending when not provided", async () => {
     const t = makeTask();
-    delete (t as Record<string, unknown>).status;
+    delete (t as unknown as Record<string, unknown>).status;
     const task = await store.createTask(t);
     expect(task.status).toBe("pending");
   });
 
   it("generates timestamps if not provided", async () => {
     const t = makeTask();
-    delete (t as Record<string, unknown>).createdAt;
-    delete (t as Record<string, unknown>).updatedAt;
+    delete (t as unknown as Record<string, unknown>).createdAt;
+    delete (t as unknown as Record<string, unknown>).updatedAt;
     const task = await store.createTask(t);
     expect(task.createdAt).toBeTruthy();
     expect(task.updatedAt).toBeTruthy();

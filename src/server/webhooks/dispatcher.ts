@@ -103,10 +103,27 @@ async function deliverToWebhook(
 
   const startTime = Date.now();
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  // SSRF guard: validate URL and resolved DNS IPs before connecting (non-retryable security block)
   try {
-    // SSRF guard: validate URL and resolved DNS IPs before connecting
     await assertSafeWebhookTarget(sub.url);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    await store.logDelivery({
+      webhookId: sub.id,
+      event,
+      url: sub.url,
+      statusCode: null,
+      success: false,
+      error: errorMsg,
+      durationMs: Date.now() - startTime,
+      retryCount: attempt,
+    });
+    log.warn({ webhookId: sub.id, event, url: sub.url, error: errorMsg }, "Webhook delivery blocked by SSRF guard");
+    recordWebhookDelivery(false);
+    return;
+  }
 
+  try {
     const controller = new AbortController();
     timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 

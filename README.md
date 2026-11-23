@@ -223,28 +223,65 @@ Content-Type: application/json
 
 ## MCP 工具
 
-本地 MCP Server 提供以下 5 个工具，供 Codex CLI 在会话中调用：
+本地 MCP Server 共提供 **161 个工具**，并支持按工具集（`--toolsets` / `HARNESS_MCP_TOOLSETS`）按需裁剪，降低 LLM 上下文 token 开销：
 
-| 工具 | 说明 |
-| --- | --- |
-| `list_tasks` | 列出待处理任务（支持按 status 过滤） |
-| `get_task` | 获取单个任务详情 |
-| `mark_task_running` | 将任务标记为 running |
-| `report_task_result` | 上报处理结果并自动回复飞书 |
-| `reply_feishu` | 直接回复飞书消息（不需要先有任务） |
+- `core`（21 个核心收件箱工具，**推荐日常使用**）：`list_tasks`、`search_tasks`、`get_task`、`create_task`、`update_task`（多字段复合更新）、`mark_task_running`、`report_task_result`、`reply_feishu`、`update_task_card`、`download_attachment`、评论、标签、优先级、截止时间、分配与就绪/逾期查询
+- `tasks_extended`（61 个扩展工具）：子任务、依赖图、关系、任务锁、关注者、工时、看板、批量操作、自定义视图、归档
+- `planning`（30 个计划工具）：迭代（Cycles）、模块（Modules）、模板、定时任务
+- `sla`（9 个 SLA 工具）：SLA 策略与违约检测
+- `analytics`（11 个分析与导出工具）：统计、时间序列、JSON/CSV 导入导出、API 用量
+- `admin`（29 个管理工具）：用户 RBAC、API Key、设备、Webhook、审计日志与清理
+- `all`（默认）：暴露全部 161 个工具
+
+在 Codex CLI 中仅启用核心工具示例：
+
+```toml
+[mcp_servers.harness_remote]
+command = "node"
+args = [
+  "/path/to/harness-remote/dist/mcp-server/index.js",
+  "--config", "/path/to/harness-remote/config/mcp.json",
+  "--toolsets", "core"
+]
+```
+
+## 安全与配置亮点
+
+- **12-Factor 环境变量覆盖**：支持无配置文件或部分覆盖启动（服务端：`PORT`、`PUBLIC_BASE_URL`、`PERSONAL_TOKEN`、`STORAGE_PATH`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN`、`FEISHU_ENCRYPT_KEY`、`FEISHU_ALLOWED_USER_IDS` 等；MCP 端：`HARNESS_SERVER_URL`、`HARNESS_TOKEN`、`HARNESS_DEVICE_ID`、`HARNESS_MCP_TOOLSETS`、`HARNESS_MCP_TIMEOUT_MS`、`HARNESS_MCP_MAX_RETRIES`）。
+- **静态凭据 SHA-256 哈希存储**：用户 Token、API Key（含轮换宽限期密钥）与设备 Token 均以 SHA-256 哈希持久化存储，启动时自动事务迁移旧明文数据。
+- **飞书签名校验与事件解密**：配置 `feishu.encryptKey` 后自动验证 `X-Lark-Signature`（SHA-256）并解密 AES-256-CBC 加密事件体。
+- **Dashboard 安全登录与 CSP**：Web Dashboard 已拆分为独立静态资源（`/dashboard/assets/*`），通过 `POST /dashboard/login` 签发 `HttpOnly; SameSite=Strict` AES-256-GCM 加密会话 Cookie，HTML 中零明文 Token 注入并附带 `Content-Security-Policy`。
+- **SQLite FTS5 全文搜索与版本化迁移**：使用 `PRAGMA user_version` 管理 schema 迁移，通过 FTS5 trigram 虚拟表加速英文与中文子串检索。
 
 ## 部署
+
+### Docker 部署（推荐）
+
+```bash
+docker build -t harness-remote .
+docker run -d --name harness-remote \
+  -p 3000:3000 \
+  -v $(pwd)/data:/app/data \
+  -e PERSONAL_TOKEN="your-random-token" \
+  -e PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e FEISHU_APP_ID="cli_xxx" \
+  -e FEISHU_APP_SECRET="your-secret" \
+  -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
+  -e FEISHU_ENCRYPT_KEY="your-encrypt-key" \
+  -e FEISHU_ALLOWED_USER_IDS="ou_xxx" \
+  harness-remote
+```
 
 ### 手动部署
 
 ```bash
 cd harness-remote
-npm install --omit=dev
+npm ci
 npm run build
 npm run server
 ```
 
-### systemd 服务（推荐）
+### systemd 服务
 
 ```bash
 bash scripts/deploy.sh --install-service --service-user root
@@ -599,17 +636,44 @@ Content-Type: application/json
 
 ## MCP Tools
 
-| Tool | Description |
-| --- | --- |
-| `list_tasks` | List pending tasks (filter by status) |
-| `get_task` | Get task details |
-| `mark_task_running` | Mark task as running |
-| `report_task_result` | Report result and auto-reply to Feishu |
-| `reply_feishu` | Reply directly to Feishu (no task required) |
+The local MCP server exposes **161 tools** across 6 domain toolsets, selectable via `--toolsets` or `HARNESS_MCP_TOOLSETS` to minimize LLM context token overhead:
+
+- `core` (21 essential inbox tools — **recommended**): `list_tasks`, `search_tasks`, `get_task`, `create_task`, `update_task` (multi-field composite update), `mark_task_running`, `report_task_result`, `reply_feishu`, `update_task_card`, `download_attachment`, comments, tags, priority, due date, assignment, and ready/overdue queries
+- `tasks_extended` (61 tools): subtasks, dependency graphs, relationships, locks, watchers, time tracking, kanban, bulk actions, saved views, archive
+- `planning` (30 tools): cycles (sprints), modules (epics), templates, scheduled tasks
+- `sla` (9 tools): SLA policies and breach monitoring
+- `analytics` (11 tools): stats, time-series, JSON/CSV import & export, API usage
+- `admin` (29 tools): RBAC users, API keys, devices, webhooks, audit logs, cleanup
+- `all` (default): all 161 tools
+
+## Security & Configuration Highlights
+
+- **12-Factor Environment Overrides**: Run with or without JSON config files (`PORT`, `PUBLIC_BASE_URL`, `PERSONAL_TOKEN`, `STORAGE_PATH`, `FEISHU_*`, `HARNESS_SERVER_URL`, `HARNESS_TOKEN`, `HARNESS_MCP_TOOLSETS`, `HARNESS_MCP_TIMEOUT_MS`, `HARNESS_MCP_MAX_RETRIES`).
+- **SHA-256 Credential Hashing at Rest**: User tokens, API keys (including rotation grace keys), and device tokens are hashed with SHA-256 in SQLite with automatic transactional migration on startup.
+- **Feishu Signature & AES-256-CBC Decryption**: When `feishu.encryptKey` is configured, verifies `X-Lark-Signature` and decrypts encrypted event payloads.
+- **Hardened Web Dashboard**: Static assets served from `/dashboard/assets/*`, authenticated via `HttpOnly; SameSite=Strict` AES-256-GCM session cookies (`POST /dashboard/login`) with CSP headers and zero raw tokens embedded in HTML.
+- **SQLite FTS5 Search & Versioned Migrations**: `PRAGMA user_version` schema migrations with FTS5 trigram full-text search for fast ASCII and CJK substring queries.
 
 ## Deployment
 
-### Quick Deploy
+### Docker (Recommended)
+
+```bash
+docker build -t harness-remote .
+docker run -d --name harness-remote \
+  -p 3000:3000 \
+  -v $(pwd)/data:/app/data \
+  -e PERSONAL_TOKEN="your-random-token" \
+  -e PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e FEISHU_APP_ID="cli_xxx" \
+  -e FEISHU_APP_SECRET="your-secret" \
+  -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
+  -e FEISHU_ENCRYPT_KEY="your-encrypt-key" \
+  -e FEISHU_ALLOWED_USER_IDS="ou_xxx" \
+  harness-remote
+```
+
+### Quick Deploy (systemd)
 
 ```bash
 bash scripts/deploy.sh --install-service --service-user root
@@ -618,7 +682,7 @@ bash scripts/deploy.sh --install-service --service-user root
 ### Manual
 
 ```bash
-npm install --omit=dev
+npm ci
 npm run build
 npm run server
 ```
