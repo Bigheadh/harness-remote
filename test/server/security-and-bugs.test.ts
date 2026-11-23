@@ -5,7 +5,10 @@ import { createTaskStore } from "../../src/server/tasks/store.js";
 import { registerTaskRoutes } from "../../src/server/tasks/routes.js";
 import { registerFeishuRoutes } from "../../src/server/feishu/events.js";
 import { registerDashboardRoutes } from "../../src/server/dashboard/routes.js";
-import { renderDashboardHTML } from "../../src/server/dashboard/templates/dashboard.js";
+import {
+  renderDashboardHTML,
+  getDashboardJs,
+} from "../../src/server/dashboard/templates/dashboard.js";
 import { registerWebhookRoutes } from "../../src/server/webhooks/routes.js";
 import { createWebhookStore } from "../../src/server/webhooks/store.js";
 import { validateWebhookUrl, isBlockedIp } from "../../src/server/webhooks/url-validator.js";
@@ -40,40 +43,107 @@ describe("P0/P1 Security & Bug Regression Suite", () => {
   // ── 1. Dashboard token leak & JS syntax ──────────────────────────────────
 
   describe("Dashboard security & template integrity", () => {
-    it("embeds caller's own viewer token, NEVER super admin personalToken", async () => {
+    it("issues HttpOnly encrypted session cookie with ZERO raw tokens in HTML and enforces viewer RBAC", async () => {
       const dir = freshDir();
       const store = createTaskStore(`${dir}/tasks.sqlite`);
       const userStore = createUserStore(`${dir}/users.sqlite`);
       const viewer = await userStore.createUser("alice_viewer", "viewer");
 
       const server = Fastify({ logger: false });
+      registerTaskRoutes(server, store, PERSONAL_TOKEN, undefined, undefined, userStore);
       registerDashboardRoutes(server, store, PERSONAL_TOKEN, "http://localhost:3000", userStore);
       await server.ready();
 
+      // 1. Query token exchange sets HttpOnly cookie and never embeds either token in HTML
       const res = await server.inject({
         method: "GET",
         url: `/dashboard?token=${encodeURIComponent(viewer.token)}`,
       });
 
       expect(res.statusCode).toBe(200);
-      expect(res.body).toContain(viewer.token);
+      expect(res.body).not.toContain(viewer.token);
       expect(res.body).not.toContain(PERSONAL_TOKEN);
+      expect(res.body).toContain("/dashboard/assets/dashboard.js");
+      expect(res.body).toContain("/dashboard/assets/dashboard.css");
       expect(res.headers["x-frame-options"]).toBe("DENY");
       expect(res.headers["x-content-type-options"]).toBe("nosniff");
       expect(res.headers["cache-control"]).toBe("no-store");
+      expect(String(res.headers["content-security-policy"])).toContain("frame-ancestors 'none'");
+
+      const setCookie = String(res.headers["set-cookie"] ?? "");
+      expect(setCookie).toContain("harness_session=");
+      expect(setCookie).toContain("HttpOnly");
+      expect(setCookie).toContain("SameSite=Strict");
+      const cookiePair = setCookie.split(";")[0];
+
+      // 2. Cookie authenticates /api/tasks as viewer (read allowed, write forbidden => no privilege escalation)
+      const listRes = await server.inject({
+        method: "GET",
+        url: "/api/tasks",
+        headers: { cookie: cookiePair },
+      });
+      expect(listRes.statusCode).toBe(200);
+
+      const writeRes = await server.inject({
+        method: "POST",
+        url: "/api/tasks/bulk/tags/add",
+        headers: { cookie: cookiePair },
+        payload: { taskIds: ["t1"], tags: ["x"] },
+      });
+      expect(writeRes.statusCode).toBe(403);
+
+      // 3. Static asset routes serve CSS and JS cleanly
+      const cssRes = await server.inject({ method: "GET", url: "/dashboard/assets/dashboard.css" });
+      expect(cssRes.statusCode).toBe(200);
+      expect(cssRes.headers["content-type"]).toContain("text/css");
+
+      const jsRes = await server.inject({ method: "GET", url: "/dashboard/assets/dashboard.js" });
+      expect(jsRes.statusCode).toBe(200);
+      expect(jsRes.headers["content-type"]).toContain("application/javascript");
+
+      // 4. POST /dashboard/login & POST /dashboard/logout work properly
+      const loginRes = await server.inject({
+        method: "POST",
+        url: "/dashboard/login",
+        payload: { token: viewer.token },
+      });
+      expect(loginRes.statusCode).toBe(200);
+      expect(loginRes.json()).toEqual({ ok: true, role: "viewer" });
+      expect(String(loginRes.headers["set-cookie"])).toContain("harness_session=");
+
+      const logoutRes = await server.inject({ method: "POST", url: "/dashboard/logout" });
+      expect(logoutRes.statusCode).toBe(200);
+      expect(String(logoutRes.headers["set-cookie"])).toContain("Max-Age=0");
+
+      // 5. Unauthenticated HTML browser gets login page; non-HTML gets 401
+      const browserRes = await server.inject({
+        method: "GET",
+        url: "/dashboard",
+        headers: { accept: "text/html" },
+      });
+      expect(browserRes.statusCode).toBe(200);
+      expect(browserRes.body).toContain("/dashboard/login");
+
+      const apiRes = await server.inject({
+        method: "GET",
+        url: "/dashboard",
+        headers: { accept: "application/json" },
+      });
+      expect(apiRes.statusCode).toBe(401);
 
       await server.close();
       store.close?.();
       userStore.close?.();
     });
 
-    it("renders syntactically valid client JavaScript and escapes script breakout", () => {
-      const html = renderDashboardHTML("http://localhost:3000", "tok'</script><script>alert(1)</script>");
-      expect(html).not.toContain("tok'</script>");
-      const match = html.match(/<script>([\s\S]*?)<\/script>/);
-      expect(match).not.toBeNull();
+    it("loads syntactically valid client JavaScript asset with no embedded secrets", () => {
+      const html = renderDashboardHTML("http://localhost:3000");
+      expect(html).toContain("/dashboard/assets/dashboard.js");
+      expect(html).not.toContain(PERSONAL_TOKEN);
+      const js = getDashboardJs();
+      expect(js.length).toBeGreaterThan(1000);
       // Parsing with new Function catches syntax errors like the old stray `const _acls`
-      expect(() => new Function(match![1])).not.toThrow();
+      expect(() => new Function(js)).not.toThrow();
     });
   });
 

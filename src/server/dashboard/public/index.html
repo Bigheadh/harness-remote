@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harness Remote - Task Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+</head>
+<body>
+  <div class="header">
+    <h1>⚡ Harness Remote</h1>
+    <nav class="view-tabs" id="viewTabs">
+      <button class="view-tab active" onclick="switchView('tasks')">📋 Tasks</button>
+      <button class="view-tab" onclick="switchView('analytics')">📊 Analytics</button>
+      <button class="view-tab" onclick="switchView('kanban')">📌 Kanban</button>
+      <button class="view-tab" onclick="switchView('activity')">🔄 Activity</button>
+      <button class="view-tab" onclick="switchView('audit')">📜 Audit</button>
+      <button class="view-tab" onclick="switchView('settings')">⚙️ Settings</button>
+    </nav>
+    <div class="header-actions">
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="sse-indicator" id="sseIndicator"></div>
+        <span class="sse-label" id="sseLabel">Connecting...</span>
+      </div>
+      <button class="btn" onclick="openCreateModal()">+ New Task</button>
+      <button class="btn btn-outline" onclick="exportCSV()">⬇ CSV</button>
+      <button class="btn btn-outline" onclick="refresh()">↻ Refresh</button>
+      <button class="btn btn-outline" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="view-panel active" id="tasksView">
+    <div class="stats-row" id="stats"></div>
+
+    <div class="toolbar">
+      <input id="search" type="text" placeholder="Search tasks (ID, command, tags, description)..." />
+      <select id="statusFilter">
+        <option value="">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="picked">Picked</option>
+        <option value="running">Running</option>
+        <option value="done">Done</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select id="priorityFilter">
+        <option value="">All Priority</option>
+        <option value="urgent">Urgent</option>
+        <option value="high">High</option>
+        <option value="normal">Normal</option>
+        <option value="low">Low</option>
+      </select>
+      <input id="tagFilter" type="text" placeholder="Filter by tag..." style="max-width:160px;flex:none" />
+      <div class="date-range-group">
+        <label class="date-label">From</label>
+        <input id="dateFrom" type="date" title="Filter by creation date (start)" />
+      </div>
+      <div class="date-range-group">
+        <label class="date-label">To</label>
+        <input id="dateTo" type="date" title="Filter by creation date (end)" />
+      </div>
+    </div>
+
+      <button class="archived-toggle" id="archivedToggle" onclick="toggleArchived()">&#128230; Archived</button>
+    <div id="taskList"><div class="loading">Loading...</div></div>
+
+    <!-- Bulk actions bar -->
+    <div class="bulk-bar" id="bulkBar">
+      <span class="bulk-count" id="bulkCount">0 selected</span>
+      <div class="bulk-actions" id="bulkActionsActive">
+        <button class="btn-sm green" onclick="bulkAction('done')">✅ Mark Done</button>
+        <button class="btn-sm orange" onclick="bulkAction('running')">▶ Start</button>
+        <button class="btn-sm red" onclick="bulkAction('failed')">❌ Mark Failed</button>
+        <button class="btn-sm blue" onclick="bulkAssign()">💻 Assign Device</button>
+        <button class="btn-sm blue" onclick="bulkAddTags()">🏷️ Add Tags</button>
+        <button class="btn-sm orange" onclick="bulkRemoveTag()">🏷️ Remove Tag</button>
+        <button class="btn-sm purple" onclick="bulkArchive()">📦 Archive</button>
+        <button class="btn-sm orange" onclick="bulkUnarchive()">📤 Unarchive</button>
+        <button class="btn-sm red" onclick="bulkDelete()">🗑️ Delete</button>
+        <button class="btn-sm" onclick="clearSelection()">✕ Clear</button>
+      </div>
+    </div>
+    </div><!-- /tasksView -->
+
+    <!-- Analytics view -->
+    <div class="view-panel" id="analyticsView">
+      <div id="analyticsContent"><div class="analytics-loading">Loading analytics...</div></div>
+    </div>
+
+    <!-- Kanban view -->
+    <div class="view-panel" id="kanbanView">
+      <div id="kanbanContent"><div class="kanban-empty">Loading kanban board...</div></div>
+    </div>
+
+    <!-- Activity view -->
+    <div class="view-panel" id="activityView">
+      <div id="activityContent"><div class="global-activity-empty">Loading activity feed...</div></div>
+    </div>
+
+    <!-- Audit log view -->
+    <div class="view-panel" id="auditView">
+      <div style="padding:16px 0">
+        <div class="audit-log-filters">
+          <select id="auditActionFilter">
+            <option value="">All Actions</option>
+            <option value="task.created">Task Created</option>
+            <option value="task.status_changed">Status Changed</option>
+            <option value="task.assigned">Task Assigned</option>
+            <option value="task.archived">Task Archived</option>
+            <option value="task.reopened">Task Reopened</option>
+            <option value="task.pinned">Task Pinned</option>
+            <option value="task.link_added">Link Added</option>
+            <option value="task.link_removed">Link Removed</option>
+            <option value="comment.added">Comment Added</option>
+            <option value="note.added">Note Added</option>
+            <option value="subtask.created">Subtask Created</option>
+            <option value="subtask.completed">Subtask Completed</option>
+            <option value="sla.breach">SLA Breach</option>
+            <option value="sla.warning">SLA Warning</option>
+          </select>
+          <select id="auditActorTypeFilter">
+            <option value="">All Actors</option>
+            <option value="feishu">Feishu</option>
+            <option value="device">Device</option>
+            <option value="api">API</option>
+            <option value="system">System</option>
+          </select>
+          <input id="auditActorFilter" type="text" placeholder="Actor ID..." style="max-width:160px" />
+          <input id="auditDateFrom" type="date" title="From date" />
+          <input id="auditDateTo" type="date" title="To date" />
+          <button class="btn btn-outline" onclick="loadAuditLog()">🔍 Filter</button>
+        </div>
+        <div class="audit-log-count" id="auditCount"></div>
+        <div id="auditContent"><div class="audit-log-empty">Loading audit log...</div></div>
+      </div>
+    </div>
+
+    <!-- Settings view -->
+    <div class="view-panel" id="settingsView">
+      <div class="settings-grid">
+        <div class="settings-card">
+          <h3>👥 Users</h3>
+          <div id="settingsUsers"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateUserModal()">+ Add User</button>
+          </div>
+          <div class="settings-form" id="createUserForm">
+            <input id="newUsername" placeholder="Username" />
+            <select id="newUserRole"><option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option></select>
+            <input id="newUserFeishu" placeholder="Feishu User ID (optional)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createUserForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateUser()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>💻 Devices</h3>
+          <div id="settingsDevices"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openRegisterDeviceModal()">+ Register Device</button>
+          </div>
+          <div class="settings-form" id="registerDeviceForm">
+            <input id="newDeviceName" placeholder="Device name" />
+            <input id="newDeviceCaps" placeholder="Capabilities (optional)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('registerDeviceForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitRegisterDevice()">Register</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>🔔 Webhooks</h3>
+          <div id="settingsWebhooks"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateWebhookModal()">+ Add Webhook</button>
+          </div>
+          <div class="settings-form" id="createWebhookForm">
+            <input id="newWebhookUrl" placeholder="Callback URL" />
+            <input id="newWebhookEvents" placeholder="Events (comma-separated, e.g. task.created,task.status_changed)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createWebhookForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateWebhook()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>📋 Templates</h3>
+          <div id="settingsTemplates"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateTemplateModal()">+ Add Template</button>
+          </div>
+          <div class="settings-form" id="createTemplateForm">
+            <input id="newTemplateName" placeholder="Template name" />
+            <textarea id="newTemplateCmd" placeholder="Command text" rows="2" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;outline:none;font-family:inherit;resize:vertical"></textarea>
+            <select id="newTemplatePriority"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="high">High</option><option value="low">Low</option></select>
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createTemplateForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateTemplate()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>⏱️ Scheduled Tasks</h3>
+          <div id="settingsScheduled"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateScheduledModal()">+ Add Schedule</button>
+          </div>
+          <div class="settings-form" id="createScheduledForm">
+            <textarea id="newScheduledCmd" placeholder="Command text" rows="2" style="width:100%;background:var(--bg-card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:12px;outline:none;font-family:inherit;resize:vertical"></textarea>
+            <select id="newScheduledFreq"><option value="hourly">Hourly</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createScheduledForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateScheduled()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>📏 SLA Policies</h3>
+          <div id="settingsSla"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateSlaModal()">+ Add Policy</button>
+          </div>
+          <div class="settings-form" id="createSlaForm">
+            <input id="newSlaName" placeholder="Policy name" />
+            <input id="newSlaTarget" type="number" placeholder="Target resolution time (minutes)" />
+            <input id="newSlaWarning" type="number" placeholder="Warning threshold % (default: 80)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createSlaForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateSla()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>👁️ Saved Views</h3>
+          <div id="settingsSavedViews"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateSavedViewModal()">+ Add View</button>
+          </div>
+          <div class="settings-form" id="createSavedViewForm">
+            <input id="newSavedViewName" placeholder="View name" />
+            <input id="newSavedViewFilters" placeholder='Filters JSON (e.g. {"status":"pending"})' />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createSavedViewForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateSavedView()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>📦 Modules (Epics)</h3>
+          <div id="settingsModules"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateModuleModal()">+ Add Module</button>
+          </div>
+          <div class="settings-form" id="createModuleForm">
+            <input id="newModuleName" placeholder="Module name" />
+            <input id="newModuleDescription" placeholder="Description (optional)" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createModuleForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateModule()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>🔄 Cycles (Sprints)</h3>
+          <div id="settingsCycles"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateCycleModal()">+ Add Cycle</button>
+          </div>
+          <div class="settings-form" id="createCycleForm">
+            <input id="newCycleName" placeholder="Cycle name (e.g. Sprint 1)" />
+            <input id="newCycleDescription" placeholder="Description (optional)" />
+            <input id="newCycleStart" type="date" />
+            <input id="newCycleEnd" type="date" />
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createCycleForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateCycle()">Create</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card">
+          <h3>🔑 API Keys</h3>
+          <div id="settingsApiKeys"><div class="loading">Loading...</div></div>
+          <div style="margin-top:12px">
+            <button class="btn" onclick="openCreateApiKeyModal()">+ Create API Key</button>
+          </div>
+          <div class="settings-form" id="createApiKeyForm">
+            <input id="newApiKeyName" placeholder="Key name" />
+            <input id="newApiKeyUserId" placeholder="User ID (optional)" />
+            <select id="newApiKeyRole"><option value="">Inherit from user</option><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select>
+            <div class="settings-form-actions">
+              <button class="btn btn-outline" onclick="document.getElementById('createApiKeyForm').classList.remove('open')">Cancel</button>
+              <button class="btn" onclick="submitCreateApiKey()">Create</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+
+  <!-- Detail overlay -->
+  <div class="detail-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
+    <div class="detail-panel">
+      <div class="detail-header">
+        <h2 id="detailTitle">Task Detail</h2>
+        <button class="detail-close" onclick="closeDetail()">&times;</button>
+      </div>
+      <div class="detail-body" id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- Create task modal -->
+  <div class="modal-overlay" id="createModal" onclick="if(event.target===this)closeCreateModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Create Task</h2>
+        <button class="detail-close" onclick="closeCreateModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Command Text *</label>
+          <textarea id="createCommand" placeholder="What should be done?" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="createDescription" placeholder="Optional details..." rows="2"></textarea>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1">
+            <label>Priority</label>
+            <select id="createPriority">
+              <option value="normal">Normal</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Tags (comma-separated)</label>
+            <input id="createTags" placeholder="bug, frontend, urgent" />
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div class="form-group" style="flex:1">
+            <label>Assigned Device</label>
+            <input id="createDevice" placeholder="device ID (optional)" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Due Date</label>
+            <input id="createDueDate" type="datetime-local" />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline" onclick="closeCreateModal()">Cancel</button>
+          <button class="btn" id="createSubmitBtn" onclick="submitCreateTask()">Create Task</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/dashboard/assets/dashboard.js" defer></script>
+</body>
+</html>

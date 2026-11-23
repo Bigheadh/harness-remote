@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
+import { readTokenFromSessionCookie } from "../dashboard/session.js";
 import { AppError } from "../../shared/errors.js";
 import { addClient, removeClient, getClientCount } from "./broadcaster.js";
 import type { SseEventType } from "./broadcaster.js";
@@ -31,11 +32,13 @@ export function registerSseRoutes(
 ): void {
   // GET /api/tasks/stream - SSE endpoint
   server.get("/api/tasks/stream", async (req: FastifyRequest, reply: FastifyReply) => {
-    // Authenticate via Authorization header or query param (browser EventSource cannot set headers)
+    // Authenticate via Authorization header, HttpOnly session cookie, or query param
     const query = req.query as Record<string, string | undefined>;
     const queryToken = query.token ?? query.personalToken;
+    const cookieToken = readTokenFromSessionCookie(req.headers["cookie"], personalToken);
     const authHeader =
       req.headers["authorization"] ??
+      (cookieToken ? `Bearer ${cookieToken}` : undefined) ??
       (queryToken ? `Bearer ${queryToken.trim()}` : undefined);
 
     let authCtx;

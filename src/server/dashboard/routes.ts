@@ -2,18 +2,81 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { TaskStore } from "../tasks/store.js";
 import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
-import { authenticate, authorize } from "../auth/middleware.js";
+import { authenticate, authorize, type AuthContext } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
-import { renderDashboardHTML } from "./templates/dashboard.js";
+import {
+  renderDashboardHTML,
+  renderLoginHTML,
+  getDashboardCss,
+  getDashboardJs,
+} from "./templates/dashboard.js";
+import {
+  createSessionCookieValue,
+  formatClearSessionCookie,
+  formatSetSessionCookie,
+  readTokenFromSessionCookie,
+} from "./session.js";
+
+const DASHBOARD_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+].join("; ");
+
+async function resolveDashboardAuth(
+  req: FastifyRequest,
+  personalToken: string,
+  userStore?: UserStore,
+  apiKeyStore?: ApiKeyStore,
+): Promise<{ authCtx: AuthContext; callerToken: string; fromCookie: boolean } | undefined> {
+  // 1. Authorization header
+  const authHeader = req.headers["authorization"];
+  if (authHeader) {
+    try {
+      const authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
+      const match = authHeader.match(/^Bearer\s+(.+)$/i);
+      if (match) {
+        return { authCtx, callerToken: match[1].trim(), fromCookie: false };
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 2. HttpOnly encrypted session cookie
+  const cookieToken = readTokenFromSessionCookie(req.headers["cookie"], personalToken);
+  if (cookieToken) {
+    try {
+      const authCtx = await authenticate(`Bearer ${cookieToken}`, personalToken, userStore, apiKeyStore);
+      return { authCtx, callerToken: cookieToken, fromCookie: true };
+    } catch {
+      // Invalid or revoked token inside cookie — fall through
+    }
+  }
+
+  // 3. Query parameter ?token= (legacy browser convenience; exchanged into HttpOnly cookie)
+  const queryToken = (req.query as Record<string, string | undefined>)?.token;
+  if (queryToken) {
+    try {
+      const authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
+      return { authCtx, callerToken: queryToken.trim(), fromCookie: false };
+    } catch {
+      // Invalid token
+    }
+  }
+
+  return undefined;
+}
 
 /**
- * Register dashboard routes.
- *
- * The dashboard is served at GET /dashboard. Authentication is done via:
- *   - Bearer token in Authorization header, OR
- *   - ?token= query parameter (for browser access)
- *
- * Supports both super admin personalToken and per-user tokens.
+ * Register dashboard routes:
+ * - Static assets: GET /dashboard/assets/dashboard.css, /dashboard/assets/dashboard.js
+ * - Cookie auth: POST /dashboard/login, POST /dashboard/logout
+ * - UI & stats: GET /dashboard, GET /dashboard/stats
  */
 export function registerDashboardRoutes(
   server: FastifyInstance,
@@ -23,46 +86,90 @@ export function registerDashboardRoutes(
   userStore?: UserStore,
   apiKeyStore?: ApiKeyStore,
 ): void {
+  const isHttps = publicBaseUrl.startsWith("https://");
+
+  // Static CSS asset
+  server.get("/dashboard/assets/dashboard.css", async (_req, reply) => {
+    return reply
+      .header("Content-Type", "text/css; charset=utf-8")
+      .header("Cache-Control", "public, max-age=300")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(getDashboardCss());
+  });
+
+  // Static JS asset
+  server.get("/dashboard/assets/dashboard.js", async (_req, reply) => {
+    return reply
+      .header("Content-Type", "application/javascript; charset=utf-8")
+      .header("Cache-Control", "public, max-age=300")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(getDashboardJs());
+  });
+
+  // POST /dashboard/login — exchange a bearer token for an HttpOnly encrypted session cookie
+  server.post("/dashboard/login", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as { token?: string } | undefined;
+    const rawToken = typeof body?.token === "string" ? body.token.trim() : "";
+    if (!rawToken) {
+      return reply.code(400).send({
+        error: { code: "invalid_request", message: "Request body must include 'token'" },
+      });
+    }
+
+    let authCtx: AuthContext;
+    try {
+      authCtx = await authenticate(`Bearer ${rawToken}`, personalToken, userStore, apiKeyStore);
+      authorize(authCtx, "dashboard.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        const status = e.code === "forbidden" ? 403 : 401;
+        return reply.code(status).send({ error: { code: e.code, message: e.message } });
+      }
+      return reply.code(401).send({ error: { code: "unauthorized", message: "Invalid token" } });
+    }
+
+    const cookieVal = createSessionCookieValue(rawToken, personalToken);
+    return reply
+      .header("Set-Cookie", formatSetSessionCookie(cookieVal, { secure: isHttps }))
+      .header("Cache-Control", "no-store")
+      .send({ ok: true, role: authCtx.role });
+  });
+
+  // POST /dashboard/logout — clear session cookie
+  server.post("/dashboard/logout", async (_req, reply) => {
+    return reply
+      .header("Set-Cookie", formatClearSessionCookie())
+      .header("Cache-Control", "no-store")
+      .send({ ok: true });
+  });
+
+  // GET /dashboard
   server.get("/dashboard", async (req: FastifyRequest, reply: FastifyReply) => {
-    // Authenticate: try header first, then query param
-    let authCtx: { role: "admin" | "operator" | "viewer"; isSuperAdmin: boolean; user?: { id: string; username: string; token: string; role: "admin" | "operator" | "viewer"; feishuUserId?: string; createdAt: string; updatedAt: string } } | undefined;
-    let callerToken: string | undefined;
+    const resolved = await resolveDashboardAuth(req, personalToken, userStore, apiKeyStore);
 
-    const authHeader = req.headers["authorization"];
-    if (authHeader) {
-      try {
-        authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
-        const match = authHeader.match(/^Bearer\s+(.+)$/i);
-        callerToken = match ? match[1].trim() : undefined;
-      } catch {
-        // Fall through to query param check
+    if (!resolved) {
+      const accept = String(req.headers["accept"] ?? "");
+      if (accept.includes("text/html")) {
+        return reply
+          .code(200)
+          .header("Content-Type", "text/html; charset=utf-8")
+          .header("Cache-Control", "no-store")
+          .header("X-Content-Type-Options", "nosniff")
+          .header("X-Frame-Options", "DENY")
+          .header("Referrer-Policy", "no-referrer")
+          .header("Content-Security-Policy", DASHBOARD_CSP)
+          .send(renderLoginHTML());
       }
-    }
-
-    if (!authCtx) {
-      const queryToken = (req.query as Record<string, string | undefined>)?.token;
-      if (queryToken) {
-        try {
-          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
-          callerToken = queryToken.trim();
-        } catch {
-          // Invalid token
-        }
-      }
-    }
-
-    if (!authCtx || !callerToken) {
       return reply.code(401).send({
         error: {
           code: "unauthorized",
-          message: "Access the dashboard with ?token=<your-token> or Authorization: Bearer <token>",
+          message: "Access the dashboard by signing in at /dashboard, or provide Authorization: Bearer <token>",
         },
       });
     }
 
-    // Check dashboard.read permission
     try {
-      authorize(authCtx, "dashboard.read");
+      authorize(resolved.authCtx, "dashboard.read");
     } catch (e) {
       if (e instanceof AppError) {
         return reply.code(403).send({ error: { code: e.code, message: e.message } });
@@ -70,47 +177,34 @@ export function registerDashboardRoutes(
       throw e;
     }
 
-    // Never leak super admin personalToken to non-super-admin users — only embed the caller's own token
-    const html = renderDashboardHTML(publicBaseUrl, callerToken);
+    // Set/refresh HttpOnly encrypted session cookie so browser JS never needs raw tokens
+    if (!resolved.fromCookie) {
+      const cookieVal = createSessionCookieValue(resolved.callerToken, personalToken);
+      reply.header("Set-Cookie", formatSetSessionCookie(cookieVal, { secure: isHttps }));
+    }
+
+    const html = renderDashboardHTML(publicBaseUrl);
     return reply
       .header("Content-Type", "text/html; charset=utf-8")
       .header("Cache-Control", "no-store")
       .header("X-Content-Type-Options", "nosniff")
       .header("X-Frame-Options", "DENY")
       .header("Referrer-Policy", "no-referrer")
+      .header("Content-Security-Policy", DASHBOARD_CSP)
       .send(html);
   });
 
   // Dashboard API: task stats (used by dashboard health indicator)
   server.get("/dashboard/stats", async (req: FastifyRequest, reply: FastifyReply) => {
-    let authCtx: { role: "admin" | "operator" | "viewer"; isSuperAdmin: boolean; user?: { id: string; username: string; token: string; role: "admin" | "operator" | "viewer"; feishuUserId?: string; createdAt: string; updatedAt: string } } | undefined;
-
-    const authHeader = req.headers["authorization"];
-    if (authHeader) {
-      try {
-        authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
-      } catch {
-        // Fall through
-      }
-    }
-    if (!authCtx) {
-      const queryToken = (req.query as Record<string, string | undefined>)?.token;
-      if (queryToken) {
-        try {
-          authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
-        } catch {
-          // Invalid
-        }
-      }
-    }
-    if (!authCtx) {
+    const resolved = await resolveDashboardAuth(req, personalToken, userStore, apiKeyStore);
+    if (!resolved) {
       return reply.code(401).send({
         error: { code: "unauthorized", message: "Unauthorized" },
       });
     }
 
     try {
-      authorize(authCtx, "dashboard.read");
+      authorize(resolved.authCtx, "dashboard.read");
     } catch (e) {
       if (e instanceof AppError) {
         return reply.code(403).send({ error: { code: e.code, message: e.message } });

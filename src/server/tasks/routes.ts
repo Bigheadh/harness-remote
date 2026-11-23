@@ -12,6 +12,7 @@ import type { UserStore } from "../auth/store.js";
 import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
+import { readTokenFromSessionCookie } from "../dashboard/session.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
@@ -144,7 +145,14 @@ export function registerTaskRoutes(
     }
     if (req.url.startsWith("/api/")) {
       try {
-        const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
+        let authHeader = req.headers["authorization"];
+        if (!authHeader) {
+          const cookieToken = readTokenFromSessionCookie(req.headers["cookie"], personalToken);
+          if (cookieToken) {
+            authHeader = `Bearer ${cookieToken}`;
+          }
+        }
+        const authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
         // Attach auth context for downstream handlers
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
       } catch (e) {

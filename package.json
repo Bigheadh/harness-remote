@@ -5,7 +5,7 @@
   "description": "Feishu task inbox for local Codex CLI, powered by MCP.",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/server/dashboard/public','dist/server/dashboard/public',{recursive:true})\"",
     "server": "node dist/server/index.js",
     "mcp": "node dist/mcp-server/index.js",
     "test": "vitest run",
