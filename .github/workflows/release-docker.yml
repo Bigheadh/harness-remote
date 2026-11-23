@@ -25,6 +25,7 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm run typecheck:test
       - run: npm run build
