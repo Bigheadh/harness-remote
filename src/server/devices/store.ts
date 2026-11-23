@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Device } from "../../shared/types.js";
+import { hashSecret, isHashedSecret } from "../auth/token-hash.js";
 
 export interface DeviceStore {
   registerDevice(name: string, capabilities?: string): Promise<Device>;
@@ -44,7 +45,7 @@ export function createDeviceStore(storagePath: string): DeviceStore {
   db.exec(`PRAGMA foreign_keys=ON;`);
   db.exec(`PRAGMA busy_timeout=5000;`);
 
-  // Create devices table
+  // Create devices table (token column stores sha256:<hex> hash)
   db.exec(`
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
@@ -55,6 +56,28 @@ export function createDeviceStore(storagePath: string): DeviceStore {
       created_at TEXT NOT NULL
     )
   `);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token)`);
+
+  // Migrate any legacy plaintext device tokens to SHA-256 hashes at startup
+  const legacyDevices = db
+    .prepare(`SELECT id, token FROM devices WHERE token NOT LIKE 'sha256:%'`)
+    .all() as Array<{ id: string; token: string }>;
+  if (legacyDevices.length > 0) {
+    const migrateStmt = db.prepare(`UPDATE devices SET token = ? WHERE id = ?`);
+    db.exec("BEGIN");
+    try {
+      for (const row of legacyDevices) {
+        if (!isHashedSecret(row.token)) {
+          migrateStmt.run(hashSecret(row.token), row.id);
+        }
+      }
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
 
   // Prepare statements
   const insertDevice = db.prepare(`
@@ -71,13 +94,15 @@ export function createDeviceStore(storagePath: string): DeviceStore {
   return {
     async registerDevice(name: string, capabilities?: string): Promise<Device> {
       const id = generateDeviceId();
-      const token = generateDeviceToken();
+      const rawToken = generateDeviceToken();
+      const tokenHash = hashSecret(rawToken);
       const now = new Date().toISOString();
 
-      insertDevice.run(id, name, token, capabilities ?? null, now);
+      insertDevice.run(id, name, tokenHash, capabilities ?? null, now);
 
       const row = selectDeviceById.get(id) as Record<string, unknown>;
-      return rowToDevice(row);
+      // Return plaintext device token once upon registration
+      return { ...rowToDevice(row), token: rawToken };
     },
 
     async listDevices(): Promise<Device[]> {
@@ -91,7 +116,8 @@ export function createDeviceStore(storagePath: string): DeviceStore {
     },
 
     async getDeviceByToken(token: string): Promise<Device | undefined> {
-      const row = selectDeviceByToken.get(token) as Record<string, unknown> | undefined;
+      const tokenHash = isHashedSecret(token) ? token : hashSecret(token);
+      const row = selectDeviceByToken.get(tokenHash) as Record<string, unknown> | undefined;
       return row ? rowToDevice(row) : undefined;
     },
 

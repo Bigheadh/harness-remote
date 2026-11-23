@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { UserRole } from "../../../shared/types.js";
+import { ensureHashedSecret, hashSecret, isHashedSecret } from "../token-hash.js";
 
 export interface ApiKey {
   id: string;
@@ -10,7 +11,7 @@ export interface ApiKey {
   key: string;
   userId: string;
   role: UserRole;
-  /** Previous key (still valid during grace period), null if no previous key */
+  /** Previous key hash (still valid during grace period), null if no previous key */
   previousKey: string | null;
   /** ISO 8601 — when the previous key expires, null if no grace period active */
   previousKeyExpiresAt: string | null;
@@ -87,8 +88,31 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_previous_key ON api_keys(previous_key)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)`);
 
-  // Unique constraint: only one active key per user (only one row with previous_key IS NULL and enabled=1)
-  // We enforce this at the application level for clarity.
+  // Migrate any legacy plaintext API keys / previous keys to SHA-256 hashes at startup
+  const legacyKeyRows = db
+    .prepare(
+      `SELECT id, key, previous_key FROM api_keys
+       WHERE key NOT LIKE 'sha256:%'
+          OR (previous_key IS NOT NULL AND previous_key NOT LIKE 'sha256:%')`,
+    )
+    .all() as Array<{ id: string; key: string; previous_key: string | null }>;
+  if (legacyKeyRows.length > 0) {
+    const migrateKeyStmt = db.prepare(`UPDATE api_keys SET key = ?, previous_key = ? WHERE id = ?`);
+    db.exec("BEGIN");
+    try {
+      for (const row of legacyKeyRows) {
+        migrateKeyStmt.run(
+          ensureHashedSecret(row.key),
+          row.previous_key ? ensureHashedSecret(row.previous_key) : null,
+          row.id,
+        );
+      }
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
 
   const insertKey = db.prepare(`
     INSERT INTO api_keys (id, name, key, user_id, role, previous_key, previous_key_expires_at, enabled, last_used_at, created_at, updated_at)
@@ -124,13 +148,15 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
   return {
     async createApiKey(name: string, userId: string, role: UserRole): Promise<ApiKey> {
       const id = generateId();
-      const key = generateApiKey();
+      const rawKey = generateApiKey();
+      const keyHash = hashSecret(rawKey);
       const now = new Date().toISOString();
 
-      insertKey.run(id, name, key, userId, role, null, null, now, now);
+      insertKey.run(id, name, keyHash, userId, role, null, null, now, now);
 
       const row = selectById.get(id) as Record<string, unknown>;
-      return rowToApiKey(row);
+      // Return plaintext key once upon creation; database only holds the SHA-256 hash
+      return { ...rowToApiKey(row), key: rawKey };
     },
 
     async getApiKeyById(id: string): Promise<ApiKey | undefined> {
@@ -139,12 +165,14 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
     },
 
     async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {
-      const row = selectByKey.get(key) as Record<string, unknown> | undefined;
+      const keyHash = isHashedSecret(key) ? key : hashSecret(key);
+      const row = selectByKey.get(keyHash) as Record<string, unknown> | undefined;
       return row ? rowToApiKey(row) : undefined;
     },
 
     async getApiKeyByPreviousKey(key: string): Promise<ApiKey | undefined> {
-      const row = selectByPreviousKey.get(key) as Record<string, unknown> | undefined;
+      const keyHash = isHashedSecret(key) ? key : hashSecret(key);
+      const row = selectByPreviousKey.get(keyHash) as Record<string, unknown> | undefined;
       return row ? rowToApiKey(row) : undefined;
     },
 
@@ -161,16 +189,19 @@ export function createApiKeyStore(storagePath: string): ApiKeyStore {
         throw new Error(`API key not found: ${id}`);
       }
 
-      const newKey = generateApiKey();
+      const rawNewKey = generateApiKey();
+      const newKeyHash = hashSecret(rawNewKey);
+      const previousKeyHash = ensureHashedSecret(existing.key);
       const now = new Date();
       const expiresAt = new Date(now.getTime() + gracePeriodMs).toISOString();
       const nowIso = now.toISOString();
 
-      // Move current key to previous_key, set new key as current
-      updateRotate.run(newKey, existing.key, expiresAt, nowIso, id);
+      // Move current key hash to previous_key, store new key hash as current
+      updateRotate.run(newKeyHash, previousKeyHash, expiresAt, nowIso, id);
 
       const row = selectById.get(id) as Record<string, unknown>;
-      return rowToApiKey(row);
+      // Return plaintext new key once upon rotation
+      return { ...rowToApiKey(row), key: rawNewKey };
     },
 
     async revokeApiKey(id: string): Promise<boolean> {

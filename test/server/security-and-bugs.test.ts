@@ -299,15 +299,18 @@ describe("P0/P1 Security & Bug Regression Suite", () => {
       // Rotate with already-expired grace period (-1000ms)
       const rotated = await apiKeyStore.rotateApiKey(created.id, -1000);
       expect(rotated.key).not.toBe(oldKey);
-      expect(rotated.previousKey).toBe(oldKey);
+      expect(rotated.key).toMatch(/^ak_/);
+      expect(rotated.previousKey).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(rotated.previousKey).not.toBe(oldKey);
 
       const cleaned = await apiKeyStore.deleteExpiredPreviousKeys();
       expect(cleaned).toBe(1);
 
-      // Active key MUST still exist and authenticate!
+      // Active key MUST still exist (stored hashed) and authenticate with raw key!
       const after = await apiKeyStore.getApiKeyById(created.id);
       expect(after).toBeDefined();
-      expect(after!.key).toBe(rotated.key);
+      expect(after!.key).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(after!.key).not.toBe(rotated.key);
       expect(after!.previousKey).toBeNull();
       expect(after!.previousKeyExpiresAt).toBeNull();
 

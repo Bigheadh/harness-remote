@@ -6,6 +6,7 @@ import type { User, UserRole } from "../../shared/types.js";
 import type { Permission } from "./roles.js";
 import { hasPermission } from "./roles.js";
 import { AppError } from "../../shared/errors.js";
+import { verifySecret } from "./token-hash.js";
 
 /**
  * Result of authenticating a request.
@@ -98,10 +99,10 @@ export async function authenticate(
     const prevKeyMatch = apiKeyStore.getApiKeyByPreviousKey
       ? await apiKeyStore.getApiKeyByPreviousKey(token)
       : (await apiKeyStore.listApiKeys()).find(
-          (ak) => ak.previousKey !== null && safeCompare(token, ak.previousKey),
+          (ak) => ak.previousKey !== null && verifySecret(token, ak.previousKey),
         );
 
-    if (prevKeyMatch && prevKeyMatch.previousKey && prevKeyMatch.previousKeyExpiresAt && safeCompare(token, prevKeyMatch.previousKey)) {
+    if (prevKeyMatch && prevKeyMatch.previousKey && prevKeyMatch.previousKeyExpiresAt && verifySecret(token, prevKeyMatch.previousKey)) {
       const now = new Date();
       const expiresAt = new Date(prevKeyMatch.previousKeyExpiresAt);
       if (now < expiresAt && prevKeyMatch.enabled) {
