@@ -247,29 +247,34 @@ args = [
 
 ## 安全与配置亮点
 
-- **12-Factor 环境变量覆盖**：支持无配置文件或部分覆盖启动（服务端：`PORT`、`PUBLIC_BASE_URL`、`PERSONAL_TOKEN`、`STORAGE_PATH`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN`、`FEISHU_ENCRYPT_KEY`、`FEISHU_ALLOWED_USER_IDS` 等；MCP 端：`HARNESS_SERVER_URL`、`HARNESS_TOKEN`、`HARNESS_DEVICE_ID`、`HARNESS_MCP_TOOLSETS`、`HARNESS_MCP_TIMEOUT_MS`、`HARNESS_MCP_MAX_RETRIES`）。
+- **12-Factor 环境变量覆盖**：支持无配置文件或部分覆盖启动（服务端：`HARNESS_PORT`/`PORT`、`HARNESS_PUBLIC_BASE_URL`、`HARNESS_PERSONAL_TOKEN`、`HARNESS_STORAGE_PATH`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN`、`FEISHU_ENCRYPT_KEY`、`FEISHU_ALLOWED_USER_IDS` 等；MCP 端：`HARNESS_SERVER_BASE_URL`、`HARNESS_PERSONAL_TOKEN`、`HARNESS_DEVICE_ID`、`HARNESS_MCP_TOOLSETS`、`HARNESS_MCP_TIMEOUT_MS`）。
 - **静态凭据 SHA-256 哈希存储**：用户 Token、API Key（含轮换宽限期密钥）与设备 Token 均以 SHA-256 哈希持久化存储，启动时自动事务迁移旧明文数据。
 - **飞书签名校验与事件解密**：配置 `feishu.encryptKey` 后自动验证 `X-Lark-Signature`（SHA-256）并解密 AES-256-CBC 加密事件体。
-- **Dashboard 安全登录与 CSP**：Web Dashboard 已拆分为独立静态资源（`/dashboard/assets/*`），通过 `POST /dashboard/login` 签发 `HttpOnly; SameSite=Strict` AES-256-GCM 加密会话 Cookie，HTML 中零明文 Token 注入并附带 `Content-Security-Policy`。
-- **SQLite FTS5 全文搜索与版本化迁移**：使用 `PRAGMA user_version` 管理 schema 迁移，通过 FTS5 trigram 虚拟表加速英文与中文子串检索。
+- **Dashboard 安全登录与模块化静态资源**：Web Dashboard 已拆分为独立 CSS 与模块化 JS（`/dashboard/assets/js/*`），通过 `POST /dashboard/login` 签发 `HttpOnly; SameSite=Strict` AES-256-GCM 加密会话 Cookie，HTML 中零明文 Token 注入并附带 `Content-Security-Policy`。
+- **OpenAPI 3.1 与 Zod 请求校验**：内置 `GET /api/openapi.json` 与离线交互文档 `GET /api/docs`。
+- **SQLite FTS5 全文搜索、版本化迁移与在线热备份**：使用 `PRAGMA user_version` 管理 schema 迁移，通过 FTS5 trigram 虚表加速英文与中文子串检索，并提供 `scripts/backup-sqlite.sh`（基于 `VACUUM INTO`）在线热备份脚本。
 
 ## 部署
 
-### Docker 部署（推荐）
+### Docker / Docker Compose 部署（推荐）
 
 ```bash
 docker build -t harness-remote .
 docker run -d --name harness-remote \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
-  -e PERSONAL_TOKEN="your-random-token" \
-  -e PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e HARNESS_PERSONAL_TOKEN="your-random-token-at-least-24-chars" \
+  -e HARNESS_PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e HARNESS_STORAGE_PATH="/app/data/tasks.sqlite" \
   -e FEISHU_APP_ID="cli_xxx" \
   -e FEISHU_APP_SECRET="your-secret" \
   -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
   -e FEISHU_ENCRYPT_KEY="your-encrypt-key" \
   -e FEISHU_ALLOWED_USER_IDS="ou_xxx" \
   harness-remote
+
+# 或使用 docker compose（已提供 docker-compose.yml）：
+# docker compose up -d
 ```
 
 ### 手动部署
@@ -648,29 +653,34 @@ The local MCP server exposes **161 tools** across 6 domain toolsets, selectable 
 
 ## Security & Configuration Highlights
 
-- **12-Factor Environment Overrides**: Run with or without JSON config files (`PORT`, `PUBLIC_BASE_URL`, `PERSONAL_TOKEN`, `STORAGE_PATH`, `FEISHU_*`, `HARNESS_SERVER_URL`, `HARNESS_TOKEN`, `HARNESS_MCP_TOOLSETS`, `HARNESS_MCP_TIMEOUT_MS`, `HARNESS_MCP_MAX_RETRIES`).
+- **12-Factor Environment Overrides**: Run with or without JSON config files (`HARNESS_PORT`/`PORT`, `HARNESS_PUBLIC_BASE_URL`, `HARNESS_PERSONAL_TOKEN`, `HARNESS_STORAGE_PATH`, `FEISHU_*`, `HARNESS_SERVER_BASE_URL`, `HARNESS_MCP_TOOLSETS`, `HARNESS_MCP_TIMEOUT_MS`).
 - **SHA-256 Credential Hashing at Rest**: User tokens, API keys (including rotation grace keys), and device tokens are hashed with SHA-256 in SQLite with automatic transactional migration on startup.
 - **Feishu Signature & AES-256-CBC Decryption**: When `feishu.encryptKey` is configured, verifies `X-Lark-Signature` and decrypts encrypted event payloads.
-- **Hardened Web Dashboard**: Static assets served from `/dashboard/assets/*`, authenticated via `HttpOnly; SameSite=Strict` AES-256-GCM session cookies (`POST /dashboard/login`) with CSP headers and zero raw tokens embedded in HTML.
-- **SQLite FTS5 Search & Versioned Migrations**: `PRAGMA user_version` schema migrations with FTS5 trigram full-text search for fast ASCII and CJK substring queries.
+- **Hardened Modular Web Dashboard**: Static CSS & modular JS assets served from `/dashboard/assets/js/*`, authenticated via `HttpOnly; SameSite=Strict` AES-256-GCM session cookies (`POST /dashboard/login`) with CSP headers and zero raw tokens embedded in HTML.
+- **OpenAPI 3.1 & Zod Validation**: Built-in `GET /api/openapi.json` spec and offline interactive API reference at `GET /api/docs`.
+- **SQLite FTS5 Search, Versioned Migrations & Hot Backups**: `PRAGMA user_version` schema migrations, FTS5 trigram full-text search, and online `VACUUM INTO` backups via `scripts/backup-sqlite.sh`.
 
 ## Deployment
 
-### Docker (Recommended)
+### Docker / Docker Compose (Recommended)
 
 ```bash
 docker build -t harness-remote .
 docker run -d --name harness-remote \
   -p 3000:3000 \
   -v $(pwd)/data:/app/data \
-  -e PERSONAL_TOKEN="your-random-token" \
-  -e PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e HARNESS_PERSONAL_TOKEN="your-random-token-at-least-24-chars" \
+  -e HARNESS_PUBLIC_BASE_URL="https://your-server-domain.com" \
+  -e HARNESS_STORAGE_PATH="/app/data/tasks.sqlite" \
   -e FEISHU_APP_ID="cli_xxx" \
   -e FEISHU_APP_SECRET="your-secret" \
   -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
   -e FEISHU_ENCRYPT_KEY="your-encrypt-key" \
   -e FEISHU_ALLOWED_USER_IDS="ou_xxx" \
   harness-remote
+
+# Or via docker-compose.yml:
+# docker compose up -d
 ```
 
 ### Quick Deploy (systemd)

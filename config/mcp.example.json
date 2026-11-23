@@ -3,6 +3,5 @@
   "personalToken": "replace-with-random-token",
   "defaultUser": "me",
   "toolsets": ["core"],
-  "requestTimeoutMs": 30000,
-  "maxRetries": 2
+  "timeoutMs": 30000
 }

@@ -9,6 +9,7 @@ import {
   renderLoginHTML,
   getDashboardCss,
   getDashboardJs,
+  getDashboardJsModule,
 } from "./templates/dashboard.js";
 import {
   createSessionCookieValue,
@@ -98,13 +99,27 @@ export function registerDashboardRoutes(
       .send(getDashboardCss());
   });
 
-  // Static JS asset
+  // Static JS bundle (backwards-compatible combined asset)
   server.get("/dashboard/assets/dashboard.js", async (_req, reply) => {
     return reply
       .header("Content-Type", "application/javascript; charset=utf-8")
       .header("Cache-Control", "public, max-age=300")
       .header("X-Content-Type-Options", "nosniff")
       .send(getDashboardJs());
+  });
+
+  // Modular static JS assets (strict allowlist — prevents path traversal)
+  server.get("/dashboard/assets/js/:file", async (req, reply) => {
+    const { file } = req.params as { file: string };
+    const content = getDashboardJsModule(file);
+    if (!content) {
+      return reply.code(404).send({ error: { code: "not_found", message: "Asset not found" } });
+    }
+    return reply
+      .header("Content-Type", "application/javascript; charset=utf-8")
+      .header("Cache-Control", "public, max-age=300")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(content);
   });
 
   // POST /dashboard/login — exchange a bearer token for an HttpOnly encrypted session cookie
