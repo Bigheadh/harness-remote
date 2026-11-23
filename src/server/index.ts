@@ -17,13 +17,14 @@ import { createApiKeyStore } from "./auth/apikeys/store.js";
 import { registerApiKeyRoutes } from "./auth/apikeys/routes.js";
 import { createWebhookStore } from "./webhooks/store.js";
 import { registerWebhookRoutes } from "./webhooks/routes.js";
-import { startRetryWorker } from "./webhooks/dispatcher.js";
+import { startRetryWorker, setWebhookTimeoutMs } from "./webhooks/dispatcher.js";
 import { RateLimiter } from "./ratelimit/limiter.js";
 import { registerRateLimitHook } from "./ratelimit/middleware.js";
 import { registerScheduledTaskRoutes } from "./scheduled/routes.js";
 import { startScheduler } from "./scheduler/index.js";
 import { registerStatsRoutes } from "./stats/routes.js";
 import { registerSseRoutes } from "./sse/routes.js";
+import { closeAllClients } from "./sse/broadcaster.js";
 import { registerMetricsRoutes } from "./metrics/routes.js";
 import { recordHttpRequest } from "./metrics/collector.js";
 import { createApiUsageStore } from "./apiusage/store.js";
@@ -36,40 +37,44 @@ const configPath = process.argv.includes("--config")
   ? process.argv[process.argv.indexOf("--config") + 1]
   : undefined;
 
+/**
+ * Safely derive sibling SQLite file paths regardless of whether storagePath ends in .sqlite or .db.
+ */
+export function deriveStorePath(basePath: string, suffix: string): string {
+  if (/\.sqlite$/i.test(basePath)) {
+    return basePath.replace(/\.sqlite$/i, `.${suffix}.sqlite`);
+  }
+  if (/\.db$/i.test(basePath)) {
+    return basePath.replace(/\.db$/i, `.${suffix}.db`);
+  }
+  return `${basePath}.${suffix}.sqlite`;
+}
+
+/** Redact sensitive token query parameters before logging request URLs */
+function redactUrlTokens(url: string): string {
+  return url.replace(/([?&](?:token|personalToken|api_key|apiKey)=)[^&]+/gi, "$1[REDACTED]");
+}
+
 export async function startServer(): Promise<void> {
   const config = loadServerConfig(configPath);
   const log = createLogger({ level: "info" });
 
   log.info({ port: config.port }, "Starting harness-remote server");
 
+  if (config.webhookTimeoutMs !== undefined) {
+    setWebhookTimeoutMs(config.webhookTimeoutMs);
+  }
+
   // Ensure data directory exists
   mkdirSync(dirname(config.storagePath), { recursive: true });
 
   const store = createTaskStore(config.storagePath);
-
-  // Device registry store (uses separate SQLite file in same directory)
-  const deviceStoragePath = config.storagePath.replace(/\.sqlite$/, ".devices.sqlite");
-  const deviceStore = createDeviceStore(deviceStoragePath);
-
-  // Audit log store (uses separate SQLite file in same directory)
-  const auditStoragePath = config.storagePath.replace(/\.sqlite$/, ".audit.sqlite");
-  const auditStore = createAuditLogStore(auditStoragePath);
-
-  // User/RBAC store (uses separate SQLite file in same directory)
-  const userStoragePath = config.storagePath.replace(/\.sqlite$/, ".users.sqlite");
-  const userStore = createUserStore(userStoragePath);
-
-  // Webhook store (uses separate SQLite file in same directory)
-  const webhookStoragePath = config.storagePath.replace(/\.sqlite$/, ".webhooks.sqlite");
-  const webhookStore = createWebhookStore(webhookStoragePath);
-
-  // API key store (uses separate SQLite file in same directory)
-  const apiKeyStoragePath = config.storagePath.replace(/\.sqlite$/, ".apikeys.sqlite");
-  const apiKeyStore = createApiKeyStore(apiKeyStoragePath);
-
-  // API usage analytics store (uses separate SQLite file in same directory)
-  const usageStoragePath = config.storagePath.replace(/\.sqlite$/, ".usage.sqlite");
-  const usageStore = createApiUsageStore(usageStoragePath);
+  const deviceStore = createDeviceStore(deriveStorePath(config.storagePath, "devices"));
+  const auditStore = createAuditLogStore(deriveStorePath(config.storagePath, "audit"));
+  const userStore = createUserStore(deriveStorePath(config.storagePath, "users"));
+  const webhookStore = createWebhookStore(deriveStorePath(config.storagePath, "webhooks"));
+  const apiKeyStore = createApiKeyStore(deriveStorePath(config.storagePath, "apikeys"));
+  const usageStore = createApiUsageStore(deriveStorePath(config.storagePath, "usage"));
 
   const server = Fastify({
     logger: false, // We use our own redacting logger
@@ -89,23 +94,31 @@ export async function startServer(): Promise<void> {
   server.addHook("onResponse", async (req, reply) => {
     const startTime = (req as FastifyRequest & { startTime: number }).startTime;
     const duration = startTime ? Date.now() - startTime : 0;
+    const safeUrl = redactUrlTokens(req.url);
     log.info(
       {
         method: req.method,
-        url: req.url,
+        url: safeUrl,
         statusCode: reply.statusCode,
         duration,
       },
       "Request completed",
     );
     // Record metrics for Prometheus (skip /metrics itself to avoid noise)
-    if (req.url !== "/metrics") {
+    // Prefer matched route template to prevent high-cardinality metric explosion on 404s
+    const matchedRoute = req.routeOptions?.url;
+    if (matchedRoute !== "/metrics" && req.url !== "/metrics") {
       const durationSeconds = duration / 1000;
-      recordHttpRequest(req.method, req.url, reply.statusCode, durationSeconds);
+      recordHttpRequest(
+        req.method,
+        matchedRoute ?? "__unmatched__",
+        reply.statusCode,
+        durationSeconds,
+      );
     }
   });
 
-  // Register routes — pass userStore for RBAC support
+  // Register routes — pass userStore and apiKeyStore for RBAC support
   const feishuClient = createFeishuReplyClient(config.feishu);
   registerTaskRoutes(server, store, config.personalToken, feishuClient, auditStore, userStore, webhookStore, apiKeyStore, config.feishu.notifyOnStatusChange);
   registerFeishuRoutes(server, store, config.feishu, auditStore, webhookStore, feishuClient);
@@ -117,7 +130,7 @@ export async function startServer(): Promise<void> {
   registerWebhookRoutes(server, webhookStore, config.personalToken, userStore, apiKeyStore);
   registerScheduledTaskRoutes(server, store, config.personalToken, auditStore);
   registerStatsRoutes(server, store, config.personalToken);
-  registerSseRoutes(server, config.personalToken);
+  registerSseRoutes(server, config.personalToken, userStore, apiKeyStore);
   registerMetricsRoutes(server, store);
   registerUsageRoutes(server, usageStore, config.personalToken, userStore, apiKeyStore);
 
@@ -148,11 +161,23 @@ export async function startServer(): Promise<void> {
   const stopRetryWorker = startRetryWorker(webhookStore);
 
   // Graceful shutdown
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     log.info({}, "Shutting down...");
     stopScheduler();
     stopRetryWorker();
+    rateLimiter.destroy();
+    closeAllClients();
     await server.close();
+    store.close?.();
+    deviceStore.close?.();
+    auditStore.close?.();
+    userStore.close?.();
+    webhookStore.close?.();
+    apiKeyStore.close?.();
+    usageStore.close?.();
     process.exit(0);
   };
 

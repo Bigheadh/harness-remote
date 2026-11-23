@@ -24,6 +24,7 @@ export interface WebhookStore {
   getDuePendingRetries(limit?: number): Promise<PendingRetry[]>;
   removePendingRetry(id: number): Promise<void>;
   getPendingRetryCount(): Promise<number>;
+  close?(): void;
 }
 
 function generateSecret(): string {
@@ -35,6 +36,8 @@ export function createWebhookStore(storagePath: string): WebhookStore {
 
   const db = new DatabaseSync(storagePath);
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS webhook_subscriptions (
@@ -312,6 +315,10 @@ export function createWebhookStore(storagePath: string): WebhookStore {
     async getPendingRetryCount() {
       const row = countPendingRetries.get() as Record<string, unknown>;
       return Number(row["cnt"]);
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

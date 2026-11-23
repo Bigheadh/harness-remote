@@ -9,6 +9,7 @@ import type {
 import type { WebhookStore } from "./store.js";
 import { createLogger } from "../../shared/logger.js";
 import { recordWebhookDelivery } from "../metrics/collector.js";
+import { assertSafeWebhookTarget } from "./url-validator.js";
 
 const log = createLogger({ level: "info" });
 
@@ -18,10 +19,19 @@ const MAX_RETRIES = 5;
 const BASE_DELAY_MS = 1_000;
 /** Maximum delay cap in ms (30 seconds) */
 const MAX_DELAY_MS = 30_000;
-/** HTTP request timeout in ms */
-const REQUEST_TIMEOUT_MS = 10_000;
+/** Default HTTP request timeout in ms */
+let requestTimeoutMs = 10_000;
 /** How often the retry worker checks for due retries (in ms) */
 const RETRY_WORKER_INTERVAL_MS = 10_000;
+
+/**
+ * Configure the outbound webhook delivery timeout (in ms).
+ */
+export function setWebhookTimeoutMs(timeoutMs: number): void {
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    requestTimeoutMs = timeoutMs;
+  }
+}
 
 /**
  * Sign a webhook payload with HMAC-SHA256.
@@ -92,9 +102,13 @@ async function deliverToWebhook(
   const signature = signPayload(body, sub.secret);
 
   const startTime = Date.now();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    // SSRF guard: validate URL and resolved DNS IPs before connecting
+    await assertSafeWebhookTarget(sub.url);
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
     const response = await fetch(sub.url, {
       method: "POST",
@@ -105,10 +119,12 @@ async function deliverToWebhook(
         "User-Agent": "harness-remote-webhook/1.0",
       },
       body,
+      redirect: "error",
       signal: controller.signal,
     });
 
     clearTimeout(timeout);
+    timeout = undefined;
     const durationMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -153,7 +169,7 @@ async function deliverToWebhook(
     // Server error or 429 — enqueue retry
     await enqueueRetryOrGiveUp(store, sub, event, body, attempt, `HTTP ${response.status}`);
   } catch (err) {
-    const durationMs = Date.now() - startTime;
+    if (timeout) clearTimeout(timeout);
     const errorMsg = err instanceof Error ? err.message : String(err);
     await enqueueRetryOrGiveUp(store, sub, event, body, attempt, errorMsg);
   }
@@ -238,6 +254,7 @@ export function startRetryWorker(store: WebhookStore): () => void {
       log.error({ err }, "Retry worker error");
     }
   }, RETRY_WORKER_INTERVAL_MS);
+  interval.unref?.();
 
   log.info({ intervalMs: RETRY_WORKER_INTERVAL_MS }, "Webhook retry worker started");
 
@@ -252,9 +269,12 @@ export function startRetryWorker(store: WebhookStore): () => void {
  */
 async function executeRetry(store: WebhookStore, retry: PendingRetry): Promise<void> {
   const startTime = Date.now();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    await assertSafeWebhookTarget(retry.url);
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
     const response = await fetch(retry.url, {
       method: "POST",
@@ -265,10 +285,12 @@ async function executeRetry(store: WebhookStore, retry: PendingRetry): Promise<v
         "User-Agent": "harness-remote-webhook/1.0",
       },
       body: retry.body,
+      redirect: "error",
       signal: controller.signal,
     });
 
     clearTimeout(timeout);
+    timeout = undefined;
     const durationMs = Date.now() - startTime;
 
     if (response.ok) {
@@ -311,7 +333,7 @@ async function executeRetry(store: WebhookStore, retry: PendingRetry): Promise<v
     // Retryable error — enqueue next attempt if available
     await enqueuePendingRetryOrGiveUp(store, retry, `HTTP ${response.status}`);
   } catch (err) {
-    const durationMs = Date.now() - startTime;
+    if (timeout) clearTimeout(timeout);
     const errorMsg = err instanceof Error ? err.message : String(err);
     await enqueuePendingRetryOrGiveUp(store, retry, errorMsg);
   }

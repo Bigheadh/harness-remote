@@ -37,6 +37,7 @@ export interface ApiUsageStore {
 
   /** Get the count of tracked requests */
   getCount(): number;
+  close?(): void;
 }
 
 export function createApiUsageStore(storagePath: string): ApiUsageStore {
@@ -44,8 +45,10 @@ export function createApiUsageStore(storagePath: string): ApiUsageStore {
 
   const db = new DatabaseSync(storagePath);
 
-  // Enable WAL mode for better read concurrency
+  // Enable WAL mode, foreign keys, and busy timeout
   db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec("PRAGMA busy_timeout = 5000");
 
   // Create the usage tracking table
   db.exec(`
@@ -256,5 +259,13 @@ export function createApiUsageStore(storagePath: string): ApiUsageStore {
     };
   }
 
-  return { recordRequest, getStats, getEntriesForCaller, getCount };
+  return {
+    recordRequest,
+    getStats,
+    getEntriesForCaller,
+    getCount,
+    close(): void {
+      db.close();
+    },
+  };
 }

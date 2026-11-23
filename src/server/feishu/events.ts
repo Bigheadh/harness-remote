@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import type { Task, TaskPriority, TaskStatus, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import type { AuditLogStore } from "../audit/store.js";
@@ -7,9 +8,32 @@ import type { FeishuReplyClient } from "./client.js";
 import { buildTaskCreatedCard } from "./card-builder.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
-import { broadcastTaskCreated } from "../sse/broadcaster.js";
+import { broadcastTaskCreated, broadcastTaskStatusChanged } from "../sse/broadcaster.js";
 import { recordTaskCreated, recordEventProcessed } from "../metrics/collector.js";
 import { isCommand, parseCommand, executeCommand } from "./commands.js";
+
+function safeTokenCompare(actual: string, expected: string): boolean {
+  const actualBuf = Buffer.from(actual);
+  const expectedBuf = Buffer.from(expected);
+  if (actualBuf.length !== expectedBuf.length) {
+    timingSafeEqual(expectedBuf, expectedBuf);
+    return false;
+  }
+  return timingSafeEqual(actualBuf, expectedBuf);
+}
+
+function verifyFeishuToken(body: Record<string, unknown> | undefined, expectedToken: string): boolean {
+  if (!expectedToken) return true;
+  const header = body?.["header"] as Record<string, unknown> | undefined;
+  const candidate =
+    typeof header?.["token"] === "string"
+      ? header["token"]
+      : typeof body?.["token"] === "string"
+        ? body["token"]
+        : undefined;
+  if (!candidate) return false;
+  return safeTokenCompare(candidate, expectedToken);
+}
 
 const log = createLogger({ level: "info" });
 
@@ -443,19 +467,16 @@ export function registerFeishuRoutes(
     }
 
     // Extract event info
-    const header = body?.["header"] as Record<string, unknown> | undefined;
     const event = body?.["event"] as Record<string, unknown> | undefined;
     if (!event) {
       log.debug({}, "Card action: missing event");
       return reply.send({ ok: true });
     }
 
-    // Verify token
-    if (header?.["token"] && feishuConfig.verificationToken) {
-      if (header["token"] !== feishuConfig.verificationToken) {
-        log.warn({}, "Card action: invalid verification token");
-        return reply.code(401).send({ error: "Invalid verification token" });
-      }
+    // Strictly verify token (cannot be bypassed by omitting header.token)
+    if (!verifyFeishuToken(body, feishuConfig.verificationToken)) {
+      log.warn({}, "Card action: missing or invalid verification token");
+      return reply.code(401).send({ error: "Invalid verification token" });
     }
 
     // Extract action data
@@ -472,6 +493,14 @@ export function registerFeishuRoutes(
     const taskId = value["taskId"];
     const userId = (operator?.["open_id"] as string) || "unknown";
 
+    // Enforce user allowlist on card actions
+    if (!feishuConfig.allowedUserIds.includes(userId)) {
+      log.warn({ actionType, taskId, userId }, "Card action: non-allowed user rejected");
+      return reply.code(403).send({
+        toast: { type: "error", content: "You are not authorized to perform this action." },
+      });
+    }
+
     log.info({ actionType, taskId, userId }, "Card action received");
 
     try {
@@ -483,6 +512,7 @@ export function registerFeishuRoutes(
 
       let newStatus: TaskStatus | null = null;
       let toastMessage = "";
+      let updatedTask: Task | undefined;
 
       if (actionType === "pick_task") {
         if (task.status !== "pending") {
@@ -490,6 +520,7 @@ export function registerFeishuRoutes(
           return reply.send({ toast: { type: "warning", content: toastMessage } });
         }
         newStatus = "picked";
+        updatedTask = await store.updateTaskStatus(taskId, newStatus);
         toastMessage = "Task picked! 👆";
       } else if (actionType === "complete_task") {
         if (task.status === "done" || task.status === "failed") {
@@ -497,6 +528,7 @@ export function registerFeishuRoutes(
           return reply.send({ toast: { type: "warning", content: toastMessage } });
         }
         newStatus = "done";
+        updatedTask = await store.saveTaskResult(taskId, true, "Completed via Feishu card");
         toastMessage = "Task marked as done! ✅";
       } else if (actionType === "archive_task") {
         await store.archiveTask(taskId);
@@ -518,8 +550,7 @@ export function registerFeishuRoutes(
         return reply.send({ ok: true });
       }
 
-      if (newStatus) {
-        await store.updateTaskStatus(taskId, newStatus);
+      if (newStatus && updatedTask) {
         if (auditStore) {
           await auditStore.log({
             action: "task.status_changed",
@@ -530,18 +561,12 @@ export function registerFeishuRoutes(
           });
         }
         if (webhookStore) {
-          const updatedTask = await store.getTask(taskId);
-          if (updatedTask) {
-            dispatchWebhook(webhookStore, "task.status_changed", updatedTask, {
-              previousStatus: task.status,
-              source: "card_action",
-            }).catch(() => {});
-          }
+          dispatchWebhook(webhookStore, "task.status_changed", updatedTask, {
+            previousStatus: task.status,
+            source: "card_action",
+          }).catch(() => {});
         }
-        const updatedTask = await store.getTask(taskId);
-        if (updatedTask) {
-          broadcastTaskCreated(updatedTask);
-        }
+        broadcastTaskStatusChanged(updatedTask, task.status);
       }
 
       return reply.send({
@@ -575,14 +600,13 @@ export function registerFeishuRoutes(
       return reply.send({ ok: true });
     }
 
-    // Verify token if verification token is configured
-    const header = body?.["header"] as Record<string, unknown> | undefined;
-    if (header?.["token"] && feishuConfig.verificationToken) {
-      if (header["token"] !== feishuConfig.verificationToken) {
-        log.warn({ eventId: eventContext.eventId }, "Invalid verification token");
-        return reply.code(401).send({ error: "Invalid verification token" });
-      }
+    // Strictly verify token when verificationToken is configured (missing token is rejected)
+    if (!verifyFeishuToken(body, feishuConfig.verificationToken)) {
+      log.warn({ eventId: eventContext.eventId }, "Missing or invalid verification token");
+      return reply.code(401).send({ error: "Invalid verification token" });
     }
+
+    recordEventProcessed();
 
     // Check event deduplication
     if (await store.isEventProcessed(eventContext.eventId)) {

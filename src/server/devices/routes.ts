@@ -15,9 +15,12 @@ export function registerDeviceRoutes(
   userStore?: UserStore,
   apiKeyStore?: ApiKeyStore,
 ): void {
-  // Auth hook for /api/devices routes
+  // Auth hook for /api/devices routes (skips if global /api/ hook already authenticated)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/devices")) {
+      if ((req as FastifyRequest & { authCtx?: unknown }).authCtx) {
+        return;
+      }
       try {
         const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;

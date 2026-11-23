@@ -19,9 +19,12 @@ export function registerUsageRoutes(
   userStore: UserStore | undefined,
   apiKeyStore: ApiKeyStore,
 ): void {
-  // Auth hook for all /api/usage routes
+  // Auth hook for all /api/usage routes (skips if global /api/ hook already authenticated)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/usage")) {
+      if ((req as FastifyRequest & { authCtx?: unknown }).authCtx) {
+        return;
+      }
       try {
         const authCtx = await authenticate(
           req.headers["authorization"],

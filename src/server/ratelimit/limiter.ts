@@ -13,6 +13,8 @@ export interface RateLimitConfig {
   windowMs: number;
   /** Optional: per-user overrides keyed by user/device identifier */
   overrides?: Record<string, { maxRequests: number; windowMs?: number }>;
+  /** Maximum distinct keys tracked in memory before eviction. Default: 10000 */
+  maxEntries?: number;
 }
 
 export interface RateLimitResult {
@@ -30,6 +32,7 @@ interface WindowEntry {
 export class RateLimiter {
   private store = new Map<string, WindowEntry>();
   private config: RateLimitConfig;
+  private maxEntries: number;
   private cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(config: RateLimitConfig) {
@@ -37,7 +40,9 @@ export class RateLimiter {
       maxRequests: config.maxRequests ?? 60,
       windowMs: config.windowMs ?? 60_000,
       overrides: config.overrides,
+      maxEntries: config.maxEntries,
     };
+    this.maxEntries = config.maxEntries ?? 10_000;
 
     // Periodic cleanup every 5 minutes to evict stale entries
     this.cleanupTimer = setInterval(() => this.cleanup(), 5 * 60_000);
@@ -60,6 +65,16 @@ export class RateLimiter {
     const entry = this.store.get(key);
 
     if (!entry || entry.windowStart !== windowStart) {
+      // Bound map size to prevent OOM under key flooding
+      if (!entry && this.store.size >= this.maxEntries) {
+        this.cleanup();
+        if (this.store.size >= this.maxEntries) {
+          const oldestKey = this.store.keys().next().value;
+          if (oldestKey !== undefined) {
+            this.store.delete(oldestKey);
+          }
+        }
+      }
       // New window — reset counter
       this.store.set(key, { count: 1, windowStart });
       return {

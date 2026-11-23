@@ -20,11 +20,12 @@ export function registerApiKeyRoutes(
   userStore?: { getUserById(id: string): Promise<{ id: string; role: UserRole } | undefined> },
   auditStore?: AuditLogStore,
 ): void {
-  // Auth hook for /api/keys routes
+  // Auth hook for /api/keys routes (reuses req.authCtx if already authenticated by global /api/ hook)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.url.startsWith("/api/keys")) return;
     try {
-      const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore as never, apiKeyStore);
+      const existing = (req as FastifyRequest & { authCtx?: Awaited<ReturnType<typeof authenticate>> }).authCtx;
+      const authCtx = existing ?? await authenticate(req.headers["authorization"], personalToken, userStore as never, apiKeyStore);
       authorize(authCtx, "users.write"); // Only admin/operator can manage API keys
       (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
     } catch (e) {

@@ -15,11 +15,12 @@ export function registerUserRoutes(
   personalToken: string,
   apiKeyStore?: ApiKeyStore,
 ): void {
-  // Auth hook for /api/users routes
+  // Auth hook for /api/users routes (reuses req.authCtx if already authenticated by global /api/ hook)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.url.startsWith("/api/users")) return;
     try {
-      const authCtx = await authenticate(req.headers["authorization"], personalToken, store, apiKeyStore);
+      const existing = (req as FastifyRequest & { authCtx?: Awaited<ReturnType<typeof authenticate>> }).authCtx;
+      const authCtx = existing ?? await authenticate(req.headers["authorization"], personalToken, store, apiKeyStore);
       authorize(authCtx, "users.read");
       // Attach auth context to request for downstream handlers
       (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;

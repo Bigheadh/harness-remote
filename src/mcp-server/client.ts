@@ -231,11 +231,96 @@ export interface TaskApiClient {
   deleteTaskLink(taskId: string, linkId: number): Promise<void>;
 }
 
+export interface TaskApiClientOptions {
+  /** HTTP request timeout in milliseconds. Default: 30000 */
+  timeoutMs?: number;
+  /** Maximum retries for idempotent GET requests on network errors or 429/502/503/504. Default: 2 */
+  maxRetries?: number;
+  /** Base backoff delay in ms for retries. Default: 200 */
+  retryBaseDelayMs?: number;
+  /** Optional custom fetch implementation (useful for testing) */
+  fetchFn?: typeof globalThis.fetch;
+}
+
+const RETRYABLE_HTTP_STATUSES = new Set([429, 502, 503, 504]);
+
+function createResilientFetch(options?: TaskApiClientOptions): typeof globalThis.fetch {
+  const timeoutMs = options?.timeoutMs ?? 30_000;
+  const maxRetries = options?.maxRetries ?? 2;
+  const retryBaseDelayMs = options?.retryBaseDelayMs ?? 200;
+  const baseFetch = options?.fetchFn ?? globalThis.fetch;
+
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    const canRetry = method === "GET" || method === "HEAD";
+    const attempts = canRetry ? maxRetries + 1 : 1;
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const signal = init?.signal ?? AbortSignal.timeout(timeoutMs);
+        const response = await baseFetch(input, { ...init, signal });
+
+        if (!response.ok && canRetry && RETRYABLE_HTTP_STATUSES.has(response.status) && attempt < attempts - 1) {
+          const delay = retryBaseDelayMs * Math.pow(2, attempt);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        // Guard callers that invoke `await response.json()` on non-OK responses when an upstream
+        // proxy (e.g. Nginx/Cloudflare) returns an HTML 502/504 page instead of JSON.
+        if (!response.ok) {
+          const contentType = response.headers.get("content-type") ?? "";
+          if (!contentType.toLowerCase().includes("application/json")) {
+            const text = await response.text().catch(() => "");
+            try {
+              JSON.parse(text);
+              return new Response(text, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: { "content-type": "application/json" },
+              });
+            } catch {
+              const snippet = text.replace(/\s+/g, " ").trim().slice(0, 200);
+              return new Response(
+                JSON.stringify({
+                  error: {
+                    code: "upstream_error",
+                    message: snippet || response.statusText || `HTTP ${response.status}`,
+                  },
+                }),
+                {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: { "content-type": "application/json" },
+                },
+              );
+            }
+          }
+        }
+
+        return response;
+      } catch (err) {
+        lastError = err;
+        if (!canRetry || attempt >= attempts - 1) {
+          throw err;
+        }
+        const delay = retryBaseDelayMs * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError;
+  };
+}
+
 export function createTaskApiClient(
   serverBaseUrl: string,
   personalToken: string,
   deviceId?: string,
+  options?: TaskApiClientOptions,
 ): TaskApiClient {
+  const fetch = createResilientFetch(options);
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${personalToken}`,

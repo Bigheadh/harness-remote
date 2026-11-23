@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+test
+changelog
+research
+docs
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+config/server.json
+config/mcp.json

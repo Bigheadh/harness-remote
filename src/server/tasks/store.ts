@@ -129,6 +129,14 @@ export interface TaskStore {
   // Return all tasks without limit (for CSV export, archive, etc.)
   searchAllTasksForExport(options: SearchOptions): Promise<Task[]>;
   getAllTasks(): Promise<Task[]>;
+  /** Lightweight projection of completed task timestamps for processing stats */
+  getCompletedTaskTimings?(): Promise<Array<{
+    status: TaskStatus;
+    createdAt: string;
+    pickedAt?: string;
+    startedAt?: string;
+    completedAt: string;
+  }>>;
   // Task retry/requeue methods
   retryTask(taskId: string): Promise<Task>;
   // Task cloning methods
@@ -218,6 +226,7 @@ export interface TaskStore {
   addTaskLink(taskId: string, title: string, url: string, addedBy: string): Promise<import("../../shared/types.js").TaskLink>;
   listTaskLinks(taskId: string): Promise<import("../../shared/types.js").TaskLink[]>;
   deleteTaskLink(taskId: string, linkId: number): Promise<boolean>;
+  close?(): void;
 }
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -257,7 +266,7 @@ function parseTags(raw: unknown): string[] | undefined {
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row["id"] as string,
-    source: "feishu",
+    source: ((row["source"] as string) || "feishu") as Task["source"],
     feishuMessageId: row["feishu_message_id"] as string,
     feishuChatId: row["feishu_chat_id"] as string,
     feishuUserId: row["feishu_user_id"] as string,
@@ -441,8 +450,10 @@ export function createTaskStore(storagePath: string): TaskStore {
 
   const db = new DatabaseSync(storagePath);
 
-  // Enable WAL mode for better concurrent read performance
+  // Enable WAL mode, foreign keys, and busy timeout
   db.exec(`PRAGMA journal_mode=WAL;`);
+  db.exec(`PRAGMA foreign_keys=ON;`);
+  db.exec(`PRAGMA busy_timeout=5000;`);
 
   // Create tables
   db.exec(`
@@ -550,9 +561,13 @@ export function createTaskStore(storagePath: string): TaskStore {
   // Phase 49: estimated_minutes on tasks
   try { db.exec(`ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER`); } catch {}
 
-  // Phase 58: relationship_type and created_at on task_dependencies
-  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN relationship_type TEXT NOT NULL DEFAULT 'depends_on'`); } catch {}
-  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`); } catch {}
+  // Core query indexes on tasks table
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_archived_status_created ON tasks(archived_at, status, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_assigned_device_status ON tasks(assigned_device_id, status)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_feishu_user_id ON tasks(feishu_user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)`);
 
   // Time entries table (Phase 49: Task Time Tracking)
   db.exec(`
@@ -660,16 +675,22 @@ export function createTaskStore(storagePath: string): TaskStore {
       ON scheduled_tasks(next_run_at, enabled)
   `);
 
-  // Task dependencies table (many-to-many prerequisite relationships)
+  // Task dependencies table (many-to-many prerequisite & typed relationships)
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_dependencies (
       task_id TEXT NOT NULL,
       depends_on_task_id TEXT NOT NULL,
+      relationship_type TEXT NOT NULL DEFAULT 'depends_on',
+      created_at TEXT NOT NULL DEFAULT '',
       PRIMARY KEY (task_id, depends_on_task_id),
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
       FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
     )
   `);
+
+  // Phase 58: migrations for existing DBs that created task_dependencies without these columns
+  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN relationship_type TEXT NOT NULL DEFAULT 'depends_on'`); } catch {}
+  try { db.exec(`ALTER TABLE task_dependencies ADD COLUMN created_at TEXT NOT NULL DEFAULT ''`); } catch {}
 
   db.exec(`\n    CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on\n      ON task_dependencies(depends_on_task_id)\n  `);
 
@@ -1574,23 +1595,30 @@ export function createTaskStore(storagePath: string): TaskStore {
       let updated = 0;
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            const currentStatus = row["status"] as TaskStatus;
+            if (!isValidTransition(currentStatus, status)) {
+              errors.push(`Invalid transition for ${id}: ${currentStatus} -> ${status}`);
+              continue;
+            }
+            Number(updateTaskStatusStmt.run(status, now, id));
+            updated++;
+          } catch (e) {
+            errors.push(`Error updating ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          const currentStatus = row["status"] as TaskStatus;
-          if (!isValidTransition(currentStatus, status)) {
-            errors.push(`Invalid transition for ${id}: ${currentStatus} -> ${status}`);
-            continue;
-          }
-          Number(updateTaskStatusStmt.run(status, now, id));
-          updated++;
-        } catch (e) {
-          errors.push(`Error updating ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1600,18 +1628,25 @@ export function createTaskStore(storagePath: string): TaskStore {
       let updated = 0;
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            Number(assignTaskStmt.run(deviceId, now, id));
+            updated++;
+          } catch (e) {
+            errors.push(`Error assigning ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          Number(assignTaskStmt.run(deviceId, now, id));
-          updated++;
-        } catch (e) {
-          errors.push(`Error assigning ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1624,20 +1659,27 @@ export function createTaskStore(storagePath: string): TaskStore {
         return { deleted: 0, errors: [] };
       }
 
-      // Process in batches of 50 to avoid SQL variable limit
+      // Process in batches of 50 to avoid SQL variable limit inside a transaction
       const batchSize = 50;
-      for (let i = 0; i < ids.length; i += batchSize) {
-        const batch = ids.slice(i, i + batchSize);
-        const placeholders = batch.map(() => "?").join(",");
-        try {
-          // First delete associated comments
-          db.prepare(`DELETE FROM task_comments WHERE task_id IN (${placeholders})`).run(...batch);
-          // Then delete the tasks
-          const result = db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...batch);
-          deleted += Number(result.changes);
-        } catch (e) {
-          errors.push(`Error deleting batch: ${e instanceof Error ? e.message : String(e)}`);
+      db.exec("BEGIN");
+      try {
+        for (let i = 0; i < ids.length; i += batchSize) {
+          const batch = ids.slice(i, i + batchSize);
+          const placeholders = batch.map(() => "?").join(",");
+          try {
+            // First delete associated comments
+            db.prepare(`DELETE FROM task_comments WHERE task_id IN (${placeholders})`).run(...batch);
+            // Then delete the tasks (foreign_keys=ON cascades remaining child rows)
+            const result = db.prepare(`DELETE FROM tasks WHERE id IN (${placeholders})`).run(...batch);
+            deleted += Number(result.changes);
+          } catch (e) {
+            errors.push(`Error deleting batch: ${e instanceof Error ? e.message : String(e)}`);
+          }
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
 
       return { deleted, errors };
@@ -1648,21 +1690,29 @@ export function createTaskStore(storagePath: string): TaskStore {
       let updated = 0;
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      const updateTagsStmt = db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`);
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            const existingTags = parseTags(row["tags"]) ?? [];
+            const mergedTags = [...new Set([...existingTags, ...tags])].sort();
+            const tagsJson = JSON.stringify(mergedTags);
+            updateTagsStmt.run(tagsJson, now, id);
+            updated++;
+          } catch (e) {
+            errors.push(`Error adding tags to ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          const existingTags = parseTags(row["tags"]) ?? [];
-          const mergedTags = [...new Set([...existingTags, ...tags])].sort();
-          const tagsJson = JSON.stringify(mergedTags);
-          db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(tagsJson, now, id);
-          updated++;
-        } catch (e) {
-          errors.push(`Error adding tags to ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1672,21 +1722,29 @@ export function createTaskStore(storagePath: string): TaskStore {
       let updated = 0;
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      const updateTagsStmt = db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`);
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            const existingTags = parseTags(row["tags"]) ?? [];
+            const filteredTags = existingTags.filter((t) => t !== tag);
+            const tagsJson = filteredTags.length > 0 ? JSON.stringify(filteredTags) : null;
+            updateTagsStmt.run(tagsJson, now, id);
+            updated++;
+          } catch (e) {
+            errors.push(`Error removing tag from ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          const existingTags = parseTags(row["tags"]) ?? [];
-          const filteredTags = existingTags.filter((t) => t !== tag);
-          const tagsJson = filteredTags.length > 0 ? JSON.stringify(filteredTags) : null;
-          db.prepare(`UPDATE tasks SET tags = ?, updated_at = ? WHERE id = ?`).run(tagsJson, now, id);
-          updated++;
-        } catch (e) {
-          errors.push(`Error removing tag from ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1696,18 +1754,26 @@ export function createTaskStore(storagePath: string): TaskStore {
       let updated = 0;
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      const updatePriorityStmt = db.prepare(`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?`);
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            updatePriorityStmt.run(priority, now, id);
+            updated++;
+          } catch (e) {
+            errors.push(`Error updating priority for ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          db.prepare(`UPDATE tasks SET priority = ?, updated_at = ? WHERE id = ?`).run(priority, now, id);
-          updated++;
-        } catch (e) {
-          errors.push(`Error updating priority for ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1722,18 +1788,26 @@ export function createTaskStore(storagePath: string): TaskStore {
         throw new Error(`Invalid date format: ${dueDate}. Use ISO 8601.`);
       }
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      const updateDueStmt = db.prepare(`UPDATE tasks SET due_date = ?, updated_at = ? WHERE id = ?`);
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+            updateDueStmt.run(dueDate, now, id);
+            updated++;
+          } catch (e) {
+            errors.push(`Error updating due date for ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-          db.prepare(`UPDATE tasks SET due_date = ?, updated_at = ? WHERE id = ?`).run(dueDate, now, id);
-          updated++;
-        } catch (e) {
-          errors.push(`Error updating due date for ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { updated, errors };
     },
@@ -1744,50 +1818,58 @@ export function createTaskStore(storagePath: string): TaskStore {
       const taskIds: string[] = [];
       const now = new Date().toISOString();
 
-      for (const id of ids) {
-        try {
-          const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
-          if (!row) {
-            errors.push(`Task not found: ${id}`);
-            continue;
+      db.exec("BEGIN");
+      try {
+        for (const id of ids) {
+          try {
+            const row = selectTaskById.get(id) as Record<string, unknown> | undefined;
+            if (!row) {
+              errors.push(`Task not found: ${id}`);
+              continue;
+            }
+
+            const suffix = Math.random().toString(36).slice(2, 8);
+            const newId = `task_${Date.now()}_${suffix}`;
+            const originalMessageId = row["feishu_message_id"] as string;
+            const clonedMessageId = `${originalMessageId}_clone_${Date.now()}_${suffix}`;
+
+            const tagsJson = row["tags"] as string | null;
+            const attachmentsJson = row["attachments"] as string | null;
+
+            Number(insertTask.run(
+              newId,
+              row["source"] as string,
+              clonedMessageId,
+              row["feishu_chat_id"] as string,
+              row["feishu_user_id"] as string,
+              row["command_text"] as string,
+              "pending",
+              (row["priority"] as string) ?? "normal",
+              tagsJson,
+              attachmentsJson,
+              null, // cloned task starts unassigned
+              (row["due_date"] as string) ?? null,
+              (row["reminder_at"] as string) ?? null,
+              (row["description"] as string) ?? null,
+              now,
+              now,
+              null, // picked_at
+              null, // started_at
+              null, // completed_at
+              (row["cycle_id"] as string) ?? null, // cycle_id
+              null, // module_id
+            ));
+
+            taskIds.push(newId);
+            cloned++;
+          } catch (e) {
+            errors.push(`Error cloning task ${id}: ${e instanceof Error ? e.message : String(e)}`);
           }
-
-          const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const originalMessageId = row["feishu_message_id"] as string;
-          const clonedMessageId = `${originalMessageId}_clone_${Date.now()}`;
-
-          const tagsJson = row["tags"] as string | null;
-          const attachmentsJson = row["attachments"] as string | null;
-
-          Number(insertTask.run(
-            newId,
-            row["source"] as string,
-            clonedMessageId,
-            row["feishu_chat_id"] as string,
-            row["feishu_user_id"] as string,
-            row["command_text"] as string,
-            "pending",
-            (row["priority"] as string) ?? "normal",
-            tagsJson,
-            attachmentsJson,
-            null, // cloned task starts unassigned
-            (row["due_date"] as string) ?? null,
-            (row["reminder_at"] as string) ?? null,
-            (row["description"] as string) ?? null,
-            now,
-            now,
-            null, // picked_at
-            null, // started_at
-            null, // completed_at
-            (row["cycle_id"] as string) ?? null, // cycle_id
-            null, // module_id
-          ));
-
-          taskIds.push(newId);
-          cloned++;
-        } catch (e) {
-          errors.push(`Error cloning task ${id}: ${e instanceof Error ? e.message : String(e)}`);
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
       return { cloned, errors, taskIds };
     },
@@ -2064,16 +2146,22 @@ export function createTaskStore(storagePath: string): TaskStore {
 
       const now = new Date().toISOString();
 
-      // Replace all existing dependencies
-      db.prepare(`DELETE FROM task_dependencies WHERE task_id = ?`).run(taskId);
-
-      for (const depId of dependsOnIds) {
-        db.prepare(
-          `INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)`
-        ).run(taskId, depId);
+      // Replace all existing dependencies atomically
+      const insertDepStmt = db.prepare(
+        `INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)`,
+      );
+      db.exec("BEGIN");
+      try {
+        db.prepare(`DELETE FROM task_dependencies WHERE task_id = ?`).run(taskId);
+        for (const depId of dependsOnIds) {
+          insertDepStmt.run(taskId, depId);
+        }
+        db.prepare(`UPDATE tasks SET updated_at = ? WHERE id = ?`).run(now, taskId);
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
       }
-
-      db.prepare(`UPDATE tasks SET updated_at = ? WHERE id = ?`).run(now, taskId);
 
       const updated = selectTaskById.get(taskId) as Record<string, unknown>;
       return rowToTask(updated);
@@ -3189,6 +3277,27 @@ export function createTaskStore(storagePath: string): TaskStore {
       return rows.map(rowToTask);
     },
 
+    async getCompletedTaskTimings(): Promise<Array<{
+      status: TaskStatus;
+      createdAt: string;
+      pickedAt?: string;
+      startedAt?: string;
+      completedAt: string;
+    }>> {
+      const rows = db.prepare(`
+        SELECT status, created_at, picked_at, started_at, completed_at
+        FROM tasks
+        WHERE completed_at IS NOT NULL AND status IN ('done', 'failed')
+      `).all() as Array<Record<string, unknown>>;
+      return rows.map((row) => ({
+        status: row["status"] as TaskStatus,
+        createdAt: row["created_at"] as string,
+        pickedAt: (row["picked_at"] as string) ?? undefined,
+        startedAt: (row["started_at"] as string) ?? undefined,
+        completedAt: row["completed_at"] as string,
+      }));
+    },
+
     async searchAllTasksForExport(options: SearchOptions): Promise<Task[]> {
       const conditions: string[] = [];
       const params: (string | number | null)[] = [];
@@ -4122,6 +4231,10 @@ export function createTaskStore(storagePath: string): TaskStore {
         "DELETE FROM task_links WHERE id = ? AND task_id = ?"
       ).run(linkId, taskId);
       return Number(result.changes) > 0;
+    },
+
+    close(): void {
+      db.close();
     },
   };
 }

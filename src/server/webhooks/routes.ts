@@ -6,6 +6,7 @@ import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
+import { validateWebhookUrl } from "./url-validator.js";
 
 const log = createLogger({ level: "info" });
 
@@ -24,9 +25,12 @@ export function registerWebhookRoutes(
   userStore?: UserStore,
   apiKeyStore?: ApiKeyStore,
 ): void {
-  // Auth hook for /api/webhooks routes
+  // Auth hook for /api/webhooks routes (skips if global /api/ hook already authenticated)
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.url.startsWith("/api/webhooks")) {
+      if ((req as FastifyRequest & { authCtx?: unknown }).authCtx) {
+        return;
+      }
       try {
         const authCtx = await authenticate(req.headers["authorization"], personalToken, userStore, apiKeyStore);
         (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
@@ -106,12 +110,15 @@ export function registerWebhookRoutes(
       });
     }
 
-    // Validate URL
+    // Validate URL (syntax, protocol, and SSRF protection)
     try {
-      new URL(body.url);
-    } catch {
+      validateWebhookUrl(body.url.trim());
+    } catch (e) {
       return reply.code(400).send({
-        error: { code: "invalid_request", message: "Invalid URL format" },
+        error: {
+          code: "invalid_request",
+          message: e instanceof Error ? e.message : "Invalid URL format",
+        },
       });
     }
 
@@ -172,10 +179,13 @@ export function registerWebhookRoutes(
         });
       }
       try {
-        new URL(body.url);
-      } catch {
+        validateWebhookUrl(body.url.trim());
+      } catch (e) {
         return reply.code(400).send({
-          error: { code: "invalid_request", message: "Invalid URL format" },
+          error: {
+            code: "invalid_request",
+            message: e instanceof Error ? e.message : "Invalid URL format",
+          },
         });
       }
     }

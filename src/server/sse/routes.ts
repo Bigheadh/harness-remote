@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { UserStore } from "../auth/store.js";
+import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { addClient, removeClient, getClientCount } from "./broadcaster.js";
@@ -24,26 +26,37 @@ import type { SseEventType } from "./broadcaster.js";
 export function registerSseRoutes(
   server: FastifyInstance,
   personalToken: string,
+  userStore?: UserStore,
+  apiKeyStore?: ApiKeyStore,
 ): void {
   // GET /api/tasks/stream - SSE endpoint
   server.get("/api/tasks/stream", async (req: FastifyRequest, reply: FastifyReply) => {
-    // Authenticate via query param or header (SSE can't set custom headers in browser)
-    const queryToken =
-      (req.query as Record<string, string>).token ??
-      (req.query as Record<string, string>).personalToken;
-    const authHeader = req.headers["authorization"];
-    const tokenValue = authHeader
-      ? authHeader.replace(/^Bearer\s+/i, "").trim()
-      : queryToken;
+    // Authenticate via Authorization header or query param (browser EventSource cannot set headers)
+    const query = req.query as Record<string, string | undefined>;
+    const queryToken = query.token ?? query.personalToken;
+    const authHeader =
+      req.headers["authorization"] ??
+      (queryToken ? `Bearer ${queryToken.trim()}` : undefined);
 
-    if (!tokenValue || tokenValue !== personalToken) {
+    let authCtx;
+    try {
+      authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
+      authorize(authCtx, "tasks.read");
+      (req as FastifyRequest & { authCtx?: typeof authCtx }).authCtx = authCtx;
+    } catch (e) {
+      if (e instanceof AppError) {
+        const status = e.code === "forbidden" ? 403 : 401;
+        return reply.code(status).send({
+          error: { code: e.code, message: e.message },
+        });
+      }
       return reply.code(401).send({
         error: { code: "unauthorized", message: "Missing or invalid bearer token" },
       });
     }
 
     // Parse optional event filter
-    const queryEvents = (req.query as Record<string, string>).events;
+    const queryEvents = query.events;
     let subscribedEvents: SseEventType[] | undefined;
     if (queryEvents) {
       subscribedEvents = queryEvents

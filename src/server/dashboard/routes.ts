@@ -26,11 +26,14 @@ export function registerDashboardRoutes(
   server.get("/dashboard", async (req: FastifyRequest, reply: FastifyReply) => {
     // Authenticate: try header first, then query param
     let authCtx: { role: "admin" | "operator" | "viewer"; isSuperAdmin: boolean; user?: { id: string; username: string; token: string; role: "admin" | "operator" | "viewer"; feishuUserId?: string; createdAt: string; updatedAt: string } } | undefined;
+    let callerToken: string | undefined;
 
     const authHeader = req.headers["authorization"];
     if (authHeader) {
       try {
         authCtx = await authenticate(authHeader, personalToken, userStore, apiKeyStore);
+        const match = authHeader.match(/^Bearer\s+(.+)$/i);
+        callerToken = match ? match[1].trim() : undefined;
       } catch {
         // Fall through to query param check
       }
@@ -41,13 +44,14 @@ export function registerDashboardRoutes(
       if (queryToken) {
         try {
           authCtx = await authenticate(`Bearer ${queryToken}`, personalToken, userStore, apiKeyStore);
+          callerToken = queryToken.trim();
         } catch {
           // Invalid token
         }
       }
     }
 
-    if (!authCtx) {
+    if (!authCtx || !callerToken) {
       return reply.code(401).send({
         error: {
           code: "unauthorized",
@@ -66,9 +70,14 @@ export function registerDashboardRoutes(
       throw e;
     }
 
-    const html = renderDashboardHTML(publicBaseUrl, personalToken);
+    // Never leak super admin personalToken to non-super-admin users — only embed the caller's own token
+    const html = renderDashboardHTML(publicBaseUrl, callerToken);
     return reply
       .header("Content-Type", "text/html; charset=utf-8")
+      .header("Cache-Control", "no-store")
+      .header("X-Content-Type-Options", "nosniff")
+      .header("X-Frame-Options", "DENY")
+      .header("Referrer-Policy", "no-referrer")
       .send(html);
   });
 
