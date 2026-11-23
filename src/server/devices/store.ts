@@ -64,7 +64,7 @@ export function createDeviceStore(storagePath: string): DeviceStore {
 
   const selectDeviceById = db.prepare(`SELECT * FROM devices WHERE id = ?`);
   const selectDeviceByToken = db.prepare(`SELECT * FROM devices WHERE token = ?`);
-  const selectAllDevices = db.prepare(`SELECT * FROM devices ORDER BY created_at DESC`);
+  const selectAllDevices = db.prepare(`SELECT * FROM devices ORDER BY created_at DESC, rowid DESC`);
   const updateHeartbeat = db.prepare(`UPDATE devices SET last_seen = ? WHERE id = ?`);
   const deleteDeviceStmt = db.prepare(`DELETE FROM devices WHERE id = ?`);
 
