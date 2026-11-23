@@ -140,7 +140,7 @@ describe("listTasks", () => {
 
 describe("updateTaskStatus", () => {
   it("transitions pending -> picked", async () => {
-    const task = await store.createTask(makeTask());
+    const task = await store.createTask(makeTask({ createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }));
     const updated = await store.updateTaskStatus(task.id, "picked");
     expect(updated.status).toBe("picked");
     expect(updated.updatedAt).not.toBe(task.updatedAt);
