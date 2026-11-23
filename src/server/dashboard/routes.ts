@@ -16,6 +16,7 @@ import {
   formatSetSessionCookie,
   readTokenFromSessionCookie,
 } from "./session.js";
+import { DashboardLoginBodySchema, parseBody } from "../openapi/schemas.js";
 
 const DASHBOARD_CSP = [
   "default-src 'self'",
@@ -108,13 +109,9 @@ export function registerDashboardRoutes(
 
   // POST /dashboard/login — exchange a bearer token for an HttpOnly encrypted session cookie
   server.post("/dashboard/login", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as { token?: string } | undefined;
-    const rawToken = typeof body?.token === "string" ? body.token.trim() : "";
-    if (!rawToken) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'token'" },
-      });
-    }
+    const parsed = parseBody(DashboardLoginBodySchema, req.body, reply);
+    if (!parsed) return;
+    const rawToken = parsed.token;
 
     let authCtx: AuthContext;
     try {

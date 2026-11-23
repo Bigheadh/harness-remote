@@ -30,6 +30,7 @@ import { recordHttpRequest } from "./metrics/collector.js";
 import { createApiUsageStore } from "./apiusage/store.js";
 import { registerUsageTrackingHook } from "./apiusage/middleware.js";
 import { registerUsageRoutes } from "./apiusage/routes.js";
+import { registerOpenApiRoutes } from "./openapi/routes.js";
 import compress from "@fastify/compress";
 import { createLogger } from "../shared/logger.js";
 
@@ -133,6 +134,7 @@ export async function startServer(): Promise<void> {
   registerSseRoutes(server, config.personalToken, userStore, apiKeyStore);
   registerMetricsRoutes(server, store);
   registerUsageRoutes(server, usageStore, config.personalToken, userStore, apiKeyStore);
+  registerOpenApiRoutes(server, config.publicBaseUrl);
 
   // API usage tracking — registered AFTER routes (so auth hook runs first)
   registerUsageTrackingHook(server, usageStore);

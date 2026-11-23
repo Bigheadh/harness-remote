@@ -13,6 +13,7 @@ import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { readTokenFromSessionCookie } from "../dashboard/session.js";
+import { CreateTaskBodySchema, parseBody } from "../openapi/schemas.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
@@ -139,8 +140,8 @@ export function registerTaskRoutes(
   // RBAC-aware auth hook for /api/* routes
   server.addHook("onRequest", async (req: FastifyRequest, reply: FastifyReply) => {
     const pathname = req.url.split("?")[0];
-    // SSE stream handles its own RBAC auth (supports ?token= for browser EventSource)
-    if (pathname === "/api/tasks/stream") {
+    // Public OpenAPI docs and SSE stream (which handles its own RBAC auth)
+    if (pathname === "/api/tasks/stream" || pathname === "/api/openapi.json" || pathname === "/api/docs") {
       return;
     }
     if (req.url.startsWith("/api/")) {
@@ -228,18 +229,8 @@ export function registerTaskRoutes(
       throw e;
     }
 
-    const body = req.body as {
-      commandText?: string;
-      description?: string;
-      priority?: TaskPriority;
-      tags?: string[];
-      assignedDeviceId?: string;
-      dueDate?: string;
-    };
-
-    if (!body.commandText || body.commandText.trim().length === 0) {
-      return reply.code(400).send({ error: { code: "VALIDATION_ERROR", message: "commandText is required" } });
-    }
+    const body = parseBody(CreateTaskBodySchema, req.body, reply);
+    if (!body) return;
 
     const now = new Date().toISOString();
     const task = await store.createTask({
@@ -248,12 +239,13 @@ export function registerTaskRoutes(
       feishuMessageId: `web_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       feishuChatId: "",
       feishuUserId: (authCtx as { username?: string }).username ?? "web_user",
-      commandText: body.commandText.trim(),
+      commandText: body.commandText,
       status: "pending",
-      priority: body.priority ?? "normal",
+      priority: body.priority,
       tags: body.tags,
       assignedDeviceId: body.assignedDeviceId,
       dueDate: body.dueDate,
+      reminderAt: body.reminderAt,
       description: body.description,
       createdAt: now,
       updatedAt: now,
