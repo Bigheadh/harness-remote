@@ -1,6 +1,7 @@
 {
   "name": "harness-remote",
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "description": "Feishu task inbox for local Codex CLI, powered by MCP.",
   "type": "module",
@@ -13,7 +14,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.1",

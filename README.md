@@ -3,9 +3,9 @@
 中文 | [English](#english)
 
 [![Status](https://img.shields.io/badge/status-MVP%20complete-green)](#功能概览)
-[![Runtime](https://img.shields.io/badge/runtime-Node.js%2020%2B-43853d)](#适用前提)
+[![Runtime](https://img.shields.io/badge/runtime-Node.js%2022%2B-43853d)](#适用前提)
 [![MCP](https://img.shields.io/badge/MCP-local%20stdio-purple)](#架构)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#许可证)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > 通过飞书收集远程任务，让公司电脑上的 Codex CLI 通过本地 MCP 主动拉取并回传结果。
 > Feishu task inbox for local Codex CLI, powered by MCP, without a background remote-control agent.
@@ -425,7 +425,7 @@ harness-remote/
 
 ## 许可证
 
-许可证暂未确定。正式发布前会补充 `LICENSE` 文件。
+本项目基于 [MIT License](LICENSE) 开源。
 
 ---
 
@@ -434,9 +434,9 @@ harness-remote/
 [中文](#harness-remote) | English
 
 [![Status](https://img.shields.io/badge/status-MVP%20complete-green)](#overview)
-[![Runtime](https://img.shields.io/badge/runtime-Node.js%2020%2B-43853d)](#preconditions)
+[![Runtime](https://img.shields.io/badge/runtime-Node.js%2022%2B-43853d)](#preconditions)
 [![MCP](https://img.shields.io/badge/MCP-local%20stdio-purple)](#architecture)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > A Feishu task inbox for local Codex CLI. Tasks are pulled through a local MCP server only when you explicitly start Codex CLI on the company computer.
 
@@ -773,4 +773,4 @@ Because the constraint is to avoid a background remote-control process on the co
 
 ## License
 
-The license is not decided yet. A `LICENSE` file will be added before a formal release.
+Licensed under the [MIT License](LICENSE).
