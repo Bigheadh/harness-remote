@@ -2421,3 +2421,33 @@ Documentation review checklist:
 - A background remote-control agent is not allowed and is intentionally excluded.
 - The current server can expose a public HTTPS callback for Feishu.
 - Version 1 optimizes for a stable personal workflow, not a team platform.
+
+### 2.42 Architecture & Security Hardening Notes
+
+#### Modularized Codebase Layout
+- **Task Store (`src/server/tasks/`)**:
+  - `store.ts`: `TaskStore` interface, core task CRUD, FTS5/LIKE search, bulk operations, and export/import.
+  - `repos/schema.ts`: Versioned SQLite migrations tracked via `PRAGMA user_version` (v1 base tables/indexes, v2 FTS5 trigram index `tasks_fts` + insert/update/delete sync triggers + backfill).
+  - `repos/db-helpers.ts`: Transaction helper (`withTransaction`), row mappers, state transitions, and FTS5 trigram query builder.
+  - `repos/planning-repo.ts`: Templates, Scheduled Tasks, Cycles, and Modules.
+  - `repos/sla-analytics-repo.ts`: SLA policies/breaches, stats/time-series, kanban, and time entries.
+  - `repos/relations-repo.ts`: Comments, notes, links, dependencies, relationships, locks, subtasks, saved views, watchers, and activity feeds.
+- **Task Routes (`src/server/tasks/`)**:
+  - `routes.ts`: Core task routes, `/health`, and global `/api/*` RBAC hook (supports `Authorization: Bearer` and `HttpOnly` dashboard session cookies).
+  - `subroutes/`: 11 domain route modules (`templates`, `bulk`, `export-import`, `dependencies`, `subtasks-comments`, `sla`, `saved-views`, `watchers-time`, `relationships`, `cycles`, `modules`).
+- **Dashboard (`src/server/dashboard/`)**:
+  - `public/`: External static assets (`index.html`, `dashboard.css`, `dashboard.js`) copied into `dist/server/dashboard/public` on build.
+  - `session.ts`: AES-256-GCM encrypted `harness_session` cookie (`HttpOnly; SameSite=Strict`) derived from `personalToken`; zero raw tokens embedded in HTML, protected by CSP headers.
+  - `routes.ts`: Static asset endpoints, `POST /dashboard/login`, `POST /dashboard/logout`, and `/dashboard` UI.
+- **Security Controls**:
+  - `src/server/auth/token-hash.ts`: SHA-256 hashing of user tokens, API keys (including rotation grace keys), and device tokens at rest with transactional startup migration.
+  - `src/server/feishu/crypto.ts`: `X-Lark-Signature` SHA-256 verification and AES-256-CBC decryption for encrypted Feishu events (`feishu.encryptKey`).
+  - `src/server/webhooks/url-validator.ts`: DNS-resolving SSRF protection blocking private, loopback, link-local, and cloud metadata IPs.
+- **MCP Server (`src/mcp-server/`)**:
+  - `toolsets.ts`: 161 tools categorized across 6 toolsets (`core`, `tasks_extended`, `planning`, `sla`, `analytics`, `admin`), selectable via `--toolsets` or `HARNESS_MCP_TOOLSETS`.
+  - `tools/`: 6 modular registration files (`tasks-core`, `tasks-extended`, `planning`, `sla`, `analytics`, `admin`), including composite `update_task` in `core`.
+  - `client.ts`: Resilient HTTP client with configurable timeout (`HARNESS_MCP_TIMEOUT_MS`) and exponential backoff retries (`HARNESS_MCP_MAX_RETRIES`).
+- **Verification & Deployment**:
+  - `npm run typecheck && npm run typecheck:test && npm run build && npm test` (automated in `.github/workflows/ci.yml`).
+  - Multi-stage `Dockerfile` running as non-root user on Node 22 Slim with 12-Factor environment variable support.
+

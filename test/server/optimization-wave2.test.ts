@@ -54,9 +54,9 @@ describe("Wave 2 Optimizations: MCP Toolsets, Resilient Client, Env Config & SQL
       return registered;
     }
 
-    it("registers all 160 tools by default and explicitly categorizes every tool", () => {
+    it("registers all 161 tools by default and explicitly categorizes every tool", () => {
       const all = collectRegisteredTools();
-      expect(all.length).toBe(160);
+      expect(all.length).toBe(161);
 
       // Verify every single registered tool is explicitly listed in MCP_TOOLSET_TOOLS (no silent drift)
       const categorized = new Set(Object.values(MCP_TOOLSET_TOOLS).flat());
@@ -64,10 +64,11 @@ describe("Wave 2 Optimizations: MCP Toolsets, Resilient Client, Env Config & SQL
       expect(missing).toEqual([]);
     });
 
-    it("registers only the 20 core tools when toolsets: ['core']", () => {
+    it("registers only the 21 core tools when toolsets: ['core']", () => {
       const core = collectRegisteredTools({ toolsets: ["core"] });
-      expect(core.length).toBe(20);
+      expect(core.length).toBe(21);
       expect(core).toContain("list_tasks");
+      expect(core).toContain("update_task");
       expect(core).toContain("report_task_result");
       expect(core).toContain("reply_feishu");
       expect(core).not.toContain("create_user");
@@ -77,7 +78,7 @@ describe("Wave 2 Optimizations: MCP Toolsets, Resilient Client, Env Config & SQL
 
     it("supports combining multiple toolsets (e.g. core + sla)", () => {
       const combined = collectRegisteredTools({ toolsets: ["core", "sla"] });
-      expect(combined.length).toBe(29);
+      expect(combined.length).toBe(30);
       expect(combined).toContain("list_tasks");
       expect(combined).toContain("create_sla_policy");
       expect(combined).not.toContain("delete_user");

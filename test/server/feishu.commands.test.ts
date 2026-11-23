@@ -387,8 +387,48 @@ function createInMemoryStore(): TaskStore {
   const addTagStmt = db.prepare(`INSERT OR IGNORE INTO task_tags (task_id, tag) VALUES (?, ?)`);
   const selectTags = db.prepare(`SELECT tag FROM task_tags WHERE task_id = ?`);
 
+  async function getTaskImpl(id: string): Promise<Task | undefined> {
+    const row = selectById.get(id) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    const tagRows = selectTags.all(id) as { tag: string }[];
+    return {
+      id: row.id,
+      source: (row.source as Task["source"]) ?? "feishu",
+      feishuMessageId: row.feishu_message_id,
+      feishuChatId: row.feishu_chat_id,
+      feishuUserId: row.feishu_user_id,
+      commandText: row.command_text,
+      status: row.status,
+      resultSummary: row.result_summary,
+      resultDetails: row.result_details,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      pickedAt: row.picked_at,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      priority: row.priority,
+      tags: tagRows.map((r) => r.tag),
+      attachments: row.attachments ? JSON.parse(row.attachments as string) : [],
+      assignedDeviceId: row.assigned_device_id,
+      dueDate: row.due_date,
+      reminderAt: row.reminder_at,
+      description: row.description,
+      cycleId: row.cycle_id,
+      moduleId: row.module_id,
+      dueDateOffsetMs: row.due_date_offset_ms,
+      reminderOffsetMs: row.reminder_offset_ms,
+      estimatedMinutes: row.estimated_minutes,
+      isPinned: row.is_pinned === 1,
+      archivedAt: row.archived_at,
+      reopenedCount: row.reopened_count,
+      notes: row.notes ? JSON.parse(row.notes as string) : [],
+      estimatedCost: row.estimated_cost,
+      actualCost: row.actual_cost,
+    } as unknown as Task;
+  }
+
   return {
-    async createTask(input) {
+    async createTask(input: Partial<Task> & { commandText: string }) {
       counter++;
       const id = input.id || `task_${counter}`;
       const now = new Date().toISOString();
@@ -397,68 +437,30 @@ function createInMemoryStore(): TaskStore {
       for (const tag of tags) {
         addTagStmt.run(id, tag);
       }
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
-    async getTask(id) {
-      const row = selectById.get(id) as Record<string, unknown> | undefined;
-      if (!row) return undefined;
-      const tagRows = selectTags.all(id) as { tag: string }[];
-      return {
-        id: row.id,
-        source: row.source ?? "feishu",
-        feishuMessageId: row.feishu_message_id,
-        feishuChatId: row.feishu_chat_id,
-        feishuUserId: row.feishu_user_id,
-        commandText: row.command_text,
-        status: row.status,
-        resultSummary: row.result_summary,
-        resultDetails: row.result_details,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        pickedAt: row.picked_at,
-        startedAt: row.started_at,
-        completedAt: row.completed_at,
-        priority: row.priority,
-        tags: tagRows.map(r => r.tag),
-        attachments: row.attachments ? JSON.parse(row.attachments as string) : [],
-        assignedDeviceId: row.assigned_device_id,
-        dueDate: row.due_date,
-        reminderAt: row.reminder_at,
-        description: row.description,
-        cycleId: row.cycle_id,
-        moduleId: row.module_id,
-        dueDateOffsetMs: row.due_date_offset_ms,
-        reminderOffsetMs: row.reminder_offset_ms,
-        estimatedMinutes: row.estimated_minutes,
-        isPinned: row.is_pinned === 1,
-        archivedAt: row.archived_at,
-        reopenedCount: row.reopened_count,
-        notes: row.notes ? JSON.parse(row.notes as string) : [],
-        estimatedCost: row.estimated_cost,
-        actualCost: row.actual_cost,
-      } as Task;
-    },
-    async updateTaskStatus(id, status) {
+    getTask: getTaskImpl,
+    async updateTaskStatus(id: string, status: string) {
       const now = new Date().toISOString();
       updateStatusStmt.run(status, now, id);
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
-    async assignTask(id, deviceId) {
+    async assignTask(id: string, deviceId: string) {
       const now = new Date().toISOString();
       assignStmt.run(deviceId, now, id);
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
-    async setTaskPriority(id, priority) {
+    async setTaskPriority(id: string, priority: string) {
       const now = new Date().toISOString();
       setPriorityStmt.run(priority, now, id);
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
-    async setTaskDueDate(id, dueDate) {
+    async setTaskDueDate(id: string, dueDate: string | null) {
       const now = new Date().toISOString();
       setDueDateStmt.run(dueDate, now, id);
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
-    async listTasks(status, limit) {
+    async listTasks(status?: string, limit?: number) {
       const stmt = db.prepare(
         status
           ? "SELECT id FROM tasks WHERE status = ? LIMIT ?"
@@ -469,16 +471,16 @@ function createInMemoryStore(): TaskStore {
         : stmt.all(limit ?? 20) as { id: string }[];
       const tasks: Task[] = [];
       for (const row of rows) {
-        const task = await this.getTask(row.id);
+        const task = await getTaskImpl(row.id);
         if (task) tasks.push(task);
       }
       return tasks;
     },
-    async addTags(id, tags) {
+    async addTags(id: string, tags: string[]) {
       for (const tag of tags) {
         addTagStmt.run(id, tag);
       }
-      return this.getTask(id) as Promise<Task>;
+      return getTaskImpl(id) as Promise<Task>;
     },
   } as unknown as TaskStore;
 }
@@ -508,14 +510,15 @@ describe("feishu commands - task management", () => {
 
   describe("/assign command", () => {
     it("assigns a task to a device", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_assign_1",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "assign", args: `${task.id} device_A` },
         "user_1",
@@ -563,14 +566,15 @@ describe("feishu commands - task management", () => {
 
   describe("/priority command", () => {
     it("changes task priority", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_prio_1",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "priority", args: `${task.id} urgent` },
         "user_1",
@@ -587,14 +591,15 @@ describe("feishu commands - task management", () => {
     });
 
     it("shows error for invalid priority", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_prio_2",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "priority", args: `${task.id} invalid` },
         "user_1",
@@ -611,14 +616,15 @@ describe("feishu commands - task management", () => {
 
   describe("/due command", () => {
     it("sets task due date", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_due_1",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "due", args: `${task.id} 2026-12-31` },
         "user_1",
@@ -635,14 +641,15 @@ describe("feishu commands - task management", () => {
     });
 
     it("clears due date with 'clear'", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_due_2",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       await store.setTaskDueDate(task.id, "2026-12-31");
       const result = await executeCommand(
         { command: "due", args: `${task.id} clear` },
@@ -658,14 +665,15 @@ describe("feishu commands - task management", () => {
     });
 
     it("shows error for invalid date", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_due_3",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "due", args: `${task.id} not-a-date` },
         "user_1",
@@ -682,14 +690,15 @@ describe("feishu commands - task management", () => {
 
   describe("/tag command", () => {
     it("adds tags to a task", async () => {
-      const task = await store.createTask({
+      const task = await store.createTask(makeTask({
+        id: "",
         feishuMessageId: "msg_tag_1",
         feishuChatId: "chat_1",
         feishuUserId: "user_1",
         commandText: "test task",
         status: "pending",
         priority: "normal",
-      });
+      }));
       const result = await executeCommand(
         { command: "tag", args: `${task.id} bug,urgent` },
         "user_1",

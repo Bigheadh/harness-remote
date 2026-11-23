@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { User, UserRole } from "../../shared/types.js";
+import { hashSecret, isHashedSecret } from "./token-hash.js";
 
 export interface UserStore {
   createUser(username: string, role: UserRole, feishuUserId?: string): Promise<User>;
@@ -47,7 +48,7 @@ export function createUserStore(storagePath: string): UserStore {
   db.exec(`PRAGMA foreign_keys=ON;`);
   db.exec(`PRAGMA busy_timeout=5000;`);
 
-  // Create users table
+  // Create users table (token column stores sha256:<hex> hash)
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -60,8 +61,28 @@ export function createUserStore(storagePath: string): UserStore {
     )
   `);
 
-  // Index for token lookups (the hot path)
+  // Index for token hash lookups (the hot path)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_users_token ON users(token)`);
+
+  // Migrate any legacy plaintext tokens to SHA-256 hashes at startup
+  const legacyRows = db
+    .prepare(`SELECT id, token FROM users WHERE token NOT LIKE 'sha256:%'`)
+    .all() as Array<{ id: string; token: string }>;
+  if (legacyRows.length > 0) {
+    const migrateStmt = db.prepare(`UPDATE users SET token = ? WHERE id = ?`);
+    db.exec("BEGIN");
+    try {
+      for (const row of legacyRows) {
+        if (!isHashedSecret(row.token)) {
+          migrateStmt.run(hashSecret(row.token), row.id);
+        }
+      }
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  }
 
   // Prepare statements
   const insertUser = db.prepare(`
@@ -82,13 +103,15 @@ export function createUserStore(storagePath: string): UserStore {
   return {
     async createUser(username: string, role: UserRole, feishuUserId?: string): Promise<User> {
       const id = generateUserId();
-      const token = generateUserToken();
+      const rawToken = generateUserToken();
+      const tokenHash = hashSecret(rawToken);
       const now = new Date().toISOString();
 
-      insertUser.run(id, username, token, role, feishuUserId ?? null, now, now);
+      insertUser.run(id, username, tokenHash, role, feishuUserId ?? null, now, now);
 
       const row = selectById.get(id) as Record<string, unknown>;
-      return rowToUser(row);
+      // Return plaintext token once upon creation; database only holds the SHA-256 hash
+      return { ...rowToUser(row), token: rawToken };
     },
 
     async getUserById(id: string): Promise<User | undefined> {
@@ -97,7 +120,8 @@ export function createUserStore(storagePath: string): UserStore {
     },
 
     async getUserByToken(token: string): Promise<User | undefined> {
-      const row = selectByToken.get(token) as Record<string, unknown> | undefined;
+      const tokenHash = isHashedSecret(token) ? token : hashSecret(token);
+      const row = selectByToken.get(tokenHash) as Record<string, unknown> | undefined;
       return row ? rowToUser(row) : undefined;
     },
 
@@ -127,14 +151,16 @@ export function createUserStore(storagePath: string): UserStore {
     },
 
     async regenerateToken(id: string): Promise<User> {
-      const newToken = generateUserToken();
+      const rawToken = generateUserToken();
+      const tokenHash = hashSecret(rawToken);
       const now = new Date().toISOString();
-      const result = updateToken.run(newToken, now, id);
+      const result = updateToken.run(tokenHash, now, id);
       if (Number(result.changes) === 0) {
         throw new Error(`User not found: ${id}`);
       }
       const row = selectById.get(id) as Record<string, unknown>;
-      return rowToUser(row);
+      // Return plaintext token once upon regeneration
+      return { ...rowToUser(row), token: rawToken };
     },
 
     async countUsers(): Promise<number> {

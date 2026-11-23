@@ -7,11 +7,13 @@ import type { Task, TaskStatus, TaskPriority, TaskComment, TaskNote, ScheduledTa
 function createMockClient(): TaskApiClient & {
   calls: { method: string; args: unknown[] }[];
   failWith?: string;
+  serverResponse?: unknown;
 } {
   const calls: { method: string; args: unknown[] }[] = [];
   const mock: TaskApiClient & {
     calls: { method: string; args: unknown[] }[];
     failWith?: string;
+    serverResponse?: unknown;
   } = {
     calls,
     failWith: undefined,
@@ -28,6 +30,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_test",
           commandText: "帮我检查项目状态",
           status: status ?? "pending",
+          priority: "normal",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
@@ -45,6 +48,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_detail",
         commandText: "详细任务",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
@@ -61,6 +65,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_running",
         commandText: "运行中任务",
         status: "running",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:01:00.000Z",
       };
@@ -85,6 +90,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_result",
         commandText: "结果任务",
         status: success ? "done" : "failed",
+          priority: "normal",
         resultSummary: summary,
         resultDetails: details,
         createdAt: "2026-06-01T12:00:00.000Z",
@@ -120,6 +126,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_search",
           commandText: "搜索测试任务",
           status: options.status ?? "done",
+          priority: "normal",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
           resultSummary: "搜索结果",
@@ -138,6 +145,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_tags",
         commandText: "标签任务",
         status: "pending",
+          priority: "normal",
         tags,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
@@ -155,16 +163,13 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_tags",
         commandText: "标签任务",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
     },
 
-    async listAllTags(): Promise<string[]> {
-      calls.push({ method: "listAllTags", args: [] });
-      if (mock.failWith) throw new Error(mock.failWith);
-      return ["bug", "feature", "urgent"];
-    },
+    
 
     async setDueDate(taskId: string, dueDate: string | null): Promise<Task> {
       calls.push({ method: "setDueDate", args: [taskId, dueDate] });
@@ -177,6 +182,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_due",
         commandText: "截止日期任务",
         status: "pending",
+          priority: "normal",
         dueDate: dueDate ?? undefined,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
@@ -194,6 +200,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_remind",
         commandText: "提醒任务",
         status: "pending",
+          priority: "normal",
         reminderAt: reminderAt ?? undefined,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
@@ -211,6 +218,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_desc",
         commandText: "描述任务",
         status: "pending",
+          priority: "normal",
         description: description ?? undefined,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
@@ -228,6 +236,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_cmd",
         commandText,
         status: "pending",
+        priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
@@ -261,6 +270,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_estimated",
         commandText: "估算任务",
         status: "pending",
+          priority: "normal",
         estimatedMinutes: minutes ?? undefined,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
@@ -279,6 +289,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_overdue",
           commandText: "逾期任务",
           status: "pending",
+          priority: "normal",
           dueDate: "2026-05-01T00:00:00.000Z",
           createdAt: "2026-04-01T12:00:00.000Z",
           updatedAt: "2026-04-01T12:00:00.000Z",
@@ -639,6 +650,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_scheduled",
           commandText: "Scheduled task result",
           status: "pending",
+          priority: "normal",
           createdAt: "2026-06-02T12:00:00.000Z",
           updatedAt: "2026-06-02T12:00:00.000Z",
         },
@@ -670,6 +682,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_dep",
         commandText: "Dependency task",
         status: "pending",
+          priority: "normal",
         dependsOn: dependsOnIds.length > 0 ? dependsOnIds : undefined,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-02T12:00:00.000Z",
@@ -699,6 +712,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_dep",
         commandText: "Dependency task",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-02T12:00:00.000Z",
       };
@@ -716,6 +730,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_ready",
           commandText: "Ready task",
           status: "pending",
+          priority: "normal",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
@@ -831,6 +846,7 @@ function createMockClient(): TaskApiClient & {
           matchPriorities: ["high", "urgent"],
           matchTags: [],
           enabled: true,
+          createdBy: "admin",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
@@ -849,6 +865,7 @@ function createMockClient(): TaskApiClient & {
         matchPriorities: ["high", "urgent"],
         matchTags: [],
         enabled: true,
+          createdBy: "admin",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
@@ -866,6 +883,7 @@ function createMockClient(): TaskApiClient & {
         matchPriorities: policy.matchPriorities as ("low" | "normal" | "high" | "urgent")[] | undefined,
         matchTags: policy.matchTags,
         enabled: policy.enabled ?? true,
+          createdBy: "admin",
         createdAt: "2026-06-02T12:00:00.000Z",
         updatedAt: "2026-06-02T12:00:00.000Z",
       };
@@ -883,6 +901,7 @@ function createMockClient(): TaskApiClient & {
         matchPriorities: (updates.matchPriorities as ("low" | "normal" | "high" | "urgent")[]) ?? undefined,
         matchTags: (updates.matchTags as string[]) ?? undefined,
         enabled: (updates.enabled as boolean) ?? true,
+          createdBy: "admin",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-02T12:00:00.000Z",
       };
@@ -929,7 +948,7 @@ function createMockClient(): TaskApiClient & {
           targetMinutes: 240,
           actualMinutes: 200,
           detectedAt: "2026-06-02T10:00:00.000Z",
-          resolvedAt: null,
+          resolvedAt: undefined,
         },
       ];
     },
@@ -954,6 +973,7 @@ function createMockClient(): TaskApiClient & {
           matchPriorities: ["high", "urgent"],
           matchTags: [],
           enabled: true,
+          createdBy: "admin",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
         },
@@ -973,6 +993,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_retry",
         commandText: "重试任务",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:03:00.000Z",
       };
@@ -989,6 +1010,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_clone",
         commandText: "克隆任务",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:03:00.000Z",
       };
@@ -1005,6 +1027,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_reopen",
         commandText: "重新打开任务",
         status: "pending",
+          priority: "normal",
         reopenedCount: 1,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:05:00.000Z",
@@ -1022,6 +1045,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_pin",
         commandText: "固定任务",
         status: "pending",
+          priority: "normal",
         pinned: true,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:04:00.000Z",
@@ -1039,6 +1063,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_unpin",
         commandText: "取消固定任务",
         status: "pending",
+          priority: "normal",
         pinned: false,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:05:00.000Z",
@@ -1197,6 +1222,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_archive",
         commandText: "Archived task",
         status: "done",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
         archivedAt: new Date().toISOString(),
@@ -1214,6 +1240,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_unarchive",
         commandText: "Unarchived task",
         status: "done",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-01T12:00:00.000Z",
       };
@@ -1231,6 +1258,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_archived",
           commandText: "Archived task",
           status: "done",
+          priority: "normal",
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-01T12:00:00.000Z",
           archivedAt: new Date().toISOString(),
@@ -1866,6 +1894,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_cycle",
         commandText: "Cycle task",
         status: "pending",
+          priority: "normal",
         cycleId,
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-07T00:00:00.000Z",
@@ -1883,6 +1912,7 @@ function createMockClient(): TaskApiClient & {
         feishuUserId: "ou_cycle",
         commandText: "Cycle task",
         status: "pending",
+          priority: "normal",
         createdAt: "2026-06-01T12:00:00.000Z",
         updatedAt: "2026-06-07T00:00:00.000Z",
       };
@@ -1900,6 +1930,7 @@ function createMockClient(): TaskApiClient & {
           feishuUserId: "ou_cycle_1",
           commandText: "Sprint task 1",
           status: "done",
+          priority: "normal",
           cycleId,
           createdAt: "2026-06-01T12:00:00.000Z",
           updatedAt: "2026-06-07T00:00:00.000Z",
@@ -2113,6 +2144,47 @@ function createMockClient(): TaskApiClient & {
       if (mock.failWith) throw new Error(mock.failWith);
       return ["bug", "feature", "urgent"];
     },
+    async forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task> {
+      calls.push({ method: "forwardTask", args: [taskId, targetDeviceId, message] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return {
+        id: taskId,
+        source: "feishu",
+        feishuMessageId: "om_fwd",
+        feishuChatId: "oc_test",
+        feishuUserId: "ou_test",
+        commandText: "forwarded task",
+        status: "pending",
+        priority: "normal",
+        assignedDeviceId: targetDeviceId,
+        createdAt: "2026-06-01T12:00:00.000Z",
+        updatedAt: "2026-06-01T12:00:00.000Z",
+      };
+    },
+
+    async applySavedView(viewId: string): Promise<Task[]> {
+      calls.push({ method: "applySavedView", args: [viewId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [];
+    },
+
+    async listTaskLinks(taskId: string): Promise<import("../../src/shared/types.js").TaskLink[]> {
+      calls.push({ method: "listTaskLinks", args: [taskId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return [];
+    },
+
+    async addTaskLink(taskId: string, title: string, url: string): Promise<import("../../src/shared/types.js").TaskLink> {
+      calls.push({ method: "addTaskLink", args: [taskId, title, url] });
+      if (mock.failWith) throw new Error(mock.failWith);
+      return { id: 1, taskId, title, url, addedBy: "mcp", createdAt: "2026-06-01T12:00:00.000Z" };
+    },
+
+    async deleteTaskLink(taskId: string, linkId: number): Promise<void> {
+      calls.push({ method: "deleteTaskLink", args: [taskId, linkId] });
+      if (mock.failWith) throw new Error(mock.failWith);
+    },
+
   };
   return mock;
 }
@@ -2168,8 +2240,8 @@ describe("MCP tools", () => {
   });
 
   describe("tool registration", () => {
-      it("registers all 160 tools", () => {
-        expect(mockServer.registrations).toHaveLength(160);
+      it("registers all 161 tools", () => {
+        expect(mockServer.registrations).toHaveLength(161);
     });
 
     it("registers list_tasks with correct description", () => {
@@ -3907,7 +3979,7 @@ describe("MCP tools", () => {
 
       expect(mock.calls[0].method).toBe("updateSavedView");
       expect(mock.calls[0].args[0]).toBe("view_1");
-      expect(mock.calls[0].args[1].name).toBe("Renamed view");
+      expect((mock.calls[0].args[1] as Record<string, unknown>).name).toBe("Renamed view");
     });
 
     it("updates saved view filters", async () => {
@@ -3917,7 +3989,7 @@ describe("MCP tools", () => {
       const result = await tool.handler({ viewId: "view_1", filters: newFilters });
 
       expect(mock.calls[0].method).toBe("updateSavedView");
-      expect(mock.calls[0].args[1].filters).toEqual(newFilters);
+      expect((mock.calls[0].args[1] as Record<string, unknown>).filters).toEqual(newFilters);
     });
 
     it("returns error when updateSavedView fails", async () => {
@@ -5061,7 +5133,7 @@ describe("MCP tools", () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.csv).toBeDefined();
-      expect(mock.calls[0].args[0].status).toBe("pending");
+      expect((mock.calls[0].args[0] as Record<string, unknown>).status).toBe("pending");
     });
 
     it("handles errors gracefully", async () => {
@@ -5130,7 +5202,7 @@ describe("MCP tools", () => {
       expect(parsed.task.status).toBe("pending");
       expect(parsed.task.priority).toBe("normal");
       expect(mock.calls[0].method).toBe("createTask");
-      expect(mock.calls[0].args[0].commandText).toBe("Deploy the new version to production");
+      expect((mock.calls[0].args[0] as Record<string, unknown>).commandText).toBe("Deploy the new version to production");
     });
 
     it("creates a task with all optional fields", async () => {
