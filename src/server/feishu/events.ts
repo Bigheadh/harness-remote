@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { timingSafeEqual } from "node:crypto";
+import { Readable } from "node:stream";
 import type { Task, TaskPriority, TaskStatus, Attachment, FeishuFileType } from "../../shared/types.js";
 import type { TaskStore } from "../tasks/store.js";
 import type { AuditLogStore } from "../audit/store.js";
 import type { WebhookStore } from "../webhooks/store.js";
 import type { FeishuReplyClient } from "./client.js";
 import { buildTaskCreatedCard } from "./card-builder.js";
+import { decryptFeishuEvent, verifyFeishuSignature } from "./crypto.js";
 import { createLogger } from "../../shared/logger.js";
 import { dispatchWebhook } from "../webhooks/dispatcher.js";
 import { broadcastTaskCreated, broadcastTaskStatusChanged } from "../sse/broadcaster.js";
@@ -445,6 +447,47 @@ export function createTaskFromFeishuEvent(event: FeishuEventContext): Task {
   };
 }
 
+type FeishuRawRequest = FastifyRequest & { feishuRawBody?: string };
+
+function unwrapFeishuBody(
+  req: FeishuRawRequest,
+  reply: FastifyReply,
+  feishuConfig: FeishuConfig,
+): Record<string, unknown> | null {
+  const rawObj = req.body as Record<string, unknown> | undefined;
+  const signature = req.headers["x-lark-signature"] as string | undefined;
+  const timestamp = req.headers["x-lark-request-timestamp"] as string | undefined;
+  const nonce = req.headers["x-lark-request-nonce"] as string | undefined;
+  const isEncrypted = typeof rawObj?.["encrypt"] === "string";
+
+  // Verify X-Lark-Signature whenever encryptKey is configured and either a signature header or encrypted payload is sent
+  if (feishuConfig.encryptKey && (signature !== undefined || isEncrypted)) {
+    const rawBody = req.feishuRawBody ?? JSON.stringify(rawObj ?? {});
+    if (!verifyFeishuSignature(timestamp, nonce, feishuConfig.encryptKey, rawBody, signature)) {
+      log.warn({}, "Feishu webhook: invalid or missing X-Lark-Signature");
+      reply.code(401).send({ error: "Invalid Feishu signature" });
+      return null;
+    }
+  }
+
+  if (isEncrypted) {
+    if (!feishuConfig.encryptKey) {
+      log.warn({}, "Feishu webhook: encrypted payload received but encryptKey is not configured");
+      reply.code(400).send({ error: "Encryption key not configured" });
+      return null;
+    }
+    try {
+      return decryptFeishuEvent(rawObj!["encrypt"] as string, feishuConfig.encryptKey);
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "Feishu webhook: failed to decrypt payload");
+      reply.code(400).send({ error: "Failed to decrypt Feishu payload" });
+      return null;
+    }
+  }
+
+  return (rawObj ?? {}) as Record<string, unknown>;
+}
+
 export function registerFeishuRoutes(
   server: FastifyInstance,
   store: TaskStore,
@@ -453,12 +496,27 @@ export function registerFeishuRoutes(
   webhookStore?: WebhookStore,
   feishuClient?: FeishuReplyClient,
 ): void {
+  // Capture exact raw body bytes on /feishu/* routes for X-Lark-Signature verification
+  server.addHook("preParsing", async (req, _reply, payload) => {
+    if (!req.url.startsWith("/feishu/")) {
+      return payload;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of payload) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks);
+    (req as FeishuRawRequest).feishuRawBody = raw.toString("utf8");
+    return Readable.from(raw);
+  });
+
   // Card action callback endpoint (handles button clicks on Feishu cards)
   server.post("/feishu/card-action", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as Record<string, unknown>;
+    const body = unwrapFeishuBody(req as FeishuRawRequest, reply, feishuConfig);
+    if (!body) return reply;
 
     // URL verification challenge
-    if (body && typeof body === "object" && "challenge" in body) {
+    if ("challenge" in body) {
       const challenge = body["challenge"];
       if (typeof challenge === "string") {
         return reply.send({ challenge });
@@ -581,10 +639,11 @@ export function registerFeishuRoutes(
   });
 
   server.post("/feishu/events", async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as Record<string, unknown>;
+    const body = unwrapFeishuBody(req as FeishuRawRequest, reply, feishuConfig);
+    if (!body) return reply;
 
     // URL verification challenge
-    if (body && typeof body === "object" && "challenge" in body) {
+    if ("challenge" in body) {
       const challenge = body["challenge"];
       if (typeof challenge === "string") {
         log.info({}, "URL verification challenge received");
