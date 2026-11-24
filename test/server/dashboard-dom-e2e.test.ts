@@ -168,7 +168,7 @@ function createDashboardSandbox(
 }
 
 describe("Dashboard Modular Client DOM & Behavior Verification", () => {
-  it("defines every onclick handler referenced in index.html across the 4 modular JS files", () => {
+  it("defines every onclick handler referenced in index.html and all 4 modular JS templates", () => {
     const { ctx, html } = createDashboardSandbox(async () => ({
       ok: true,
       status: 200,
@@ -176,16 +176,22 @@ describe("Dashboard Modular Client DOM & Behavior Verification", () => {
       text: async () => "{}",
     }));
 
-    const keywords = new Set(["if", "for", "while", "switch", "return", "void", "typeof"]);
+    const keywords = new Set(["if", "for", "while", "switch", "return", "void", "typeof", "event"]);
     const handlerNames = new Set<string>();
-    for (const m of html.matchAll(/onclick="([^"]+)"/g)) {
-      for (const call of m[1].matchAll(/(?<![.\w$])([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g)) {
-        if (!keywords.has(call[1])) {
-          handlerNames.add(call[1]);
+    const allSources = [
+      html,
+      ...DASHBOARD_JS_MODULES.map((m) => getDashboardJsModule(m) ?? ""),
+    ];
+    for (const source of allSources) {
+      for (const m of source.matchAll(/onclick="([^"]+)"/g)) {
+        for (const call of m[1].matchAll(/(?<![.\w$])([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g)) {
+          if (!keywords.has(call[1])) {
+            handlerNames.add(call[1]);
+          }
         }
       }
     }
-    expect(handlerNames.size).toBeGreaterThan(10);
+    expect(handlerNames.size).toBeGreaterThan(20);
 
     const missing: string[] = [];
     for (const fnName of handlerNames) {
@@ -194,6 +200,11 @@ describe("Dashboard Modular Client DOM & Behavior Verification", () => {
       }
     }
     expect(missing).toEqual([]);
+
+    // Single quotes and HTML special chars are all escaped safely
+    expect(vm.runInContext(`escapeHtml("Bob's <script> & \\"x\\"")`, ctx)).toBe(
+      "Bob&#39;s &lt;script&gt; &amp; &quot;x&quot;",
+    );
   });
 
   it("loads tasks via cookie auth, escapes XSS payloads, neutralizes javascript: links, and handles logout", async () => {

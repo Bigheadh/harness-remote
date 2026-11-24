@@ -692,7 +692,7 @@
         } else {
           for (const task of col.tasks) {
             const priClass = PRIORITY_CLASSES[task.priority] || 'normal';
-            html += '<div class="kanban-card" onclick="openDetail(\'' + task.id + '\')">';
+            html += '<div class="kanban-card" onclick="showDetail(\'' + escapeHtml(task.id) + '\')">';
             html += '<div class="kanban-card-id">' + escapeHtml(task.id.substring(0, 16)) + '</div>';
             html += '<div class="kanban-card-command">' + escapeHtml(task.commandText.substring(0, 120)) + '</div>';
             html += '<div class="kanban-card-meta">';
