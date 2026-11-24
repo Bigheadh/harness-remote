@@ -1,0 +1,33 @@
+# Caddyfile — Production reverse proxy for harness-remote with automatic HTTPS & SSE support.
+#
+# Usage:
+#   Replace `inbox.example.com` with your domain and reload Caddy:
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+inbox.example.com {
+    encode gzip zstd
+
+    # Security headers (supplementing app-level CSP/X-Frame-Options)
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    # SSE real-time stream: flush chunks immediately without buffering
+    handle /api/tasks/stream* {
+        reverse_proxy 127.0.0.1:3000 {
+            flush_interval -1
+            transport http {
+                read_timeout 1h
+            }
+        }
+    }
+
+    # Default proxy for Feishu webhooks, REST API, OpenAPI docs, and Dashboard
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

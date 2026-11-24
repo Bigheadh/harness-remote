@@ -1,0 +1,14 @@
+[Unit]
+Description=harness-remote online SQLite hot backup (VACUUM INTO)
+After=network.target
+
+[Service]
+Type=oneshot
+User=harness
+Group=harness
+WorkingDirectory=/opt/harness-remote
+ExecStart=/opt/harness-remote/scripts/backup-sqlite.sh /opt/harness-remote/data /opt/harness-remote/backups 14
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/harness-remote/backups
+ReadOnlyPaths=/opt/harness-remote/data

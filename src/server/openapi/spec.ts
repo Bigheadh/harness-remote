@@ -5,7 +5,18 @@ import {
   ReportTaskResultBodySchema,
   SetPriorityBodySchema,
   DashboardLoginBodySchema,
+  BulkStatusBodySchema,
+  BulkAssignBodySchema,
+  BulkPriorityBodySchema,
+  BulkIdsBodySchema,
   CreateWebhookBodySchema,
+  CreateUserBodySchema,
+  CreateApiKeyBodySchema,
+  RegisterDeviceBodySchema,
+  CreateTemplateBodySchema,
+  CreateCycleBodySchema,
+  CreateModuleBodySchema,
+  CreateSlaPolicyBodySchema,
 } from "./schemas.js";
 
 function toSchemaObject(schema: z.ZodType): Record<string, unknown> {
@@ -22,7 +33,7 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000"): Record<st
     openapi: "3.1.0",
     info: {
       title: "harness-remote API",
-      version: "1.0.0",
+      version: "1.1.0",
       description:
         "Feishu task inbox & collaboration server API for local Codex CLI / MCP clients and the hardened web dashboard.",
     },
@@ -58,7 +69,18 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000"): Record<st
         ReportTaskResultBody: toSchemaObject(ReportTaskResultBodySchema),
         SetPriorityBody: toSchemaObject(SetPriorityBodySchema),
         DashboardLoginBody: toSchemaObject(DashboardLoginBodySchema),
+        BulkIdsBody: toSchemaObject(BulkIdsBodySchema),
+        BulkStatusBody: toSchemaObject(BulkStatusBodySchema),
+        BulkAssignBody: toSchemaObject(BulkAssignBodySchema),
+        BulkPriorityBody: toSchemaObject(BulkPriorityBodySchema),
         CreateWebhookBody: toSchemaObject(CreateWebhookBodySchema),
+        CreateUserBody: toSchemaObject(CreateUserBodySchema),
+        CreateApiKeyBody: toSchemaObject(CreateApiKeyBodySchema),
+        RegisterDeviceBody: toSchemaObject(RegisterDeviceBodySchema),
+        CreateTemplateBody: toSchemaObject(CreateTemplateBodySchema),
+        CreateCycleBody: toSchemaObject(CreateCycleBodySchema),
+        CreateModuleBody: toSchemaObject(CreateModuleBodySchema),
+        CreateSlaPolicyBody: toSchemaObject(CreateSlaPolicyBodySchema),
         ErrorResponse: {
           type: "object",
           properties: {
@@ -85,6 +107,16 @@ export function buildOpenApiSpec(serverUrl = "http://localhost:3000"): Record<st
           responses: {
             "200": { description: "Healthy (`{ ok: true }`)" },
             "503": { description: "Database unreachable" },
+          },
+        },
+      },
+      "/api/health/details": {
+        get: {
+          tags: ["System"],
+          summary: "Authenticated diagnostic health details (uptime, memory, schema version, SSE clients)",
+          responses: {
+            "200": { description: "Diagnostic health payload" },
+            "401": { description: "Unauthorized" },
           },
         },
       },

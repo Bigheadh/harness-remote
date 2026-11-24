@@ -5,6 +5,7 @@ import type { ApiKeyStore } from "../auth/apikeys/store.js";
 import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
+import { RegisterDeviceBodySchema, parseBody } from "../openapi/schemas.js";
 
 const log = createLogger({ level: "info" });
 
@@ -49,18 +50,10 @@ export function registerDeviceRoutes(
       throw e;
     }
 
-    const body = req.body as { name?: string; capabilities?: string } | undefined;
+    const body = parseBody(RegisterDeviceBodySchema, req.body, reply);
+    if (!body) return;
 
-    if (typeof body?.name !== "string" || body.name.trim() === "") {
-      return reply.code(400).send({
-        error: {
-          code: "invalid_request",
-          message: "Request body must include 'name' (non-empty string)",
-        },
-      });
-    }
-
-    const device = await store.registerDevice(body.name.trim(), body.capabilities);
+    const device = await store.registerDevice(body.name, body.capabilities);
     log.info({ deviceId: device.id, deviceName: device.name }, "Device registered");
     return reply.code(201).send({ device });
   });

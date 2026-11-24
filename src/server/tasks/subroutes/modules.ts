@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { authenticate, authorize } from "../../auth/middleware.js";
 import { AppError } from "../../../shared/errors.js";
 import type { TaskRouteContext } from "./context.js";
+import { CreateModuleBodySchema, parseBody } from "../../openapi/schemas.js";
 
 export function registerModuleRoutes(
   server: FastifyInstance,
@@ -67,20 +68,12 @@ export function registerModuleRoutes(
       }
       throw e;
     }
-    const body = req.body as {
-      name?: string;
-      description?: string;
-      startDate?: string;
-      endDate?: string;
-    } | undefined;
-
-    if (typeof body?.name !== "string" || body.name.trim() === "") {
-      return reply.code(400).send({ error: { code: "validation_error", message: "Module name is required" } });
-    }
+    const body = parseBody(CreateModuleBodySchema, req.body, reply);
+    if (!body) return;
 
     try {
       const mod = await store.createModule({
-        name: body.name.trim(),
+        name: body.name,
         description: body.description,
         startDate: body.startDate,
         endDate: body.endDate,

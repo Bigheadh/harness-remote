@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Fastify, { type FastifyRequest } from "fastify";
@@ -87,17 +88,25 @@ export async function startServer(): Promise<void> {
     encodings: ["gzip", "deflate"],
   });
 
-  // Request logging middleware
-  server.addHook("onRequest", async (req) => {
-    (req as FastifyRequest & { startTime: number }).startTime = Date.now();
+  // Request ID tracing & logging middleware
+  server.addHook("onRequest", async (req, reply) => {
+    const incoming = req.headers["x-request-id"];
+    const reqId =
+      typeof incoming === "string" && incoming.trim().length > 0 && incoming.length <= 128
+        ? incoming.trim()
+        : randomUUID();
+    (req as FastifyRequest & { startTime: number; traceId: string }).startTime = Date.now();
+    (req as FastifyRequest & { traceId: string }).traceId = reqId;
+    reply.header("X-Request-Id", reqId);
   });
 
   server.addHook("onResponse", async (req, reply) => {
-    const startTime = (req as FastifyRequest & { startTime: number }).startTime;
-    const duration = startTime ? Date.now() - startTime : 0;
+    const r = req as FastifyRequest & { startTime?: number; traceId?: string };
+    const duration = r.startTime ? Date.now() - r.startTime : 0;
     const safeUrl = redactUrlTokens(req.url);
     log.info(
       {
+        reqId: r.traceId,
         method: req.method,
         url: safeUrl,
         statusCode: reply.statusCode,

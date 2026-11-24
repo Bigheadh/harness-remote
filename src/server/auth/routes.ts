@@ -6,6 +6,7 @@ import { authenticate, authorize } from "./middleware.js";
 import { VALID_ROLES } from "./roles.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
+import { CreateUserBodySchema, parseBody } from "../openapi/schemas.js";
 
 const log = createLogger({ level: "info" });
 
@@ -51,30 +52,20 @@ export function registerUserRoutes(
       throw e;
     }
 
-    const body = req.body as { username?: string; role?: string; feishuUserId?: string } | undefined;
+    const body = parseBody(CreateUserBodySchema, req.body, reply);
+    if (!body) return;
 
-    if (typeof body?.username !== "string" || body.username.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'username' (non-empty string)" },
-      });
-    }
-
-    const role = (body.role ?? "viewer") as UserRole;
-    if (!VALID_ROLES.includes(role)) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: `Invalid role: ${body.role}. Must be one of: ${VALID_ROLES.join(", ")}` },
-      });
-    }
+    const role = body.role as UserRole;
 
     // Check for duplicate username
-    const existing = await store.getUserByUsername(body.username.trim());
+    const existing = await store.getUserByUsername(body.username);
     if (existing) {
       return reply.code(409).send({
         error: { code: "invalid_request", message: `Username already exists: ${body.username}` },
       });
     }
 
-    const user = await store.createUser(body.username.trim(), role, body.feishuUserId);
+    const user = await store.createUser(body.username, role, body.feishuUserId);
     log.info({ userId: user.id, username: user.username, role: user.role }, "User created");
 
     // Return user with token so admin can share it

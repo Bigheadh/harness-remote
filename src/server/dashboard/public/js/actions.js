@@ -16,13 +16,19 @@
     }
 
     function escapeHtml(s) {
-      if (!s) return '';
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      if (s === null || s === undefined) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    function logout() {
-      localStorage.removeItem('harness_token');
-      location.reload();
+    async function logout() {
+      try {
+        await fetch(API_BASE + '/dashboard/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+      } catch { /* ignore network errors on logout */ }
+      try { localStorage.removeItem('harness_token'); } catch {}
+      location.href = '/dashboard';
     }
 
     async function refresh() {
@@ -39,7 +45,10 @@
       label.textContent = 'Connecting...';
 
       if (eventSource) { eventSource.close(); }
-      eventSource = new EventSource(API_BASE + '/api/tasks/stream?token=' + TOKEN);
+      const sseUrl = TOKEN
+        ? API_BASE + '/api/tasks/stream?token=' + encodeURIComponent(TOKEN)
+        : API_BASE + '/api/tasks/stream';
+      eventSource = new EventSource(sseUrl);
 
       eventSource.onopen = () => {
         indicator.className = 'sse-indicator connected';

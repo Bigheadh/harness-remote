@@ -7,6 +7,7 @@ import { AppError } from "../../../shared/errors.js";
 import { createLogger } from "../../../shared/logger.js";
 import type { AuditLogStore } from "../../audit/store.js";
 import { recordApiKeyOp } from "../../metrics/collector.js";
+import { CreateApiKeyBodySchema, parseBody } from "../../openapi/schemas.js";
 
 const log = createLogger({ level: "info" });
 
@@ -44,13 +45,8 @@ export function registerApiKeyRoutes(
   // POST /api/keys - create a new API key
   server.post("/api/keys", async (req: FastifyRequest, reply: FastifyReply) => {
     const authCtx = (req as FastifyRequest & { authCtx: { user?: { id: string }; role: UserRole } }).authCtx;
-    const body = req.body as { name?: string; userId?: string; role?: string } | undefined;
-
-    if (typeof body?.name !== "string" || body.name.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'name' (non-empty string)" },
-      });
-    }
+    const body = parseBody(CreateApiKeyBodySchema, req.body, reply);
+    if (!body) return;
 
     // Target user: specified or the requesting user
     const targetUserId = body.userId ?? authCtx.user?.id;
@@ -60,7 +56,6 @@ export function registerApiKeyRoutes(
       });
     }
 
-    // Validate role
     const role = (body.role ?? authCtx.role ?? "viewer") as UserRole;
     if (!VALID_ROLES.includes(role)) {
       return reply.code(400).send({
@@ -68,7 +63,7 @@ export function registerApiKeyRoutes(
       });
     }
 
-    const apiKey = await apiKeyStore.createApiKey(body.name.trim(), targetUserId, role);
+    const apiKey = await apiKeyStore.createApiKey(body.name, targetUserId, role);
     log.info({ apiKeyId: apiKey.id, name: apiKey.name, userId: targetUserId }, "API key created");
     recordApiKeyOp("create");
 

@@ -24,7 +24,9 @@ import {
   broadcastTaskResultReported,
   broadcastTaskAssigned,
   broadcastTaskDeleted,
+  getClientCount,
 } from "../sse/broadcaster.js";
+import { TASK_SCHEMA_VERSION } from "./repos/schema.js";
 
 import type { TaskRouteContext } from "./subroutes/context.js";
 import { registerTemplateRoutes } from "./subroutes/templates.js";
@@ -135,6 +137,33 @@ export function registerTaskRoutes(
       return reply.code(503).send({ ok: false, error: "Database unreachable" });
     }
     return reply.send({ ok: true });
+  });
+
+  // Authenticated diagnostic health details (requires tasks.read)
+  server.get("/api/health/details", async (req: FastifyRequest, reply: FastifyReply) => {
+    const authCtx = (req as FastifyRequest & { authCtx: ReturnType<typeof authenticate> extends Promise<infer T> ? T : never }).authCtx;
+    try {
+      authorize(authCtx, "tasks.read");
+    } catch (e) {
+      if (e instanceof AppError) {
+        return reply.code(403).send({ error: { code: e.code, message: e.message } });
+      }
+      throw e;
+    }
+    const dbOk = await store.healthCheck();
+    const mem = process.memoryUsage();
+    return reply.code(dbOk ? 200 : 503).send({
+      ok: dbOk,
+      uptimeSeconds: Math.round(process.uptime()),
+      nodeVersion: process.version,
+      schemaVersion: TASK_SCHEMA_VERSION,
+      sseClients: getClientCount(),
+      memoryMb: {
+        rss: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+        heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+      },
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // RBAC-aware auth hook for /api/* routes

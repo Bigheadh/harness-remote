@@ -5,6 +5,7 @@ import { AppError } from "../../../shared/errors.js";
 import { buildSlaBreachCard } from "../../feishu/card-builder.js";
 import { recordSlaEvent } from "../../metrics/collector.js";
 import type { TaskRouteContext } from "./context.js";
+import { CreateSlaPolicyBodySchema, parseBody } from "../../openapi/schemas.js";
 
 export function registerSlaRoutes(
   server: FastifyInstance,
@@ -63,45 +64,17 @@ export function registerSlaRoutes(
       throw e;
     }
 
-    const body = req.body as {
-      name?: string;
-      description?: string;
-      targetMinutes?: number;
-      warningThresholdPercent?: number;
-      matchPriorities?: string[];
-      matchTags?: string[];
-      enabled?: boolean;
-    };
-
-    if (typeof body?.name !== "string" || body.name.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'name' (non-empty string)" },
-      });
-    }
-    if (typeof body?.targetMinutes !== "number" || body.targetMinutes <= 0) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'targetMinutes' (positive number in minutes)" },
-      });
-    }
-
-    const validPriorities = ["low", "normal", "high", "urgent"];
-    if (body.matchPriorities && body.matchPriorities.length > 0) {
-      const invalid = body.matchPriorities.filter((p) => !validPriorities.includes(p));
-      if (invalid.length > 0) {
-        return reply.code(400).send({
-          error: { code: "invalid_request", message: `Invalid priorities: ${invalid.join(", ")}. Must be one of: ${validPriorities.join(", ")}` },
-        });
-      }
-    }
+    const body = parseBody(CreateSlaPolicyBodySchema, req.body, reply);
+    if (!body) return;
 
     const policy = await store.createSlaPolicy({
-      name: body.name.trim(),
+      name: body.name,
       description: body.description,
       targetMinutes: body.targetMinutes,
-      warningThresholdPercent: body.warningThresholdPercent ?? 80,
+      warningThresholdPercent: body.warningThresholdPercent,
       matchPriorities: body.matchPriorities as TaskPriority[] | undefined,
       matchTags: body.matchTags,
-      enabled: body.enabled ?? true,
+      enabled: body.enabled,
       createdBy: authCtx.user?.username ?? "api",
     });
     log.info({ policyId: policy.id, name: policy.name }, "SLA policy created");
