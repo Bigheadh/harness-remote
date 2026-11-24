@@ -138,3 +138,28 @@ export function authorize(authCtx: AuthContext, permission: Permission): void {
     );
   }
 }
+
+/**
+ * Extract `req.authCtx` and enforce `permission`, sending a 403 response and returning `undefined` on denial.
+ */
+export function requireAuthz(
+  req: { authCtx?: AuthContext },
+  reply: { code(statusCode: number): { send(payload: unknown): unknown } },
+  permission: Permission,
+): AuthContext | undefined {
+  const authCtx = req.authCtx;
+  if (!authCtx) {
+    reply.code(401).send({ error: { code: "unauthorized", message: "Missing authentication context" } });
+    return undefined;
+  }
+  try {
+    authorize(authCtx, permission);
+    return authCtx;
+  } catch (e) {
+    if (e instanceof AppError) {
+      reply.code(403).send({ error: { code: e.code, message: e.message } });
+      return undefined;
+    }
+    throw e;
+  }
+}

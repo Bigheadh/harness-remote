@@ -12,6 +12,12 @@ import {
   STATUS_COLORS,
 } from "../../feishu/card-builder.js";
 import type { TaskRouteContext } from "./context.js";
+import {
+  BulkStatusBodySchema,
+  BulkAssignBodySchema,
+  BulkIdsBodySchema,
+  parseBody,
+} from "../../openapi/schemas.js";
 
 export function registerBulkTaskRoutes(
   server: FastifyInstance,
@@ -32,24 +38,8 @@ export function registerBulkTaskRoutes(
       throw e;
     }
 
-    const body = req.body as { ids?: string[]; status?: TaskStatus };
-    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
-      });
-    }
-    if (!body?.status) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Missing 'status' in request body" },
-      });
-    }
-
-    const validStatuses: TaskStatus[] = ["pending", "picked", "running", "done", "failed"];
-    if (!validStatuses.includes(body.status)) {
-      return reply.code(400).send({
-        error: { code: "invalid_status", message: `Invalid status: ${body.status}` },
-      });
-    }
+    const body = parseBody(BulkStatusBodySchema, req.body, reply);
+    if (!body) return;
 
     const result = await store.bulkUpdateStatus(body.ids, body.status);
     log.info({ count: result.updated, errors: result.errors.length }, "Bulk status update completed");
@@ -129,19 +119,10 @@ export function registerBulkTaskRoutes(
       throw e;
     }
 
-    const body = req.body as { ids?: string[]; deviceId?: string };
-    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
-      });
-    }
-    if (typeof body?.deviceId !== "string" || body.deviceId.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'deviceId' (non-empty string)" },
-      });
-    }
+    const body = parseBody(BulkAssignBodySchema, req.body, reply);
+    if (!body) return;
 
-    const result = await store.bulkAssign(body.ids, body.deviceId.trim());
+    const result = await store.bulkAssign(body.ids, body.deviceId);
     log.info({ count: result.updated, deviceId: body.deviceId, errors: result.errors.length }, "Bulk assign completed");
 
     if (auditStore && result.updated > 0) {
@@ -149,7 +130,7 @@ export function registerBulkTaskRoutes(
         action: "task.assigned",
         actor: authCtx.user?.username ?? "api",
         actorType: "api",
-        details: { bulk: true, count: result.updated, deviceId: body.deviceId.trim(), ids: body.ids, errors: result.errors },
+        details: { bulk: true, count: result.updated, deviceId: body.deviceId, ids: body.ids, errors: result.errors },
       });
     }
 
@@ -169,12 +150,8 @@ export function registerBulkTaskRoutes(
       throw e;
     }
 
-    const body = req.body as { ids?: string[] };
-    if (!Array.isArray(body?.ids) || body.ids.length === 0) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'ids' (non-empty array of task IDs)" },
-      });
-    }
+    const body = parseBody(BulkIdsBodySchema, req.body, reply);
+    if (!body) return;
 
     const result = await store.bulkDelete(body.ids);
     log.info({ count: result.deleted, errors: result.errors.length }, "Bulk delete completed");

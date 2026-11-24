@@ -3,6 +3,7 @@ import type { TaskPriority } from "../../../shared/types.js";
 import { authenticate, authorize } from "../../auth/middleware.js";
 import { AppError } from "../../../shared/errors.js";
 import type { TaskRouteContext } from "./context.js";
+import { CreateTemplateBodySchema, parseBody } from "../../openapi/schemas.js";
 
 export function registerTemplateRoutes(
   server: FastifyInstance,
@@ -78,41 +79,14 @@ export function registerTemplateRoutes(
       throw e;
     }
 
-    const body = req.body as {
-      name?: string;
-      description?: string;
-      commandText?: string;
-      priority?: string;
-      tags?: string[];
-      assignedDeviceId?: string;
-      dueDateOffsetMs?: number;
-      reminderOffsetMs?: number;
-      variables?: Record<string, string>;
-    };
-
-    if (typeof body?.name !== "string" || body.name.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'name' (non-empty string)" },
-      });
-    }
-    if (typeof body?.commandText !== "string" || body.commandText.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'commandText' (non-empty string)" },
-      });
-    }
-
-    const validPriorities = ["low", "normal", "high", "urgent"];
-    if (body.priority && !validPriorities.includes(body.priority)) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: `Invalid priority: ${body.priority}. Must be one of: ${validPriorities.join(", ")}` },
-      });
-    }
+    const body = parseBody(CreateTemplateBodySchema, req.body, reply);
+    if (!body) return;
 
     const template = await store.createTemplate({
-      name: body.name.trim(),
+      name: body.name,
       description: body.description,
-      commandText: body.commandText.trim(),
-      priority: body.priority as "low" | "normal" | "high" | "urgent" | undefined,
+      commandText: body.commandText,
+      priority: body.priority,
       tags: body.tags,
       assignedDeviceId: body.assignedDeviceId,
       dueDateOffsetMs: body.dueDateOffsetMs,

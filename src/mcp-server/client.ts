@@ -321,10 +321,57 @@ export function createTaskApiClient(
   options?: TaskApiClientOptions,
 ): TaskApiClient {
   const fetch = createResilientFetch(options);
-  const headers = {
+  const baseUrl = serverBaseUrl.replace(/\/+$/, "");
+  const authHeaders = {
+    Authorization: `Bearer ${personalToken}`,
+  };
+  const jsonHeaders = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${personalToken}`,
   };
+  const enc = (segment: string | number): string => encodeURIComponent(String(segment));
+
+  async function requestRaw(
+    method: string,
+    path: string,
+    action: string,
+    body?: unknown,
+  ): Promise<Response> {
+    const init: RequestInit = {
+      method,
+      headers: body !== undefined ? jsonHeaders : authHeaders,
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const response = await fetch(`${baseUrl}${path}`, init);
+    if (!response.ok) {
+      const errBody = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+      throw new Error(
+        `Failed to ${action}: ${response.status} ${errBody.error?.message ?? response.statusText}`,
+      );
+    }
+    return response;
+  }
+
+  async function requestJson<T>(
+    method: string,
+    path: string,
+    action: string,
+    body?: unknown,
+  ): Promise<T> {
+    const response = await requestRaw(method, path, action, body);
+    return (await response.json()) as T;
+  }
+
+  async function requestVoid(
+    method: string,
+    path: string,
+    action: string,
+    body?: unknown,
+  ): Promise<void> {
+    await requestRaw(method, path, action, body);
+  }
 
   return {
     async listTasks(status?: TaskStatus, limit?: number, filterDeviceId?: string, priority?: string): Promise<Task[]> {
@@ -336,17 +383,7 @@ export function createTaskApiClient(
       const effectiveDeviceId = filterDeviceId ?? deviceId;
       if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
 
-      const url = `${serverBaseUrl}/api/tasks${params.toString() ? `?${params.toString()}` : ""}`;
-      const response = await fetch(url, { headers });
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks${params.toString() ? `?${params.toString()}` : ""}`, "list tasks");
       return data.tasks;
     },
 
@@ -380,34 +417,12 @@ export function createTaskApiClient(
       if (options.source) params.set("source", options.source);
 
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to search tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks/search${qs ? `?${qs}` : ""}`, "search tasks");
       return data.tasks;
     },
 
     async getTask(taskId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}`,
-        { headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("GET", `/api/tasks/${enc(taskId)}`, "get task");
       return data.task;
     },
 
@@ -419,44 +434,12 @@ export function createTaskApiClient(
       assignedDeviceId?: string;
       dueDate?: string;
     }): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify(options),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to create task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks`, "create task", options);
       return data.task;
     },
 
     async markTaskRunning(taskId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/status`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ status: "running" }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to mark task running: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/status`, "mark task running", { status: "running" });
       return data.task;
     },
 
@@ -466,111 +449,31 @@ export function createTaskApiClient(
       summary: string,
       details?: string,
     ): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/result`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ success, summary, details }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to report task result: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/result`, "report task result", { success, summary, details });
       return data.task;
     },
 
     async replyFeishu(taskId: string, message: string): Promise<void> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/reply`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ message }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to reply to Feishu: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
+      await requestVoid("POST", `/api/tasks/${enc(taskId)}/reply`, "reply to Feishu", { message });
     },
 
     async registerDevice(name: string, capabilities?: string): Promise<{ id: string; token: string }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/devices`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ name, capabilities }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to register device: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { device: { id: string; token: string } };
+      const data = await requestJson<{ device: { id: string; token: string } }>("POST", `/api/devices`, "register device", { name, capabilities });
       return { id: data.device.id, token: data.device.token };
     },
 
     async listDevices(): Promise<Device[]> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/devices`,
-        { method: "GET", headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list devices: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { devices: Device[] };
+      const data = await requestJson<{ devices: Device[] }>("GET", `/api/devices`, "list devices");
       return data.devices;
     },
 
     async getDevice(deviceId: string): Promise<Device> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/devices/${encodeURIComponent(deviceId)}`,
-        { method: "GET", headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get device: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { device: Device };
+      const data = await requestJson<{ device: Device }>("GET", `/api/devices/${enc(deviceId)}`, "get device");
       return data.device;
     },
 
     async deleteDevice(deviceId: string): Promise<void> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/devices/${encodeURIComponent(deviceId)}`,
-        { method: "DELETE", headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to delete device: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
+      await requestVoid("DELETE", `/api/devices/${enc(deviceId)}`, "delete device");
     },
 
     async queryAuditLog(options: AuditLogSearchOptions): Promise<AuditLogEntry[]> {
@@ -584,676 +487,204 @@ export function createTaskApiClient(
       if (options.limit) params.set("limit", String(options.limit));
 
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/audit${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to query audit log: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { entries: AuditLogEntry[] };
+      const data = await requestJson<{ entries: AuditLogEntry[] }>("GET", `/api/audit${qs ? `?${qs}` : ""}`, "query audit log");
       return data.entries;
     },
 
     async addTags(taskId: string, tags: string[]): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/tags`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ tags }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to add tags: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/tags`, "add tags", { tags });
       return data.task;
     },
 
     async removeTag(taskId: string, tag: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/tags/${encodeURIComponent(tag)}`,
-        {
-          method: "DELETE",
-          headers,
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to remove tag: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("DELETE", `/api/tasks/${enc(taskId)}/tags/${enc(tag)}`, "remove tag");
       return data.task;
     },
 
     async listAllTags(): Promise<string[]> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/tags`,
-        { headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list tags: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { tags: string[] };
+      const data = await requestJson<{ tags: string[] }>("GET", `/api/tasks/tags`, "list tags");
       return data.tags;
     },
 
     async setDueDate(taskId: string, dueDate: string | null): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/due`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ dueDate }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set due date: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/due`, "set due date", { dueDate });
       return data.task;
     },
 
     async setReminder(taskId: string, reminderAt: string | null): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/reminder`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ reminderAt }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set reminder: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/reminder`, "set reminder", { reminderAt });
       return data.task;
     },
 
     async setTaskDescription(taskId: string, description: string | null): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/description`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ description }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set description: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/description`, "set description", { description });
       return data.task;
     },
 
     async setPriority(taskId: string, priority: TaskPriority): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/priority`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ priority }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set priority: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/priority`, "set priority", { priority });
       return data.task;
     },
 
     async setEstimatedMinutes(taskId: string, minutes: number | null): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/estimated-minutes`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ estimatedMinutes: minutes }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set estimated minutes: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/estimated-minutes`, "set estimated minutes", { estimatedMinutes: minutes });
       return data.task;
     },
 
     async setTaskCommandText(taskId: string, commandText: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/command-text`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ commandText }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to set command text: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/command-text`, "set command text", { commandText });
       return data.task;
     },
 
     async listOverdueTasks(): Promise<Task[]> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/overdue`,
-        { headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list overdue tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks/overdue`, "list overdue tasks");
       return data.tasks;
     },
 
     async listComments(taskId: string): Promise<TaskComment[]> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/comments`,
-        { headers },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list comments: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { comments: TaskComment[] };
+      const data = await requestJson<{ comments: TaskComment[] }>("GET", `/api/tasks/${enc(taskId)}/comments`, "list comments");
       return data.comments;
     },
 
     async addComment(taskId: string, _author: string, commentBody: string): Promise<TaskComment> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/comments`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ body: commentBody }),
-        },
-      );
-
-      if (!response.ok) {
-        const errBody = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to add comment: ${response.status} ${errBody.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { comment: TaskComment };
+      const data = await requestJson<{ comment: TaskComment }>("POST", `/api/tasks/${enc(taskId)}/comments`, "add comment", { body: commentBody });
       return data.comment;
     },
 
     async deleteTaskComment(taskId: string, commentId: number): Promise<void> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/comments/${commentId}`,
-        {
-          method: "DELETE",
-          headers,
-        },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete comment: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/comments/${enc(commentId)}`, "delete comment");
     },
 
     async bulkUpdateStatus(ids: string[], status: TaskStatus): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/status`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, status }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk update status: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/status`, "bulk update status", { ids, status });
       return { updated: data.updated, errors: data.errors };
     },
 
     async bulkAssign(ids: string[], deviceId: string): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/assign`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, deviceId }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk assign: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/assign`, "bulk assign", { ids, deviceId });
       return { updated: data.updated, errors: data.errors };
     },
 
     async assignTask(taskId: string, deviceId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/assign`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ deviceId }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to assign task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/assign`, "assign task", { deviceId });
       return data.task;
     },
 
     async unassignTask(taskId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/unassign`,
-        {
-          method: "POST",
-          headers,
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to unassign task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/unassign`, "unassign task");
       return data.task;
     },
 
     async bulkDelete(ids: string[]): Promise<{ deleted: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/delete`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk delete: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { deleted: number; errors: string[] };
+      const data = await requestJson<{ deleted: number; errors: string[] }>("POST", `/api/tasks/bulk/delete`, "bulk delete", { ids });
       return { deleted: data.deleted, errors: data.errors };
     },
 
     async bulkAddTags(ids: string[], tags: string[]): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/tags/add`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, tags }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk add tags: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/tags/add`, "bulk add tags", { ids, tags });
       return { updated: data.updated, errors: data.errors };
     },
 
     async bulkRemoveTags(ids: string[], tag: string): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/tags/remove`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, tag }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk remove tag: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/tags/remove`, "bulk remove tag", { ids, tag });
       return { updated: data.updated, errors: data.errors };
     },
 
     async bulkUpdatePriority(ids: string[], priority: string): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/priority`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, priority }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk update priority: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/priority`, "bulk update priority", { ids, priority });
       return { updated: data.updated, errors: data.errors };
     },
 
     async bulkUpdateDueDate(ids: string[], dueDate: string | null): Promise<{ updated: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/due-date`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids, dueDate }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk update due date: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { updated: number; errors: string[] };
+      const data = await requestJson<{ updated: number; errors: string[] }>("POST", `/api/tasks/bulk/due-date`, "bulk update due date", { ids, dueDate });
       return { updated: data.updated, errors: data.errors };
     },
 
     async bulkCloneTasks(ids: string[]): Promise<{ cloned: number; errors: string[]; taskIds: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/clone`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ ids }),
-        },
-      );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk clone tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-
-      const data = (await response.json()) as { cloned: number; errors: string[]; taskIds: string[] };
+      const data = await requestJson<{ cloned: number; errors: string[]; taskIds: string[] }>("POST", `/api/tasks/bulk/clone`, "bulk clone tasks", { ids });
       return { cloned: data.cloned, errors: data.errors, taskIds: data.taskIds };
     },
 
     // ── Task Templates ──────────────────────────────────────────────
 
     async listTemplates(): Promise<TaskTemplate[]> {
-      const response = await fetch(`${serverBaseUrl}/api/templates`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list templates: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { templates: TaskTemplate[] };
+      const data = await requestJson<{ templates: TaskTemplate[] }>("GET", `/api/templates`, "list templates");
       return data.templates;
     },
 
     async getTemplate(templateId: string): Promise<TaskTemplate> {
-      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get template: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { template: TaskTemplate };
+      const data = await requestJson<{ template: TaskTemplate }>("GET", `/api/templates/${enc(templateId)}`, "get template");
       return data.template;
     },
 
     async createTemplate(template: { name: string; description?: string; commandText: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDateOffsetMs?: number; reminderOffsetMs?: number; variables?: Record<string, string> }): Promise<TaskTemplate> {
-      const response = await fetch(`${serverBaseUrl}/api/templates`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(template),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create template: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { template: TaskTemplate };
+      const data = await requestJson<{ template: TaskTemplate }>("POST", `/api/templates`, "create template", template);
       return data.template;
     },
 
     async updateTemplate(templateId: string, updates: Record<string, unknown>): Promise<TaskTemplate> {
-      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update template: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { template: TaskTemplate };
+      const data = await requestJson<{ template: TaskTemplate }>("PUT", `/api/templates/${enc(templateId)}`, "update template", updates);
       return data.template;
     },
 
     async deleteTemplate(templateId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete template: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/templates/${enc(templateId)}`, "delete template");
     },
 
     async createTaskFromTemplate(templateId: string, overrides?: { commandText?: string; description?: string; priority?: string; tags?: string[]; assignedDeviceId?: string; dueDate?: string; reminderAt?: string; variables?: Record<string, string> }): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/templates/${templateId}/create-task`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(overrides ?? {}),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create task from template: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/templates/${enc(templateId)}/create-task`, "create task from template", overrides ?? {});
       return data.task;
     },
 
     async getTemplateUsageStats(): Promise<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/templates/usage-stats`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get template usage stats: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as { stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number };
+      return await requestJson<{ stats: { templateId: string; name: string; usageCount: number }[]; totalUsage: number; templateCount: number }>("GET", `/api/templates/usage-stats`, "get template usage stats");
     },
 
     // ── Scheduled Tasks ──────────────────────────────────────────────
 
     async listScheduledTasks(): Promise<ScheduledTask[]> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list scheduled tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { scheduledTasks: ScheduledTask[] };
+      const data = await requestJson<{ scheduledTasks: ScheduledTask[] }>("GET", `/api/scheduled-tasks`, "list scheduled tasks");
       return data.scheduledTasks;
     },
 
     async getScheduledTask(scheduledId: string): Promise<ScheduledTask> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { scheduledTask: ScheduledTask };
+      const data = await requestJson<{ scheduledTask: ScheduledTask }>("GET", `/api/scheduled-tasks/${enc(scheduledId)}`, "get scheduled task");
       return data.scheduledTask;
     },
 
     async createScheduledTask(data: { commandText: string; frequency: ScheduleFrequency; priority?: string; tags?: string[]; assignedDeviceId?: string; nextRunAt?: string; enabled?: boolean; templateId?: string }): Promise<ScheduledTask> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { scheduledTask: ScheduledTask };
+      const result = await requestJson<{ scheduledTask: ScheduledTask }>("POST", `/api/scheduled-tasks`, "create scheduled task", data);
       return result.scheduledTask;
     },
 
     async updateScheduledTask(scheduledId: string, updates: Record<string, unknown>): Promise<ScheduledTask> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { scheduledTask: ScheduledTask };
+      const result = await requestJson<{ scheduledTask: ScheduledTask }>("PUT", `/api/scheduled-tasks/${enc(scheduledId)}`, "update scheduled task", updates);
       return result.scheduledTask;
     },
 
     async deleteScheduledTask(scheduledId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/scheduled-tasks/${enc(scheduledId)}`, "delete scheduled task");
     },
 
     async runScheduledTask(scheduledId: string): Promise<{ task: Task; scheduledTask: ScheduledTask }> {
-      const response = await fetch(`${serverBaseUrl}/api/scheduled-tasks/${scheduledId}/run`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to run scheduled task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task; scheduledTask: ScheduledTask };
+      const data = await requestJson<{ task: Task; scheduledTask: ScheduledTask }>("POST", `/api/scheduled-tasks/${enc(scheduledId)}/run`, "run scheduled task");
       return { task: data.task, scheduledTask: data.scheduledTask };
     },
 
     // ── Task Dependencies ──────────────────────────────────────────────
 
     async setDependencies(taskId: string, dependsOnIds: string[]): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ dependsOn: dependsOnIds }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to set dependencies: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/dependencies`, "set dependencies", { dependsOn: dependsOnIds });
       return data.task;
     },
 
     async getDependencies(taskId: string): Promise<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get dependencies: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean };
+      const data = await requestJson<{ dependencies: Array<{ id: string; status: string; commandText: string }>; dependentIds: string[]; blocked: boolean }>("GET", `/api/tasks/${enc(taskId)}/dependencies`, "get dependencies");
       return data;
     },
 
     async removeDependency(taskId: string, depId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependencies/${depId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to remove dependency: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("DELETE", `/api/tasks/${enc(taskId)}/dependencies/${enc(depId)}`, "remove dependency");
       return data.task;
     },
 
@@ -1263,109 +694,51 @@ export function createTaskApiClient(
       const effectiveDeviceId = filterDeviceId ?? deviceId;
       if (effectiveDeviceId) params.set("deviceId", effectiveDeviceId);
 
-      const url = `${serverBaseUrl}/api/tasks/ready${params.toString() ? `?${params.toString()}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list ready tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks/ready${params.toString() ? `?${params.toString()}` : ""}`, "list ready tasks");
       return data.tasks;
     },
 
     async getDependencyGraph(taskId: string): Promise<import("../shared/types.js").DependencyGraph> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/dependency-graph`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get dependency graph: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { graph: import("../shared/types.js").DependencyGraph };
+      const data = await requestJson<{ graph: import("../shared/types.js").DependencyGraph }>("GET", `/api/tasks/${enc(taskId)}/dependency-graph`, "get dependency graph");
       return data.graph;
     },
 
     // ── Task Relationships (Phase 58) ─────────────────────────
 
     async addRelationship(taskId: string, relatedTaskId: string, relationshipType: import("../shared/types.js").TaskRelationshipType): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ relatedTaskId, relationshipType }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to add relationship: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("POST", `/api/tasks/${enc(taskId)}/relationships`, "add relationship", { relatedTaskId, relationshipType });
     },
 
     async removeRelationship(taskId: string, relatedTaskId: string, relationshipType?: import("../shared/types.js").TaskRelationshipType): Promise<void> {
       const params = relationshipType ? `?type=${relationshipType}` : "";
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships/${relatedTaskId}${params}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to remove relationship: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/relationships/${enc(relatedTaskId)}${params}`, "remove relationship");
     },
 
     async listRelationships(taskId: string): Promise<import("../shared/types.js").TaskRelationship[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/relationships`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list relationships: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { relationships: import("../shared/types.js").TaskRelationship[] };
+      const data = await requestJson<{ relationships: import("../shared/types.js").TaskRelationship[] }>("GET", `/api/tasks/${enc(taskId)}/relationships`, "list relationships");
       return data.relationships;
     },
 
     // ── Task Locks ──────────────────────────────────────────────
 
     async lockTask(taskId: string, deviceId?: string, ttlMs?: number): Promise<import("../shared/types.js").TaskLock> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ deviceId, ttlMs }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to lock task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { lock: import("../shared/types.js").TaskLock };
+      const data = await requestJson<{ lock: import("../shared/types.js").TaskLock }>("POST", `/api/tasks/${enc(taskId)}/lock`, "lock task", { deviceId, ttlMs });
       return data.lock;
     },
 
     async unlockTask(taskId: string, deviceId?: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, {
-        method: "DELETE",
-        headers,
-        body: JSON.stringify({ deviceId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to unlock task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/lock`, "unlock task", { deviceId });
     },
 
     async getTaskLock(taskId: string): Promise<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/lock`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get task lock: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { locked: boolean; lock: import("../shared/types.js").TaskLock | null };
+      const data = await requestJson<{ locked: boolean; lock: import("../shared/types.js").TaskLock | null }>("GET", `/api/tasks/${enc(taskId)}/lock`, "get task lock");
       return data;
     },
 
     // ── Export/Import ──────────────────────────────────────────────
 
     async exportTasks(): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/export`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to export tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/tasks/export`, "export tasks");
     },
 
     async exportTasksCsv(filters?: { status?: string; priority?: string; tags?: string; from?: string; to?: string; q?: string; deviceId?: string; source?: string }): Promise<string> {
@@ -1379,28 +752,14 @@ export function createTaskApiClient(
       if (filters?.deviceId) params.set("deviceId", filters.deviceId);
       if (filters?.source) params.set("source", filters.source);
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/export.csv${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to export CSV: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      const response = await requestRaw("GET", `/api/tasks/export.csv${qs ? `?${qs}` : ""}`, "export CSV");
       return await response.text();
     },
 
     async importTasks(data: Record<string, unknown>, mode?: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
       const payload = { ...data };
       if (mode) payload.mode = mode;
-      const response = await fetch(`${serverBaseUrl}/api/tasks/import`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to import tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { imported: number; skipped: number; errors: string[] };
+      const result = await requestJson<{ imported: number; skipped: number; errors: string[] }>("POST", `/api/tasks/import`, "import tasks", payload);
       return { imported: result.imported, skipped: result.skipped, errors: result.errors };
     },
 
@@ -1410,235 +769,98 @@ export function createTaskApiClient(
       if (options?.defaultPriority) payload.defaultPriority = options.defaultPriority;
       if (options?.defaultTags) payload.defaultTags = options.defaultTags;
       if (options?.delimiter) payload.delimiter = options.delimiter;
-      const response = await fetch(`${serverBaseUrl}/api/tasks/import-csv`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to import CSV: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { imported: number; errors: string[]; taskIds: string[] };
+      const result = await requestJson<{ imported: number; errors: string[]; taskIds: string[] }>("POST", `/api/tasks/import-csv`, "import CSV", payload);
       return { imported: result.imported, errors: result.errors, taskIds: result.taskIds };
     },
 
     // ── SLA Methods ──────────────────────────────────────────────
 
     async listSlaPolicies(): Promise<SlaPolicy[]> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/policies`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list SLA policies: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { policies: SlaPolicy[] };
+      const data = await requestJson<{ policies: SlaPolicy[] }>("GET", `/api/sla/policies`, "list SLA policies");
       return data.policies;
     },
 
     async getSlaPolicy(policyId: string): Promise<SlaPolicy> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { policy: SlaPolicy };
+      const data = await requestJson<{ policy: SlaPolicy }>("GET", `/api/sla/policies/${enc(policyId)}`, "get SLA policy");
       return data.policy;
     },
 
     async createSlaPolicy(policy: { name: string; description?: string; targetMinutes: number; warningThresholdPercent?: number; matchPriorities?: string[]; matchTags?: string[]; enabled?: boolean }): Promise<SlaPolicy> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/policies`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(policy),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { policy: SlaPolicy };
+      const data = await requestJson<{ policy: SlaPolicy }>("POST", `/api/sla/policies`, "create SLA policy", policy);
       return data.policy;
     },
 
     async updateSlaPolicy(policyId: string, updates: Record<string, unknown>): Promise<SlaPolicy> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { policy: SlaPolicy };
+      const data = await requestJson<{ policy: SlaPolicy }>("PUT", `/api/sla/policies/${enc(policyId)}`, "update SLA policy", updates);
       return data.policy;
     },
 
     async deleteSlaPolicy(policyId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/policies/${policyId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete SLA policy: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/sla/policies/${enc(policyId)}`, "delete SLA policy");
     },
 
     async getSlaSummary(): Promise<SlaSummary> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/summary`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get SLA summary: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as SlaSummary;
+      return await requestJson<SlaSummary>("GET", `/api/sla/summary`, "get SLA summary");
     },
 
     async listSlaBreaches(): Promise<SlaBreachLog[]> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/breaches`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list SLA breaches: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { breaches: SlaBreachLog[] };
+      const data = await requestJson<{ breaches: SlaBreachLog[] }>("GET", `/api/sla/breaches`, "list SLA breaches");
       return data.breaches;
     },
 
     async checkSlaBreaches(): Promise<{ warnings: number; breaches: number; details: import("../shared/types.js").SlaBreachNotification[] }> {
-      const response = await fetch(`${serverBaseUrl}/api/sla/check`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to check SLA breaches: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { warnings: number; breaches: number; details?: import("../shared/types.js").SlaBreachNotification[] };
+      const data = await requestJson<{ warnings: number; breaches: number; details?: import("../shared/types.js").SlaBreachNotification[] }>("POST", `/api/sla/check`, "check SLA breaches");
       return { warnings: data.warnings, breaches: data.breaches, details: data.details ?? [] };
     },
 
     async getTaskSlaStatus(taskId: string): Promise<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/sla`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get task SLA status: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as { status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number };
+      return await requestJson<{ status: string; policy?: SlaPolicy; elapsedMinutes: number; targetMinutes?: number }>("GET", `/api/tasks/${enc(taskId)}/sla`, "get task SLA status");
     },
 
     async retryTask(taskId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/retry`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to retry task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/retry`, "retry task");
       return data.task;
     },
 
     async cloneTask(taskId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/clone`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to clone task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/clone`, "clone task");
       return data.task;
     },
 
     async reopenTask(taskId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/reopen`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to reopen task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/reopen`, "reopen task");
       return data.task;
     },
 
     async pinTask(taskId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/pin`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to pin task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/pin`, "pin task");
       return data.task;
     },
 
     async unpinTask(taskId: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/unpin`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to unpin task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/unpin`, "unpin task");
       return data.task;
     },
 
     async forwardTask(taskId: string, targetDeviceId: string, message?: string): Promise<Task> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/forward`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ deviceId: targetDeviceId, message }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to forward task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/forward`, "forward task", { deviceId: targetDeviceId, message });
       return data.task;
     },
 
     // ── Task Notes (internal annotations) ──────────────────────────
 
     async listNotes(taskId: string): Promise<TaskNote[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list notes: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { notes: TaskNote[] };
+      const data = await requestJson<{ notes: TaskNote[] }>("GET", `/api/tasks/${enc(taskId)}/notes`, "list notes");
       return data.notes;
     },
 
     async addNote(taskId: string, noteBody: string): Promise<TaskNote> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ body: noteBody }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to add note: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { note: TaskNote };
+      const data = await requestJson<{ note: TaskNote }>("POST", `/api/tasks/${enc(taskId)}/notes`, "add note", { body: noteBody });
       return data.note;
     },
 
     async deleteTaskNote(taskId: string, noteId: number): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/notes/${noteId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete note: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/notes/${enc(noteId)}`, "delete note");
     },
 
     // ── Task User Search ──────────────────────────────────────────
@@ -1647,103 +869,47 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (limit) params.set("limit", String(limit));
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/user/${encodeURIComponent(userId)}${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list tasks by user: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks/user/${enc(userId)}${qs ? `?${qs}` : ""}`, "list tasks by user");
       return data.tasks;
     },
 
     // ── Task Subtasks ──────────────────────────────────────────
 
     async listSubtasks(taskId: string): Promise<import("../shared/types.js").Subtask[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list subtasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { subtasks: import("../shared/types.js").Subtask[] };
+      const data = await requestJson<{ subtasks: import("../shared/types.js").Subtask[] }>("GET", `/api/tasks/${enc(taskId)}/subtasks`, "list subtasks");
       return data.subtasks;
     },
 
     async getSubtask(taskId: string, subtaskId: string): Promise<import("../shared/types.js").Subtask> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      const data = await requestJson<{ subtask: import("../shared/types.js").Subtask }>("GET", `/api/tasks/${enc(taskId)}/subtasks/${enc(subtaskId)}`, "get subtask");
       return data.subtask;
     },
 
     async createSubtask(taskId: string, title: string, commandText: string): Promise<import("../shared/types.js").Subtask> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ title, commandText }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      const data = await requestJson<{ subtask: import("../shared/types.js").Subtask }>("POST", `/api/tasks/${enc(taskId)}/subtasks`, "create subtask", { title, commandText });
       return data.subtask;
     },
 
     async updateSubtaskStatus(taskId: string, subtaskId: string, status: TaskStatus): Promise<import("../shared/types.js").Subtask> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}/status`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ status }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update subtask status: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      const data = await requestJson<{ subtask: import("../shared/types.js").Subtask }>("POST", `/api/tasks/${enc(taskId)}/subtasks/${enc(subtaskId)}/status`, "update subtask status", { status });
       return data.subtask;
     },
 
     async reportSubtaskResult(taskId: string, subtaskId: string, success: boolean, summary: string, details?: string): Promise<import("../shared/types.js").Subtask> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}/result`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ success, summary, details }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to report subtask result: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { subtask: import("../shared/types.js").Subtask };
+      const data = await requestJson<{ subtask: import("../shared/types.js").Subtask }>("POST", `/api/tasks/${enc(taskId)}/subtasks/${enc(subtaskId)}/result`, "report subtask result", { success, summary, details });
       return data.subtask;
     },
 
     async deleteSubtask(taskId: string, subtaskId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/subtasks/${subtaskId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete subtask: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/subtasks/${enc(subtaskId)}`, "delete subtask");
     },
 
     async downloadAttachment(taskId: string, attachmentIndex: number): Promise<{ fileName: string; contentType: string; base64Data: string }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/attachments/${attachmentIndex}`,
-        { headers },
+      const response = await requestRaw(
+        "GET",
+        `/api/tasks/${enc(taskId)}/attachments/${enc(attachmentIndex)}`,
+        "download attachment",
       );
-
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to download attachment: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
 
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
       const contentDisposition = response.headers.get("content-disposition") ?? "";
@@ -1761,32 +927,12 @@ export function createTaskApiClient(
     },
 
     async archiveTask(taskId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/archive`,
-        { method: "POST", headers },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to archive task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/archive`, "archive task");
       return data.task;
     },
 
     async unarchiveTask(taskId: string): Promise<Task> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/${taskId}/unarchive`,
-        { method: "POST", headers },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to unarchive task: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { task: Task };
+      const data = await requestJson<{ task: Task }>("POST", `/api/tasks/${enc(taskId)}/unarchive`, "unarchive task");
       return data.task;
     },
 
@@ -1794,60 +940,22 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (limit) params.set("limit", String(limit));
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/archived${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list archived tasks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>("GET", `/api/tasks/archived${qs ? `?${qs}` : ""}`, "list archived tasks");
       return data.tasks;
     },
 
     async bulkArchiveTasks(ids: string[]): Promise<{ archived: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/archive`,
-        { method: "POST", headers, body: JSON.stringify({ ids }) },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk archive: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { archived: number; errors: string[] };
+      const data = await requestJson<{ archived: number; errors: string[] }>("POST", `/api/tasks/bulk/archive`, "bulk archive", { ids });
       return data;
     },
 
     async bulkUnarchiveTasks(ids: string[]): Promise<{ restored: number; errors: string[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/bulk/unarchive`,
-        { method: "POST", headers, body: JSON.stringify({ ids }) },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to bulk unarchive: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { restored: number; errors: string[] };
+      const data = await requestJson<{ restored: number; errors: string[] }>("POST", `/api/tasks/bulk/unarchive`, "bulk unarchive", { ids });
       return data;
     },
 
     async escalateOverduePriorities(): Promise<{ escalated: number; tasks: Task[] }> {
-      const response = await fetch(
-        `${serverBaseUrl}/api/tasks/escalate-priorities`,
-        { method: "POST", headers },
-      );
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to escalate priorities: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { escalated: number; tasks: Task[] };
+      const data = await requestJson<{ escalated: number; tasks: Task[] }>("POST", `/api/tasks/escalate-priorities`, "escalate priorities");
       return { escalated: data.escalated, tasks: data.tasks };
     },
 
@@ -1858,15 +966,7 @@ export function createTaskApiClient(
       if (limit) params.set("limit", String(limit));
       if (deviceId) params.set("deviceId", deviceId);
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/kanban${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get kanban board: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as import("../shared/types.js").KanbanBoard;
+      return await requestJson<import("../shared/types.js").KanbanBoard>("GET", `/api/tasks/kanban${qs ? `?${qs}` : ""}`, "get kanban board");
     },
 
     async getApiUsageStats(from?: string, to?: string): Promise<Record<string, unknown>> {
@@ -1874,150 +974,60 @@ export function createTaskApiClient(
       if (from) params.set("from", from);
       if (to) params.set("to", to);
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/usage/stats${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get API usage stats: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/usage/stats${qs ? `?${qs}` : ""}`, "get API usage stats");
     },
 
     async getApiUsageEntries(callerId: string, limit?: number): Promise<Record<string, unknown>> {
       const params = new URLSearchParams();
       if (limit) params.set("limit", String(limit));
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/usage/entries/${encodeURIComponent(callerId)}${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get API usage entries: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/usage/entries/${enc(callerId)}${qs ? `?${qs}` : ""}`, "get API usage entries");
     },
 
     async listWebhooks(): Promise<WebhookSubscription[]> {
-      const response = await fetch(`${serverBaseUrl}/api/webhooks`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list webhooks: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { webhooks: WebhookSubscription[] };
+      const data = await requestJson<{ webhooks: WebhookSubscription[] }>("GET", `/api/webhooks`, "list webhooks");
       return data.webhooks;
     },
 
     async getWebhook(webhookId: string): Promise<WebhookSubscription> {
-      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { webhook: WebhookSubscription };
+      const data = await requestJson<{ webhook: WebhookSubscription }>("GET", `/api/webhooks/${enc(webhookId)}`, "get webhook");
       return data.webhook;
     },
 
     async createWebhook(data: { url: string; events: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription> {
-      const response = await fetch(`${serverBaseUrl}/api/webhooks`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to create webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const result = (await response.json()) as { webhook: WebhookSubscription };
+      const result = await requestJson<{ webhook: WebhookSubscription }>("POST", `/api/webhooks`, "create webhook", data);
       return result.webhook;
     },
 
     async updateWebhook(webhookId: string, updates: { url?: string; events?: string[]; enabled?: boolean; description?: string }): Promise<WebhookSubscription> {
-      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to update webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const result = (await response.json()) as { webhook: WebhookSubscription };
+      const result = await requestJson<{ webhook: WebhookSubscription }>("PATCH", `/api/webhooks/${enc(webhookId)}`, "update webhook", updates);
       return result.webhook;
     },
 
     async deleteWebhook(webhookId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/webhooks/${webhookId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to delete webhook: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
+      await requestVoid("DELETE", `/api/webhooks/${enc(webhookId)}`, "delete webhook");
     },
 
     async listWebhookDeliveries(webhookId: string, limit?: number): Promise<WebhookDelivery[]> {
       const params = new URLSearchParams();
       if (limit) params.set("limit", String(limit));
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/webhooks/${webhookId}/deliveries${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list webhook deliveries: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { deliveries: WebhookDelivery[] };
+      const data = await requestJson<{ deliveries: WebhookDelivery[] }>("GET", `/api/webhooks/${enc(webhookId)}/deliveries${qs ? `?${qs}` : ""}`, "list webhook deliveries");
       return data.deliveries;
     },
 
     // ── Stats & Analytics ────────────────────────────────────────
 
     async getProcessingStats(): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/stats/processing`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get processing stats: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/stats/processing`, "get processing stats");
     },
 
     async getTaskStatsSummary(): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/stats/summary`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get task stats summary: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/stats/summary`, "get task stats summary");
     },
 
     async getUserStats(): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/stats/users`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get user stats: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/stats/users`, "get user stats");
     },
 
     async getTaskTimeSeries(from?: string, to?: string, interval?: string, metric?: string): Promise<Record<string, unknown>> {
@@ -2027,201 +1037,78 @@ export function createTaskApiClient(
       if (interval) params.set("interval", interval);
       if (metric) params.set("metric", metric);
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/stats/timeseries${qs ? `?${qs}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get task timeseries: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      return (await response.json()) as Record<string, unknown>;
+      return await requestJson<Record<string, unknown>>("GET", `/api/stats/timeseries${qs ? `?${qs}` : ""}`, "get task timeseries");
     },
 
     // ── User Management ────────────────────────────────────────
 
     async listUsers(): Promise<User[]> {
-      const response = await fetch(`${serverBaseUrl}/api/users`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to list users: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { users: User[] };
+      const data = await requestJson<{ users: User[] }>("GET", `/api/users`, "list users");
       return data.users;
     },
 
     async getUser(userId: string): Promise<User> {
-      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to get user: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { user: User };
+      const data = await requestJson<{ user: User }>("GET", `/api/users/${enc(userId)}`, "get user");
       return data.user;
     },
 
     async createUser(username: string, role?: UserRole, feishuUserId?: string): Promise<User> {
-      const response = await fetch(`${serverBaseUrl}/api/users`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ username, role, feishuUserId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to create user: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { user: User };
+      const data = await requestJson<{ user: User }>("POST", `/api/users`, "create user", { username, role, feishuUserId });
       return data.user;
     },
 
     async updateUserRole(userId: string, role: UserRole): Promise<User> {
-      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}/role`, {
-        method: "PATCH",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ role }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to update user role: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { user: User };
+      const data = await requestJson<{ user: User }>("PATCH", `/api/users/${enc(userId)}/role`, "update user role", { role });
       return data.user;
     },
 
     async deleteUser(userId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to delete user: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
+      await requestVoid("DELETE", `/api/users/${enc(userId)}`, "delete user");
     },
 
     async regenerateUserToken(userId: string): Promise<User> {
-      const response = await fetch(`${serverBaseUrl}/api/users/${encodeURIComponent(userId)}/token/regenerate`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(
-          `Failed to regenerate user token: ${response.status} ${body.error?.message ?? response.statusText}`,
-        );
-      }
-      const data = (await response.json()) as { user: User };
+      const data = await requestJson<{ user: User }>("POST", `/api/users/${enc(userId)}/token/regenerate`, "regenerate user token");
       return data.user;
     },
 
     async listApiKeys(userId?: string): Promise<Array<Record<string, unknown>>> {
       const params = new URLSearchParams();
       if (userId) params.set("userId", userId);
-      const url = `${serverBaseUrl}/api/keys${params.toString() ? `?${params.toString()}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list API keys: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKeys: Array<Record<string, unknown>> };
+      const data = await requestJson<{ apiKeys: Array<Record<string, unknown>> }>("GET", `/api/keys${params.toString() ? `?${params.toString()}` : ""}`, "list API keys");
       return data.apiKeys;
     },
 
     async getApiKey(keyId: string): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      const data = await requestJson<{ apiKey: Record<string, unknown> }>("GET", `/api/keys/${enc(keyId)}`, "get API key");
       return data.apiKey;
     },
 
     async createApiKey(name: string, userId: string, role?: string): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/keys`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ name, userId, role }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      const data = await requestJson<{ apiKey: Record<string, unknown> }>("POST", `/api/keys`, "create API key", { name, userId, role });
       return data.apiKey;
     },
 
     async rotateApiKey(keyId: string, gracePeriodMs?: number): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/rotate`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ gracePeriodMs }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to rotate API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      const data = await requestJson<{ apiKey: Record<string, unknown> }>("POST", `/api/keys/${enc(keyId)}/rotate`, "rotate API key", { gracePeriodMs });
       return data.apiKey;
     },
 
     async revokeApiKey(keyId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/revoke`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to revoke API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("POST", `/api/keys/${enc(keyId)}/revoke`, "revoke API key");
     },
 
     async enableApiKey(keyId: string): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/enable`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to enable API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      const data = await requestJson<{ apiKey: Record<string, unknown> }>("POST", `/api/keys/${enc(keyId)}/enable`, "enable API key");
       return data.apiKey;
     },
 
     async disableApiKey(keyId: string): Promise<Record<string, unknown>> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/${encodeURIComponent(keyId)}/disable`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to disable API key: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { apiKey: Record<string, unknown> };
+      const data = await requestJson<{ apiKey: Record<string, unknown> }>("POST", `/api/keys/${enc(keyId)}/disable`, "disable API key");
       return data.apiKey;
     },
 
     async cleanupExpiredApiKeys(): Promise<{ cleaned: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/keys/cleanup-expired`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to cleanup expired API keys: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { cleaned: number };
+      const data = await requestJson<{ cleaned: number }>("POST", `/api/keys/cleanup-expired`, "cleanup expired API keys");
       return { cleaned: data.cleaned };
     },
 
@@ -2230,70 +1117,33 @@ export function createTaskApiClient(
     async listSavedViews(createdBy?: string): Promise<import("../shared/types.js").SavedView[]> {
       const params = new URLSearchParams();
       if (createdBy) params.set("createdBy", createdBy);
-      const url = `${serverBaseUrl}/api/saved-views${params.toString() ? `?${params.toString()}` : ""}`;
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list saved views: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { views: import("../shared/types.js").SavedView[] };
+      const data = await requestJson<{ views: import("../shared/types.js").SavedView[] }>("GET", `/api/saved-views${params.toString() ? `?${params.toString()}` : ""}`, "list saved views");
       return data.views;
     },
 
     async getSavedView(viewId: string): Promise<import("../shared/types.js").SavedView> {
-      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as import("../shared/types.js").SavedView;
+      return await requestJson<import("../shared/types.js").SavedView>("GET", `/api/saved-views/${enc(viewId)}`, "get saved view");
     },
 
     async createSavedView(name: string, filters: Record<string, unknown>): Promise<import("../shared/types.js").SavedView> {
-      const response = await fetch(`${serverBaseUrl}/api/saved-views`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ name, filters }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as import("../shared/types.js").SavedView;
+      return await requestJson<import("../shared/types.js").SavedView>("POST", `/api/saved-views`, "create saved view", { name, filters });
     },
 
     async updateSavedView(viewId: string, updates: { name?: string; filters?: Record<string, unknown> }): Promise<import("../shared/types.js").SavedView> {
-      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as import("../shared/types.js").SavedView;
+      return await requestJson<import("../shared/types.js").SavedView>("PUT", `/api/saved-views/${enc(viewId)}`, "update saved view", updates);
     },
 
     async deleteSavedView(viewId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete saved view: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/saved-views/${enc(viewId)}`, "delete saved view");
     },
 
     async applySavedView(viewId: string): Promise<Task[]> {
       // Step 1: Get the saved view and its filters
-      const viewResponse = await fetch(`${serverBaseUrl}/api/saved-views/${viewId}`, { headers });
-      if (!viewResponse.ok) {
-        const body = (await viewResponse.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get saved view: ${viewResponse.status} ${body.error?.message ?? viewResponse.statusText}`);
-      }
-      const view = (await viewResponse.json()) as import("../shared/types.js").SavedView;
+      const view = await requestJson<import("../shared/types.js").SavedView>(
+        "GET",
+        `/api/saved-views/${enc(viewId)}`,
+        "get saved view",
+      );
       const filters = view.filters;
       // Step 2: Search tasks using the saved view's filters
       const params = new URLSearchParams();
@@ -2305,173 +1155,70 @@ export function createTaskApiClient(
       if (filters.toDate) params.set("to", filters.toDate);
       if (filters.query) params.set("q", filters.query);
       const qs = params.toString();
-      const searchUrl = `${serverBaseUrl}/api/tasks/search${qs ? `?${qs}` : ""}`;
-      const searchResponse = await fetch(searchUrl, { headers });
-      if (!searchResponse.ok) {
-        const body = (await searchResponse.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to search tasks: ${searchResponse.status} ${body.error?.message ?? searchResponse.statusText}`);
-      }
-      const data = (await searchResponse.json()) as { tasks: Task[] };
+      const data = await requestJson<{ tasks: Task[] }>(
+        "GET",
+        `/api/tasks/search${qs ? `?${qs}` : ""}`,
+        "search tasks",
+      );
       return data.tasks;
     },
 
     async resetStaleTasks(timeoutMs?: number): Promise<{ resetCount: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/reset-stale`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ timeoutMs }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to reset stale tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as { resetCount: number };
+      return await requestJson<{ resetCount: number }>("POST", `/api/tasks/reset-stale`, "reset stale tasks", { timeoutMs });
     },
 
     async cleanupProcessedEvents(retentionDays?: number): Promise<{ deletedCount: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/cleanup-events`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ retentionDays }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to cleanup processed events: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as { deletedCount: number };
+      return await requestJson<{ deletedCount: number }>("POST", `/api/tasks/cleanup-events`, "cleanup processed events", { retentionDays });
     },
 
     async watchTask(taskId: string): Promise<TaskWatcher> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
-        method: "POST",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to watch task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { watcher: TaskWatcher };
+      const data = await requestJson<{ watcher: TaskWatcher }>("POST", `/api/tasks/${enc(taskId)}/watchers`, "watch task");
       return data.watcher;
     },
 
     async unwatchTask(taskId: string): Promise<{ removed: boolean }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to unwatch task: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as { removed: boolean };
+      return await requestJson<{ removed: boolean }>("DELETE", `/api/tasks/${enc(taskId)}/watchers`, "unwatch task");
     },
 
     async listTaskWatchers(taskId: string): Promise<TaskWatcher[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/watchers`, {
-        method: "GET",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list task watchers: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { watchers: TaskWatcher[] };
+      const data = await requestJson<{ watchers: TaskWatcher[] }>("GET", `/api/tasks/${enc(taskId)}/watchers`, "list task watchers");
       return data.watchers;
     },
 
     // Time entry methods
     async listTimeEntries(taskId: string): Promise<import("../shared/types.js").TimeEntry[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries`, {
-        method: "GET",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list time entries: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { entries: import("../shared/types.js").TimeEntry[] };
+      const data = await requestJson<{ entries: import("../shared/types.js").TimeEntry[] }>("GET", `/api/tasks/${enc(taskId)}/time-entries`, "list time entries");
       return data.entries;
     },
 
     async createTimeEntry(taskId: string, opts: { startedAt?: string; endedAt?: string; durationMinutes?: number; description?: string; loggedBy?: string }): Promise<import("../shared/types.js").TimeEntry> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(opts),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create time entry: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      const data = await requestJson<{ entry: import("../shared/types.js").TimeEntry }>("POST", `/api/tasks/${enc(taskId)}/time-entries`, "create time entry", opts);
       return data.entry;
     },
 
     async startTimeEntry(taskId: string, description?: string): Promise<import("../shared/types.js").TimeEntry> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/start`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ description }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to start time tracking: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      const data = await requestJson<{ entry: import("../shared/types.js").TimeEntry }>("POST", `/api/tasks/${enc(taskId)}/time-entries/start`, "start time tracking", { description });
       return data.entry;
     },
 
     async stopTimeEntry(taskId: string, entryId: string): Promise<import("../shared/types.js").TimeEntry> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/stop`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ entryId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to stop time tracking: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { entry: import("../shared/types.js").TimeEntry };
+      const data = await requestJson<{ entry: import("../shared/types.js").TimeEntry }>("POST", `/api/tasks/${enc(taskId)}/time-entries/stop`, "stop time tracking", { entryId });
       return data.entry;
     },
 
     async deleteTimeEntry(taskId: string, entryId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/time-entries/${entryId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete time entry: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/time-entries/${enc(entryId)}`, "delete time entry");
     },
 
     async getTimeTrackingStats(): Promise<import("../shared/types.js").TimeTrackingSummary> {
-      const response = await fetch(`${serverBaseUrl}/api/stats/time-tracking`, {
-        method: "GET",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get time tracking stats: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      return (await response.json()) as import("../shared/types.js").TimeTrackingSummary;
+      return await requestJson<import("../shared/types.js").TimeTrackingSummary>("GET", `/api/stats/time-tracking`, "get time tracking stats");
     },
 
     async getActivityFeed(taskId: string, limit?: number): Promise<import("../shared/types.js").ActivityFeedItem[]> {
       const params = new URLSearchParams();
       if (limit) params.set("limit", String(limit));
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/tasks/${taskId}/activity${qs ? "?" + qs : ""}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get activity feed: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
+      const data = await requestJson<{ items: import("../shared/types.js").ActivityFeedItem[] }>("GET", `/api/tasks/${enc(taskId)}/activity${qs ? "?" + qs : ""}`, "get activity feed");
       return data.items;
     },
 
@@ -2480,103 +1227,46 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       const qs = params.toString();
-      const url = `${serverBaseUrl}/api/cycles${qs ? "?" + qs : ""}`;
-      const response = await fetch(url, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list cycles: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { cycles: import("../shared/types.js").CycleSummary[] };
+      const data = await requestJson<{ cycles: import("../shared/types.js").CycleSummary[] }>("GET", `/api/cycles${qs ? "?" + qs : ""}`, "list cycles");
       return data.cycles;
     },
 
     async getCycle(cycleId: string): Promise<import("../shared/types.js").CycleSummary> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { cycle: import("../shared/types.js").CycleSummary };
+      const data = await requestJson<{ cycle: import("../shared/types.js").CycleSummary }>("GET", `/api/cycles/${enc(cycleId)}`, "get cycle");
       return data.cycle;
     },
 
     async createCycle(data: { name: string; description?: string; startDate: string; endDate: string }): Promise<import("../shared/types.js").Cycle> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { cycle: import("../shared/types.js").Cycle };
+      const result = await requestJson<{ cycle: import("../shared/types.js").Cycle }>("POST", `/api/cycles`, "create cycle", data);
       return result.cycle;
     },
 
     async updateCycle(cycleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Cycle> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { cycle: import("../shared/types.js").Cycle };
+      const result = await requestJson<{ cycle: import("../shared/types.js").Cycle }>("PUT", `/api/cycles/${enc(cycleId)}`, "update cycle", updates);
       return result.cycle;
     },
 
     async deleteCycle(cycleId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}`, { method: "DELETE", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/cycles/${enc(cycleId)}`, "delete cycle");
     },
 
     async addTaskToCycle(taskId: string, cycleId: string): Promise<import("../shared/types.js").Task> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/tasks`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ taskId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to add task to cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      const data = await requestJson<{ task: import("../shared/types.js").Task }>("POST", `/api/cycles/${enc(cycleId)}/tasks`, "add task to cycle", { taskId });
       return data.task;
     },
 
     async removeTaskFromCycle(taskId: string): Promise<import("../shared/types.js").Task> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/tasks/${taskId}`, { method: "DELETE", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to remove task from cycle: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      const data = await requestJson<{ task: import("../shared/types.js").Task }>("DELETE", `/api/cycles/tasks/${enc(taskId)}`, "remove task from cycle");
       return data.task;
     },
 
     async listCycleTasks(cycleId: string): Promise<import("../shared/types.js").Task[]> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/tasks`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list cycle tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
+      const data = await requestJson<{ tasks: import("../shared/types.js").Task[] }>("GET", `/api/cycles/${enc(cycleId)}/tasks`, "list cycle tasks");
       return data.tasks;
     },
 
     async getCycleProgress(cycleId: string): Promise<import("../shared/types.js").CycleProgress> {
-      const response = await fetch(`${serverBaseUrl}/api/cycles/${cycleId}/progress`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get cycle progress: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { progress: import("../shared/types.js").CycleProgress };
+      const data = await requestJson<{ progress: import("../shared/types.js").CycleProgress }>("GET", `/api/cycles/${enc(cycleId)}/progress`, "get cycle progress");
       return data.progress;
     },
 
@@ -2584,12 +1274,7 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (limit !== undefined) params.set("limit", String(limit));
       const qs = params.toString();
-      const response = await fetch(`${serverBaseUrl}/api/activity${qs ? "?" + qs : ""}`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get global activity: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { items: import("../shared/types.js").ActivityFeedItem[] };
+      const data = await requestJson<{ items: import("../shared/types.js").ActivityFeedItem[] }>("GET", `/api/activity${qs ? "?" + qs : ""}`, "get global activity");
       return data.items;
     },
 
@@ -2598,182 +1283,86 @@ export function createTaskApiClient(
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       const qs = params.toString();
-      const response = await fetch(`${serverBaseUrl}/api/modules${qs ? "?" + qs : ""}`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list modules: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { modules: import("../shared/types.js").ModuleWithProgress[] };
+      const data = await requestJson<{ modules: import("../shared/types.js").ModuleWithProgress[] }>("GET", `/api/modules${qs ? "?" + qs : ""}`, "list modules");
       return data.modules;
     },
 
     async getModule(moduleId: string): Promise<import("../shared/types.js").ModuleWithProgress> {
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { module: import("../shared/types.js").ModuleWithProgress };
+      const data = await requestJson<{ module: import("../shared/types.js").ModuleWithProgress }>("GET", `/api/modules/${enc(moduleId)}`, "get module");
       return data.module;
     },
 
     async createModule(data: { name: string; description?: string; startDate?: string; endDate?: string }): Promise<import("../shared/types.js").Module> {
-      const response = await fetch(`${serverBaseUrl}/api/modules`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to create module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { module: import("../shared/types.js").Module };
+      const result = await requestJson<{ module: import("../shared/types.js").Module }>("POST", `/api/modules`, "create module", data);
       return result.module;
     },
 
     async updateModule(moduleId: string, updates: Record<string, unknown>): Promise<import("../shared/types.js").Module> {
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(updates),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const result = (await response.json()) as { module: import("../shared/types.js").Module };
+      const result = await requestJson<{ module: import("../shared/types.js").Module }>("PUT", `/api/modules/${enc(moduleId)}`, "update module", updates);
       return result.module;
     },
 
     async deleteModule(moduleId: string): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}`, { method: "DELETE", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/modules/${enc(moduleId)}`, "delete module");
     },
 
     async addTaskToModule(taskId: string, moduleId: string): Promise<import("../shared/types.js").Task> {
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ taskId }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to add task to module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      const data = await requestJson<{ task: import("../shared/types.js").Task }>("POST", `/api/modules/${enc(moduleId)}/tasks`, "add task to module", { taskId });
       return data.task;
     },
 
     async removeTaskFromModule(taskId: string): Promise<import("../shared/types.js").Task> {
-      // Need to find the module for this task — use listModuleTasks or a dedicated endpoint
-      // For simplicity, the route uses DELETE /api/modules/:id/tasks/:taskId
-      // The client needs the moduleId, but we can use a placeholder approach
-      // Actually, let's use a different approach — the route expects moduleId
       // We'll fetch the task first to find its moduleId
-      const taskResponse = await fetch(`${serverBaseUrl}/api/tasks/${taskId}`, { method: "GET", headers });
-      if (!taskResponse.ok) {
-        const body = (await taskResponse.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get task: ${taskResponse.status} ${body.error?.message ?? taskResponse.statusText}`);
-      }
-      const taskData = (await taskResponse.json()) as { task: import("../shared/types.js").Task };
+      const taskData = await requestJson<{ task: import("../shared/types.js").Task }>(
+        "GET",
+        `/api/tasks/${enc(taskId)}`,
+        "get task",
+      );
       const moduleId = taskData.task.moduleId;
       if (!moduleId) {
         throw new Error("Task is not assigned to any module");
       }
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks/${taskId}`, { method: "DELETE", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to remove task from module: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { task: import("../shared/types.js").Task };
+      const data = await requestJson<{ task: import("../shared/types.js").Task }>(
+        "DELETE",
+        `/api/modules/${enc(moduleId)}/tasks/${enc(taskId)}`,
+        "remove task from module",
+      );
       return data.task;
     },
 
     async listModuleTasks(moduleId: string): Promise<import("../shared/types.js").Task[]> {
-      const response = await fetch(`${serverBaseUrl}/api/modules/${moduleId}/tasks`, { method: "GET", headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list module tasks: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { tasks: import("../shared/types.js").Task[] };
+      const data = await requestJson<{ tasks: import("../shared/types.js").Task[] }>("GET", `/api/modules/${enc(moduleId)}/tasks`, "list module tasks");
       return data.tasks;
     },
 
     async getAuditCount(): Promise<number> {
-      const response = await fetch(`${serverBaseUrl}/api/audit/count`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to get audit count: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { count: number };
+      const data = await requestJson<{ count: number }>("GET", `/api/audit/count`, "get audit count");
       return data.count;
     },
 
     async cleanupAuditLog(retentionDays?: number): Promise<{ deletedCount: number }> {
-      const response = await fetch(`${serverBaseUrl}/api/audit/cleanup`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ retentionDays }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to cleanup audit log: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { ok: boolean; deletedCount: number };
+      const data = await requestJson<{ ok: boolean; deletedCount: number }>("POST", `/api/audit/cleanup`, "cleanup audit log", { retentionDays });
       return { deletedCount: data.deletedCount };
     },
 
     async updateTaskCard(taskId: string, markdown: string, title?: string, color?: string): Promise<{ success: boolean; messageId: string }> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/card`, {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({ markdown, title, color }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to update task card: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { success: boolean; messageId: string };
+      const data = await requestJson<{ success: boolean; messageId: string }>("PUT", `/api/tasks/${enc(taskId)}/card`, "update task card", { markdown, title, color });
       return { success: data.success, messageId: data.messageId };
     },
 
     // Task links
     async listTaskLinks(taskId: string): Promise<import("../shared/types.js").TaskLink[]> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links`, { headers });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to list task links: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { links: import("../shared/types.js").TaskLink[] };
+      const data = await requestJson<{ links: import("../shared/types.js").TaskLink[] }>("GET", `/api/tasks/${enc(taskId)}/links`, "list task links");
       return data.links;
     },
 
     async addTaskLink(taskId: string, title: string, url: string): Promise<import("../shared/types.js").TaskLink> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ title, url }),
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to add task link: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
-      const data = (await response.json()) as { link: import("../shared/types.js").TaskLink };
+      const data = await requestJson<{ link: import("../shared/types.js").TaskLink }>("POST", `/api/tasks/${enc(taskId)}/links`, "add task link", { title, url });
       return data.link;
     },
 
     async deleteTaskLink(taskId: string, linkId: number): Promise<void> {
-      const response = await fetch(`${serverBaseUrl}/api/tasks/${taskId}/links/${linkId}`, {
-        method: "DELETE",
-        headers,
-      });
-      if (!response.ok) {
-        const body = (await response.json()) as { error?: { message?: string } };
-        throw new Error(`Failed to delete task link: ${response.status} ${body.error?.message ?? response.statusText}`);
-      }
+      await requestVoid("DELETE", `/api/tasks/${enc(taskId)}/links/${enc(linkId)}`, "delete task link");
     },
   };
 }

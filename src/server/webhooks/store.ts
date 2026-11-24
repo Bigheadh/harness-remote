@@ -24,6 +24,8 @@ export interface WebhookStore {
   getDuePendingRetries(limit?: number): Promise<PendingRetry[]>;
   removePendingRetry(id: number): Promise<void>;
   getPendingRetryCount(): Promise<number>;
+  /** Delete webhook delivery log rows older than `retentionDays` (default: 30) */
+  cleanupDeliveries(retentionDays?: number): Promise<number>;
   close?(): void;
 }
 
@@ -315,6 +317,19 @@ export function createWebhookStore(storagePath: string): WebhookStore {
     async getPendingRetryCount() {
       const row = countPendingRetries.get() as Record<string, unknown>;
       return Number(row["cnt"]);
+    },
+
+    async cleanupDeliveries(retentionDays = 30): Promise<number> {
+      const days = Math.max(0, retentionDays);
+      if (days === 0) {
+        const result = db.prepare(`DELETE FROM webhook_deliveries`).run();
+        return Number(result.changes);
+      }
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const result = db
+        .prepare(`DELETE FROM webhook_deliveries WHERE timestamp < ?`)
+        .run(cutoff);
+      return Number(result.changes);
     },
 
     close(): void {

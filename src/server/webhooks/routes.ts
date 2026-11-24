@@ -7,6 +7,7 @@ import { authenticate, authorize } from "../auth/middleware.js";
 import { AppError } from "../../shared/errors.js";
 import { createLogger } from "../../shared/logger.js";
 import { validateWebhookUrl } from "./url-validator.js";
+import { CreateWebhookBodySchema, parseBody } from "../openapi/schemas.js";
 
 const log = createLogger({ level: "info" });
 
@@ -97,22 +98,12 @@ export function registerWebhookRoutes(
       throw e;
     }
 
-    const body = req.body as {
-      url?: string;
-      events?: string[];
-      enabled?: boolean;
-      description?: string;
-    };
-
-    if (typeof body?.url !== "string" || body.url.trim() === "") {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "Request body must include 'url' (non-empty string)" },
-      });
-    }
+    const body = parseBody(CreateWebhookBodySchema, req.body, reply);
+    if (!body) return;
 
     // Validate URL (syntax, protocol, and SSRF protection)
     try {
-      validateWebhookUrl(body.url.trim());
+      validateWebhookUrl(body.url);
     } catch (e) {
       return reply.code(400).send({
         error: {

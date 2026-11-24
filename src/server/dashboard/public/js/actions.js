@@ -16,13 +16,24 @@
     }
 
     function escapeHtml(s) {
-      if (!s) return '';
-      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      if (s === null || s === undefined) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
-    function logout() {
-      localStorage.removeItem('harness_token');
-      location.reload();
+    async function logout() {
+      try {
+        await fetch(API_BASE + '/dashboard/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+      } catch { /* ignore network errors on logout */ }
+      try { localStorage.removeItem('harness_token'); } catch {}
+      location.href = '/dashboard';
     }
 
     async function refresh() {
@@ -30,26 +41,53 @@
       await loadTasks();
     }
 
-    // SSE real-time updates
+    // SSE real-time updates with deduplicated exponential backoff
     let eventSource = null;
+    let sseReconnectTimer = null;
+    let sseReconnectDelay = 3000;
+    const SSE_MAX_RECONNECT_DELAY = 30000;
+    const SSE_TASK_EVENTS = [
+      'task.created',
+      'task.updated',
+      'task.deleted',
+      'task.status_changed',
+      'task.result_reported',
+      'task.assigned',
+    ];
+
     function connectSSE() {
       const indicator = document.getElementById('sseIndicator');
       const label = document.getElementById('sseLabel');
       indicator.className = 'sse-indicator';
       label.textContent = 'Connecting...';
 
+      if (sseReconnectTimer) {
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = null;
+      }
       if (eventSource) { eventSource.close(); }
-      eventSource = new EventSource(API_BASE + '/api/tasks/stream?token=' + TOKEN);
+      const sseUrl = TOKEN
+        ? API_BASE + '/api/tasks/stream?token=' + encodeURIComponent(TOKEN)
+        : API_BASE + '/api/tasks/stream';
+      eventSource = new EventSource(sseUrl);
 
       eventSource.onopen = () => {
+        sseReconnectDelay = 3000;
         indicator.className = 'sse-indicator connected';
         label.textContent = 'Live';
       };
 
+      // Named SSE events emitted by server/sse/broadcaster.ts
+      for (const evType of SSE_TASK_EVENTS) {
+        eventSource.addEventListener(evType, () => {
+          loadTasks();
+        });
+      }
+
+      // Fallback for unnamed message events
       eventSource.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data);
-          // Refresh task list on any task event
           if (event.type && event.type.startsWith('task.')) {
             loadTasks();
           }
@@ -59,8 +97,18 @@
       eventSource.onerror = () => {
         indicator.className = 'sse-indicator';
         label.textContent = 'Reconnecting...';
-        // Auto-reconnect after 3s
-        setTimeout(connectSSE, 3000);
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        if (!sseReconnectTimer) {
+          const delay = sseReconnectDelay;
+          sseReconnectDelay = Math.min(sseReconnectDelay * 2, SSE_MAX_RECONNECT_DELAY);
+          sseReconnectTimer = setTimeout(() => {
+            sseReconnectTimer = null;
+            connectSSE();
+          }, delay);
+        }
       };
     }
 

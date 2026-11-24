@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { authenticate, authorize } from "../../auth/middleware.js";
 import { AppError } from "../../../shared/errors.js";
 import type { TaskRouteContext } from "./context.js";
+import { CreateCycleBodySchema, parseBody } from "../../openapi/schemas.js";
 
 export function registerCycleRoutes(
   server: FastifyInstance,
@@ -70,22 +71,14 @@ export function registerCycleRoutes(
       }
       throw e;
     }
-    const body = req.body as Record<string, unknown>;
-    if (!body.name || typeof body.name !== "string") {
-      return reply.code(400).send({ error: { code: "invalid_request", message: "'name' is required" } });
-    }
-    if (!body.startDate || typeof body.startDate !== "string") {
-      return reply.code(400).send({ error: { code: "invalid_request", message: "'startDate' is required" } });
-    }
-    if (!body.endDate || typeof body.endDate !== "string") {
-      return reply.code(400).send({ error: { code: "invalid_request", message: "'endDate' is required" } });
-    }
+    const body = parseBody(CreateCycleBodySchema, req.body, reply);
+    if (!body) return;
     try {
       const cycle = await store.createCycle({
-        name: body.name as string,
-        description: body.description as string | undefined,
-        startDate: body.startDate as string,
-        endDate: body.endDate as string,
+        name: body.name,
+        description: body.description,
+        startDate: body.startDate,
+        endDate: body.endDate,
         createdBy: authCtx.user?.id ?? "anonymous",
       });
       log.info({ cycleId: cycle.id, name: cycle.name }, "Cycle created");
