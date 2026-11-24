@@ -171,12 +171,35 @@ export async function startServer(): Promise<void> {
   // Start the webhook retry worker (checks every 10 seconds for due retries)
   const stopRetryWorker = startRetryWorker(webhookStore);
 
+  // Periodic daily maintenance (prevents unbounded growth of logs/locks/events)
+  const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const runMaintenance = async () => {
+    try {
+      const cleanedEvents = await store.cleanupProcessedEvents(7);
+      const cleanedLocks = await store.cleanupExpiredLocks();
+      const cleanedUsage = usageStore.cleanup(30);
+      const cleanedDeliveries = await webhookStore.cleanupDeliveries(30);
+      const cleanedKeys = await apiKeyStore.deleteExpiredPreviousKeys();
+      log.info(
+        { cleanedEvents, cleanedLocks, cleanedUsage, cleanedDeliveries, cleanedKeys },
+        "Periodic retention maintenance completed",
+      );
+    } catch (err) {
+      log.warn({ err }, "Periodic retention maintenance encountered an error");
+    }
+  };
+  const maintenanceTimer = setInterval(() => {
+    void runMaintenance();
+  }, MAINTENANCE_INTERVAL_MS);
+  maintenanceTimer.unref?.();
+
   // Graceful shutdown
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info({}, "Shutting down...");
+    clearInterval(maintenanceTimer);
     stopScheduler();
     stopRetryWorker();
     rateLimiter.destroy();

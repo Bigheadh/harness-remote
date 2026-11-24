@@ -368,7 +368,7 @@ export function serializeCard(card: FeishuCard): string {
 
 /** Build a Feishu interactive card for an SLA breach or warning notification */
 export function buildSlaBreachCard(
-  task: Task,
+  task: Pick<Task, "id" | "commandText" | "priority" | "status"> & Partial<Task>,
   policyName: string,
   breachType: SlaBreachType,
   targetMinutes: number,

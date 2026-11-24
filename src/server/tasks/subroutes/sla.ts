@@ -234,7 +234,7 @@ export function registerSlaRoutes(
               priority: detail.taskPriority,
               status: detail.taskStatus,
               tags: detail.taskTags,
-            } as any,
+            },
             detail.policyName,
             detail.breachType,
             detail.targetMinutes,

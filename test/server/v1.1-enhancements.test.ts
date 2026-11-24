@@ -13,6 +13,8 @@ import { createDeviceStore } from "../../src/server/devices/store.js";
 import { registerDeviceRoutes } from "../../src/server/devices/routes.js";
 import { createWebhookStore } from "../../src/server/webhooks/store.js";
 import { registerWebhookRoutes } from "../../src/server/webhooks/routes.js";
+import { createApiUsageStore } from "../../src/server/apiusage/store.js";
+import { requireAuthz, type AuthContext } from "../../src/server/auth/middleware.js";
 import { registerOpenApiRoutes } from "../../src/server/openapi/routes.js";
 import { TASK_SCHEMA_VERSION } from "../../src/server/tasks/repos/schema.js";
 
@@ -139,6 +141,85 @@ describe("v1.1 Enhancements: Expanded Zod Validation, Health Details, Deploy Tem
     expect(timer).toContain("OnCalendar=");
     const svc = readFileSync("deploy/harness-backup.service", "utf8");
     expect(svc).toContain("backup-sqlite.sh");
+  });
+
+  it("enforces auth context & RBAC permissions via requireAuthz helper", () => {
+    const makeReply = () => {
+      let status = 200;
+      let payload: unknown;
+      return {
+        code(s: number) {
+          status = s;
+          return {
+            send(p: unknown) {
+              payload = p;
+              return p;
+            },
+          };
+        },
+        getStatus: () => status,
+        getPayload: () => payload,
+      };
+    };
+
+    // 1. Missing authCtx -> 401
+    const r401 = makeReply();
+    expect(requireAuthz({}, r401, "tasks.read")).toBeUndefined();
+    expect(r401.getStatus()).toBe(401);
+
+    // 2. Insufficient role (viewer requesting users.delete) -> 403
+    const viewerCtx: AuthContext = { role: "viewer", isSuperAdmin: false };
+    const r403 = makeReply();
+    expect(requireAuthz({ authCtx: viewerCtx }, r403, "users.delete")).toBeUndefined();
+    expect(r403.getStatus()).toBe(403);
+
+    // 3. Permitted role (admin requesting users.delete) -> returns authCtx
+    const adminCtx: AuthContext = { role: "admin", isSuperAdmin: true };
+    const r200 = makeReply();
+    expect(requireAuthz({ authCtx: adminCtx }, r200, "users.delete")).toBe(adminCtx);
+    expect(r200.getStatus()).toBe(200);
+  });
+
+  it("cleans up old API usage entries and webhook deliveries via retention cleanup methods", async () => {
+    const dir = freshDir();
+
+    // API usage store cleanup
+    const usageStore = createApiUsageStore(`${dir}/usage.sqlite`);
+    usageStore.recordRequest("admin", "GET", "/api/tasks", 200, 12);
+    usageStore.recordRequest("admin", "POST", "/api/tasks", 201, 25);
+    expect(usageStore.getCount()).toBe(2);
+    // 30-day retention keeps fresh records
+    expect(usageStore.cleanup(30)).toBe(0);
+    expect(usageStore.getCount()).toBe(2);
+    // 0-day retention removes all records
+    expect(usageStore.cleanup(0)).toBe(2);
+    expect(usageStore.getCount()).toBe(0);
+    usageStore.close?.();
+
+    // Webhook delivery store cleanup
+    const webhookStore = createWebhookStore(`${dir}/webhooks.sqlite`);
+    const sub = await webhookStore.createSubscription({
+      url: "https://example.com/hook",
+      events: ["task.created"],
+      enabled: true,
+    });
+    await webhookStore.logDelivery({
+      webhookId: sub.id,
+      event: "task.created",
+      url: sub.url,
+      statusCode: 200,
+      success: true,
+      durationMs: 42,
+      retryCount: 1,
+    });
+    expect((await webhookStore.getDeliveries(sub.id)).length).toBe(1);
+    // 30-day retention keeps fresh delivery
+    expect(await webhookStore.cleanupDeliveries(30)).toBe(0);
+    expect((await webhookStore.getDeliveries(sub.id)).length).toBe(1);
+    // 0-day retention removes all deliveries
+    expect(await webhookStore.cleanupDeliveries(0)).toBe(1);
+    expect((await webhookStore.getDeliveries(sub.id)).length).toBe(0);
+    webhookStore.close?.();
   });
 
   const distReady =

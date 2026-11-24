@@ -37,6 +37,8 @@ export interface ApiUsageStore {
 
   /** Get the count of tracked requests */
   getCount(): number;
+  /** Delete usage entries older than `retentionDays` (default: 30) */
+  cleanup(retentionDays?: number): number;
   close?(): void;
 }
 
@@ -259,11 +261,24 @@ export function createApiUsageStore(storagePath: string): ApiUsageStore {
     };
   }
 
+  function cleanup(retentionDays = 30): number {
+    const days = Math.max(0, Math.floor(retentionDays));
+    if (days === 0) {
+      const result = db.prepare(`DELETE FROM api_usage`).run();
+      return Number(result.changes);
+    }
+    const result = db
+      .prepare(`DELETE FROM api_usage WHERE timestamp < datetime('now', '-' || ? || ' days')`)
+      .run(days);
+    return Number(result.changes);
+  }
+
   return {
     recordRequest,
     getStats,
     getEntriesForCaller,
     getCount,
+    cleanup,
     close(): void {
       db.close();
     },

@@ -1787,7 +1787,7 @@ export function registerTaskRoutes(
     log.info({ taskId: id, linkId: link.id, title, url }, "Link added to task");
     if (auditStore) {
       await auditStore.log({
-        action: "task.link_added" as any,
+        action: "task.link_added",
         taskId: id,
         actor: addedBy,
         actorType: "api",
@@ -1830,7 +1830,7 @@ export function registerTaskRoutes(
     log.info({ taskId: id, linkId: parsedLinkId }, "Link removed from task");
     if (auditStore) {
       await auditStore.log({
-        action: "task.link_removed" as any,
+        action: "task.link_removed",
         taskId: id,
         actor: authCtx.user?.username ?? "system",
         actorType: "api",
