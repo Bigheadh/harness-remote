@@ -17,6 +17,7 @@ import { createApiUsageStore } from "../../src/server/apiusage/store.js";
 import { requireAuthz, type AuthContext } from "../../src/server/auth/middleware.js";
 import { registerOpenApiRoutes } from "../../src/server/openapi/routes.js";
 import { TASK_SCHEMA_VERSION } from "../../src/server/tasks/repos/schema.js";
+import { createTaskApiClient } from "../../src/mcp-server/client.js";
 
 const TMP_DIR = "/tmp/harness-remote-v11-enhancements-test";
 const ADMIN_TOKEN = "v11-admin-secret-token-12345678";
@@ -220,6 +221,80 @@ describe("v1.1 Enhancements: Expanded Zod Validation, Health Details, Deploy Tem
     expect(await webhookStore.cleanupDeliveries(0)).toBe(1);
     expect((await webhookStore.getDeliveries(sub.id)).length).toBe(0);
     webhookStore.close?.();
+  });
+
+  it("URL-encodes dynamic path segments, strips trailing baseUrl slashes, and omits Content-Type on bodyless requests", async () => {
+    const captured: Array<{ url: string; method: string; headers: Record<string, string> }> = [];
+    const mockFetch: typeof globalThis.fetch = async (input, init) => {
+      const headersObj = (init?.headers ?? {}) as Record<string, string>;
+      captured.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        headers: headersObj,
+      });
+      return new Response(JSON.stringify({ task: { id: "t1", tags: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const client = createTaskApiClient("http://example.test///", "tok_test", undefined, {
+      fetchFn: mockFetch,
+    });
+
+    await client.getTask("task/special id");
+    await client.removeTag("task/1", "area/backend");
+    await client.pinTask("task/1");
+    await client.addTags("task/1", ["area/backend"]);
+
+    expect(captured[0].url).toBe("http://example.test/api/tasks/task%2Fspecial%20id");
+    expect(captured[0].headers["Content-Type"]).toBeUndefined();
+
+    expect(captured[1].url).toBe("http://example.test/api/tasks/task%2F1/tags/area%2Fbackend");
+    expect(captured[1].method).toBe("DELETE");
+    expect(captured[1].headers["Content-Type"]).toBeUndefined();
+
+    expect(captured[2].url).toBe("http://example.test/api/tasks/task%2F1/pin");
+    expect(captured[2].method).toBe("POST");
+    expect(captured[2].headers["Content-Type"]).toBeUndefined();
+
+    expect(captured[3].url).toBe("http://example.test/api/tasks/task%2F1/tags");
+    expect(captured[3].method).toBe("POST");
+    expect(captured[3].headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("executes bodyless POST and DELETE MCP client operations cleanly against a live Fastify server", async () => {
+    const dir = freshDir();
+    const store = createTaskStore(`${dir}/tasks.sqlite`);
+    const server = Fastify({ logger: false });
+    registerTaskRoutes(server, store, ADMIN_TOKEN);
+    const address = await server.listen({ port: 0, host: "127.0.0.1" });
+
+    try {
+      const client = createTaskApiClient(address, ADMIN_TOKEN);
+      const created = await client.createTask({
+        commandText: "Verify bodyless POST/DELETE against Fastify",
+        tags: ["area/backend", "v1.1"],
+      });
+
+      const pinned = await client.pinTask(created.id);
+      expect(pinned.pinned).toBe(true);
+
+      const unpinned = await client.unpinTask(created.id);
+      expect(unpinned.pinned).toBe(false);
+
+      const afterTagRemove = await client.removeTag(created.id, "v1.1");
+      expect(afterTagRemove.tags).toEqual(["area/backend"]);
+
+      const archived = await client.archiveTask(created.id);
+      expect(archived.archivedAt).toBeTruthy();
+
+      const restored = await client.unarchiveTask(created.id);
+      expect(restored.archivedAt).toBeFalsy();
+    } finally {
+      await server.close();
+      store.close?.();
+    }
   });
 
   const distReady =
