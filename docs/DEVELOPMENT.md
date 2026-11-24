@@ -2436,18 +2436,22 @@ Documentation review checklist:
   - `routes.ts`: Core task routes, `/health`, and global `/api/*` RBAC hook (supports `Authorization: Bearer` and `HttpOnly` dashboard session cookies).
   - `subroutes/`: 11 domain route modules (`templates`, `bulk`, `export-import`, `dependencies`, `subtasks-comments`, `sla`, `saved-views`, `watchers-time`, `relationships`, `cycles`, `modules`).
 - **Dashboard (`src/server/dashboard/`)**:
-  - `public/`: External static assets (`index.html`, `dashboard.css`, `dashboard.js`) copied into `dist/server/dashboard/public` on build.
-  - `session.ts`: AES-256-GCM encrypted `harness_session` cookie (`HttpOnly; SameSite=Strict`) derived from `personalToken`; zero raw tokens embedded in HTML, protected by CSP headers.
+  - `public/`: External static assets (`index.html`, `dashboard.css`, `js/{core,detail,actions,settings-views}.js`) copied into `dist/server/dashboard/public` on build.
+  - `session.ts`: AES-256-GCM encrypted `harness_session` cookie (`HttpOnly; SameSite=Strict`) derived from `personalToken`; zero raw tokens embedded in HTML, protected by CSP headers, with named SSE listeners and exponential backoff reconnect.
   - `routes.ts`: Static asset endpoints, `POST /dashboard/login`, `POST /dashboard/logout`, and `/dashboard` UI.
-- **Security Controls**:
+- **Security, Observability & Retention**:
   - `src/server/auth/token-hash.ts`: SHA-256 hashing of user tokens, API keys (including rotation grace keys), and device tokens at rest with transactional startup migration.
+  - `src/server/auth/middleware.ts`: Shared `authenticate`, `authorize`, and `requireAuthz` RBAC helpers.
   - `src/server/feishu/crypto.ts`: `X-Lark-Signature` SHA-256 verification and AES-256-CBC decryption for encrypted Feishu events (`feishu.encryptKey`).
   - `src/server/webhooks/url-validator.ts`: DNS-resolving SSRF protection blocking private, loopback, link-local, and cloud metadata IPs.
+  - `src/server/openapi/`: OpenAPI 3.1 specification + Zod v4 validation across task, planning, SLA, bulk, and admin write endpoints.
+  - `src/server/index.ts`: End-to-end `X-Request-Id` tracing, authenticated `GET /api/health/details`, and daily unref'd SQLite retention maintenance (processed events, expired locks, API usage, webhook deliveries, expired previous API keys).
 - **MCP Server (`src/mcp-server/`)**:
+  - `index.ts`: Stdio MCP transport plus `--doctor [--json] [--toolsets ...]` diagnostics CLI (verifies config, `/health`, authenticated `/api/tasks`, and registered tool counts without printing raw tokens).
   - `toolsets.ts`: 161 tools categorized across 6 toolsets (`core`, `tasks_extended`, `planning`, `sla`, `analytics`, `admin`), selectable via `--toolsets` or `HARNESS_MCP_TOOLSETS`.
   - `tools/`: 6 modular registration files (`tasks-core`, `tasks-extended`, `planning`, `sla`, `analytics`, `admin`), including composite `update_task` in `core`.
-  - `client.ts`: Resilient HTTP client with configurable timeout (`HARNESS_MCP_TIMEOUT_MS`) and exponential backoff retries (`HARNESS_MCP_MAX_RETRIES`).
+  - `client.ts`: Unified, resilient HTTP client (`requestRaw`/`requestJson`/`requestVoid`) with URL-encoded dynamic path segments, bodyless `POST`/`DELETE` Fastify compatibility, configurable timeout (`HARNESS_MCP_TIMEOUT_MS`), and exponential backoff retries (`HARNESS_MCP_MAX_RETRIES`).
 - **Verification & Deployment**:
-  - `npm run typecheck && npm run typecheck:test && npm run build && npm test` (automated in `.github/workflows/ci.yml`).
-  - Multi-stage `Dockerfile` running as non-root user on Node 22 Slim with 12-Factor environment variable support.
+  - `npm audit --omit=dev --audit-level=high && npm run typecheck && npm run typecheck:test && npm run build && npm test` (automated in `.github/workflows/ci.yml`).
+  - Multi-stage `Dockerfile` running as non-root user on Node 22 Slim with 12-Factor environment variable support, `docker-compose.yml`, `scripts/backup-sqlite.sh`, and production reverse-proxy/backup timer templates under `deploy/`.
 

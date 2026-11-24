@@ -250,9 +250,10 @@ args = [
 - **12-Factor 环境变量覆盖**：支持无配置文件或部分覆盖启动（服务端：`HARNESS_PORT`/`PORT`、`HARNESS_PUBLIC_BASE_URL`、`HARNESS_PERSONAL_TOKEN`、`HARNESS_STORAGE_PATH`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_VERIFICATION_TOKEN`、`FEISHU_ENCRYPT_KEY`、`FEISHU_ALLOWED_USER_IDS` 等；MCP 端：`HARNESS_SERVER_BASE_URL`、`HARNESS_PERSONAL_TOKEN`、`HARNESS_DEVICE_ID`、`HARNESS_MCP_TOOLSETS`、`HARNESS_MCP_TIMEOUT_MS`）。
 - **静态凭据 SHA-256 哈希存储**：用户 Token、API Key（含轮换宽限期密钥）与设备 Token 均以 SHA-256 哈希持久化存储，启动时自动事务迁移旧明文数据。
 - **飞书签名校验与事件解密**：配置 `feishu.encryptKey` 后自动验证 `X-Lark-Signature`（SHA-256）并解密 AES-256-CBC 加密事件体。
-- **Dashboard 安全登录与模块化静态资源**：Web Dashboard 已拆分为独立 CSS 与模块化 JS（`/dashboard/assets/js/*`），通过 `POST /dashboard/login` 签发 `HttpOnly; SameSite=Strict` AES-256-GCM 加密会话 Cookie，HTML 中零明文 Token 注入并附带 `Content-Security-Policy`。
-- **OpenAPI 3.1 与 Zod 请求校验**：内置 `GET /api/openapi.json` 与离线交互文档 `GET /api/docs`。
-- **SQLite FTS5 全文搜索、版本化迁移与在线热备份**：使用 `PRAGMA user_version` 管理 schema 迁移，通过 FTS5 trigram 虚表加速英文与中文子串检索，并提供 `scripts/backup-sqlite.sh`（基于 `VACUUM INTO`）在线热备份脚本。
+- **Dashboard 安全登录与模块化静态资源**：Web Dashboard 已拆分为独立 CSS 与模块化 JS（`/dashboard/assets/js/{core,detail,actions,settings-views}.js`），通过 `POST /dashboard/login` 签发 `HttpOnly; SameSite=Strict` AES-256-GCM 加密会话 Cookie，支持命名 SSE 实时事件与指数退避重连，HTML 中零明文 Token 注入并附带 `Content-Security-Policy`。
+- **OpenAPI 3.1 与全量 Zod 写入校验**：内置 `GET /api/openapi.json` 与离线交互文档 `GET /api/docs`，核心与管理写入接口均由 Zod v4 校验并返回结构化错误明细。
+- **可观测性与自检工具**：所有请求支持 `X-Request-Id` 链路透传/生成与结构化日志关联；提供鉴权接口 `GET /api/health/details`（返回 schema 版本、内存占用、运行时间与 SSE 连接数）以及本地 MCP 诊断命令 `node dist/mcp-server/index.js --doctor [--json] [--toolsets core]`。
+- **SQLite FTS5、版本化迁移、定时清理与在线热备份**：使用 `PRAGMA user_version` 管理 schema 迁移，FTS5 trigram 加速中英文子串搜索，内置每日定时留存清理（去重事件、过期锁、API 用量、Webhook 投递记录与过期旧密钥），并提供 `scripts/backup-sqlite.sh` 及 `deploy/` 生产模板（Caddy/Nginx SSE 反向代理与 systemd 定时热备份）。
 
 ## 部署
 
@@ -261,11 +262,10 @@ args = [
 ```bash
 docker build -t harness-remote .
 docker run -d --name harness-remote \
-  -p 3000:3000 \
-  -v $(pwd)/data:/app/data \
+  -p 8787:8787 \
+  -v $(pwd)/data:/data \
   -e HARNESS_PERSONAL_TOKEN="your-random-token-at-least-24-chars" \
   -e HARNESS_PUBLIC_BASE_URL="https://your-server-domain.com" \
-  -e HARNESS_STORAGE_PATH="/app/data/tasks.sqlite" \
   -e FEISHU_APP_ID="cli_xxx" \
   -e FEISHU_APP_SECRET="your-secret" \
   -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
@@ -656,9 +656,10 @@ The local MCP server exposes **161 tools** across 6 domain toolsets, selectable 
 - **12-Factor Environment Overrides**: Run with or without JSON config files (`HARNESS_PORT`/`PORT`, `HARNESS_PUBLIC_BASE_URL`, `HARNESS_PERSONAL_TOKEN`, `HARNESS_STORAGE_PATH`, `FEISHU_*`, `HARNESS_SERVER_BASE_URL`, `HARNESS_MCP_TOOLSETS`, `HARNESS_MCP_TIMEOUT_MS`).
 - **SHA-256 Credential Hashing at Rest**: User tokens, API keys (including rotation grace keys), and device tokens are hashed with SHA-256 in SQLite with automatic transactional migration on startup.
 - **Feishu Signature & AES-256-CBC Decryption**: When `feishu.encryptKey` is configured, verifies `X-Lark-Signature` and decrypts encrypted event payloads.
-- **Hardened Modular Web Dashboard**: Static CSS & modular JS assets served from `/dashboard/assets/js/*`, authenticated via `HttpOnly; SameSite=Strict` AES-256-GCM session cookies (`POST /dashboard/login`) with CSP headers and zero raw tokens embedded in HTML.
-- **OpenAPI 3.1 & Zod Validation**: Built-in `GET /api/openapi.json` spec and offline interactive API reference at `GET /api/docs`.
-- **SQLite FTS5 Search, Versioned Migrations & Hot Backups**: `PRAGMA user_version` schema migrations, FTS5 trigram full-text search, and online `VACUUM INTO` backups via `scripts/backup-sqlite.sh`.
+- **Hardened Modular Web Dashboard**: Static CSS & modular JS assets served from `/dashboard/assets/js/{core,detail,actions,settings-views}.js`, authenticated via `HttpOnly; SameSite=Strict` AES-256-GCM session cookies (`POST /dashboard/login`) with named SSE event streaming + exponential backoff, CSP headers, and zero raw tokens embedded in HTML.
+- **OpenAPI 3.1 & Full Zod v4 Write Validation**: Built-in `GET /api/openapi.json` spec and offline interactive API reference at `GET /api/docs`, with structured Zod validation across task, planning, SLA, bulk, and admin write endpoints.
+- **Observability & Diagnostics**: End-to-end `X-Request-Id` header propagation and structured `reqId` logging, authenticated `GET /api/health/details` diagnostics, and local MCP health check CLI (`node dist/mcp-server/index.js --doctor [--json] [--toolsets core]`).
+- **SQLite FTS5, Versioned Migrations, Retention Maintenance & Hot Backups**: `PRAGMA user_version` migrations, FTS5 trigram search, automated daily retention cleanup (processed events, expired locks, API usage logs, webhook deliveries, expired previous API keys), online `VACUUM INTO` backups (`scripts/backup-sqlite.sh`), and production reverse-proxy/backup timer templates under `deploy/`.
 
 ## Deployment
 
@@ -667,11 +668,10 @@ The local MCP server exposes **161 tools** across 6 domain toolsets, selectable 
 ```bash
 docker build -t harness-remote .
 docker run -d --name harness-remote \
-  -p 3000:3000 \
-  -v $(pwd)/data:/app/data \
+  -p 8787:8787 \
+  -v $(pwd)/data:/data \
   -e HARNESS_PERSONAL_TOKEN="your-random-token-at-least-24-chars" \
   -e HARNESS_PUBLIC_BASE_URL="https://your-server-domain.com" \
-  -e HARNESS_STORAGE_PATH="/app/data/tasks.sqlite" \
   -e FEISHU_APP_ID="cli_xxx" \
   -e FEISHU_APP_SECRET="your-secret" \
   -e FEISHU_VERIFICATION_TOKEN="your-verify-token" \
